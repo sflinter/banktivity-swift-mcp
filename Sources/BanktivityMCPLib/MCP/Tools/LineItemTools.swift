@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Steve Flinter. MIT License.
+
 import Foundation
 import MCP
 

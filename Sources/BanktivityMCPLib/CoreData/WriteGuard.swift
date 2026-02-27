@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Steve Flinter. MIT License.
+
 import Foundation
 
 /// Guards write operations by checking if Banktivity.app has the database file open.

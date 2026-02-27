@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Steve Flinter. MIT License.
+
 import BanktivityMCPLib
 import CoreData
 import Foundation

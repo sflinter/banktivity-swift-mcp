@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Steve Flinter. MIT License.
+
 // swift-tools-version: 6.0
 
 import PackageDescription

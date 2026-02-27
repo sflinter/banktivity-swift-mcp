@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Steve Flinter. MIT License.
+
 import Testing
 @testable import BanktivityMCPLib
 

@@ -1,0 +1,148 @@
+# banktivity-mcp
+
+A [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server for [Banktivity](https://www.iggsoftware.com/banktivity/) personal finance files. It gives AI assistants like Claude full read/write access to your `.bank8` vault — accounts, transactions, categories, tags, templates, import rules, and scheduled transactions.
+
+Inspired by [banktivity-mcp](https://github.com/mhriemers/banktivity-mcp) (TypeScript/Node.js), this is a ground-up rewrite in Swift. The original uses `better-sqlite3` to read and write Core Data's SQLite store directly, bypassing Core Data's internal change tracking. This works for reads, but direct SQL writes are invisible to CloudKit sync — Banktivity doesn't know the data changed, and the vault can become corrupted or fail to sync. This Swift version uses `NSPersistentContainer` so all mutations go through Core Data's API, ensuring proper change tracking and CloudKit compatibility.
+
+> **WARNING: This server can modify your Banktivity data.** Write tools (create, update, delete) make real changes to your `.bank8` vault. While the server uses Core Data for proper change tracking and includes a write guard that blocks mutations when Banktivity is open, AI assistants can and will make mistakes. **Back up your vault regularly** and consider working on a copy until you're confident in your workflow. The authors are not responsible for any data loss or corruption.
+
+## Requirements
+
+- macOS 14+
+- Swift 6.0+ (Xcode 16+ or Command Line Tools)
+- A Banktivity `.bank8` vault file
+
+## Installation
+
+```sh
+git clone https://github.com/yourusername/banktivity-mcp-swift.git
+cd banktivity-mcp-swift
+swift build -c release
+cp .build/release/banktivity-mcp ~/.local/bin/
+codesign -fs - ~/.local/bin/banktivity-mcp
+```
+
+## Configuration
+
+### Claude Code
+
+Add to your MCP settings (`~/.claude/settings.json` or project `.mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "banktivity": {
+      "command": "/Users/you/.local/bin/banktivity-mcp",
+      "env": {
+        "BANKTIVITY_FILE_PATH": "/Users/you/Documents/Banktivity/My Accounts.bank8"
+      }
+    }
+  }
+}
+```
+
+### Claude Desktop
+
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "banktivity": {
+      "command": "/Users/you/.local/bin/banktivity-mcp",
+      "env": {
+        "BANKTIVITY_FILE_PATH": "/Users/you/Documents/Banktivity/My Accounts.bank8"
+      }
+    }
+  }
+}
+```
+
+## Available Tools
+
+### Accounts
+- `list_accounts` — List all accounts with balances
+- `get_account_balance` — Get balance for a specific account
+- `get_net_worth` — Calculate total net worth
+- `get_spending_by_category` — Spending breakdown by category for a date range
+- `get_income_by_category` — Income breakdown by category for a date range
+- `get_summary` — Overall financial summary
+
+### Transactions
+- `get_transactions` — List transactions with filtering and pagination
+- `search_transactions` — Full-text search across payees, memos, etc.
+- `get_transaction` — Get a single transaction by ID
+- `create_transaction` — Create a new transaction
+- `update_transaction` — Update an existing transaction
+- `delete_transaction` — Delete a transaction
+
+### Line Items
+- `get_line_item` — Get a specific line item
+- `add_line_item` — Add a line item to a transaction (for splits)
+- `update_line_item` — Update a line item
+- `delete_line_item` — Delete a line item
+
+### Categories
+- `list_categories` — List all income/expense categories
+- `get_category` — Get a specific category
+- `get_category_tree` — Get the full category hierarchy
+- `create_category` — Create a new category
+
+### Categorization
+- `get_uncategorized_transactions` — Find transactions without categories
+- `suggest_category_for_merchant` — Suggest a category based on merchant history
+- `recategorize_transaction` — Change a transaction's category
+- `bulk_recategorize_by_payee` — Recategorize all transactions for a payee
+- `review_categorizations` — Review recent categorization changes
+- `get_payee_category_summary` — Summary of categories used per payee
+
+### Tags
+- `get_tags` — List all tags
+- `create_tag` — Create a new tag
+- `tag_transaction` — Tag a transaction
+- `get_transactions_by_tag` — Find transactions with a specific tag
+- `bulk_tag_transactions` — Tag multiple transactions at once
+
+### Templates
+- `list_transaction_templates` — List saved transaction templates
+- `get_transaction_template` — Get a specific template
+- `create_transaction_template` — Create a new template
+- `update_transaction_template` — Update a template
+- `delete_transaction_template` — Delete a template
+
+### Import Rules
+- `list_import_rules` — List all import rules
+- `get_import_rule` — Get a specific import rule
+- `match_import_rules` — Find rules matching a payee string
+- `create_import_rule` — Create a new import rule
+- `update_import_rule` — Update an import rule
+- `delete_import_rule` — Delete an import rule
+
+### Scheduled Transactions
+- `list_scheduled_transactions` — List all scheduled transactions
+- `get_scheduled_transaction` — Get a specific scheduled transaction
+- `create_scheduled_transaction` — Create a new scheduled transaction
+- `update_scheduled_transaction` — Update a scheduled transaction
+- `delete_scheduled_transaction` — Delete a scheduled transaction
+
+### Diagnostic
+- `dump_schema` — Inspect the Core Data model schema (entity names, attributes, relationships)
+
+## Safety Features
+
+- **Write guard**: Before any mutation, the server checks if Banktivity.app has the vault open (via `lsof`). If it does, writes are blocked to prevent corruption.
+- **No persistent history tracking**: Banktivity uses its own sync mechanism. Core Data's built-in history tracking would add unrecognized metadata that corrupts the vault.
+- **Background contexts**: All writes use background `NSManagedObjectContext` instances with `performAndWait` for data integrity.
+
+## How It Works
+
+Banktivity's `.bank8` bundle is a directory containing compiled Core Data models (`.momd` files) and a SQLite database (`StoreContent/core.sql`). This server:
+
+1. Loads and merges all `.momd` model bundles from the vault
+2. Opens the SQLite store via `NSPersistentContainer` (no history tracking)
+3. Exposes 47 MCP tools over stdio transport
+4. Uses KVC (`value(forKey:)`) to access entities since we load Banktivity's own compiled models at runtime
+
+## License
+
+[MIT](LICENSE)

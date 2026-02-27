@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Steve Flinter. MIT License.
+
 import Foundation
 
 /// Core Data uses a reference date of January 1, 2001 (Apple epoch).
