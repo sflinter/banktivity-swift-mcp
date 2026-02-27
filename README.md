@@ -15,8 +15,8 @@ Inspired by [banktivity-mcp](https://github.com/mhriemers/banktivity-mcp) (TypeS
 ## Installation
 
 ```sh
-git clone https://github.com/yourusername/banktivity-mcp-swift.git
-cd banktivity-mcp-swift
+git clone https://github.com/sflinter/banktivity-swift-mcp.git
+cd banktivity-swift-mcp
 swift build -c release
 cp .build/release/banktivity-mcp ~/.local/bin/
 codesign -fs - ~/.local/bin/banktivity-mcp
