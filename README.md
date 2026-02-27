@@ -1,4 +1,4 @@
-# banktivity-mcp
+# banktivity-swift-mcp
 
 A [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server for [Banktivity](https://www.iggsoftware.com/banktivity/) personal finance files. It gives AI assistants like Claude full read/write access to your `.bank8` vault — accounts, transactions, categories, tags, templates, import rules, and scheduled transactions.
 
