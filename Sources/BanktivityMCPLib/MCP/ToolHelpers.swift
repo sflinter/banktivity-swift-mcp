@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Steve Flinter. MIT License.
 
 import Foundation
+import BanktivityLib
 import MCP
 
 /// Helper functions for building MCP tool responses
@@ -53,13 +54,9 @@ enum ToolHelpers {
         return jsonResponse(response)
     }
 
-    /// Format currency for display
+    /// Format currency for display (delegates to BanktivityLib)
     static func formatCurrency(_ amount: Double, currency: String = "EUR") -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .currency
-        formatter.currencyCode = currency
-        formatter.locale = Locale(identifier: "nl_NL")
-        return formatter.string(from: NSNumber(value: amount)) ?? "\(amount)"
+        BanktivityLib.formatCurrency(amount, currency: currency)
     }
 
     /// Extract a string value from tool arguments

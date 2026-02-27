@@ -4,17 +4,17 @@ import CoreData
 import Foundation
 
 /// Repository for scheduled transaction operations using Core Data
-final class ScheduledTransactionRepository: BaseRepository, @unchecked Sendable {
+public final class ScheduledTransactionRepository: BaseRepository, @unchecked Sendable {
 
     /// List all scheduled transactions
-    func list() throws -> [ScheduledTransactionDTO] {
+    public func list() throws -> [ScheduledTransactionDTO] {
         let request = NSFetchRequest<NSManagedObject>(entityName: "ScheduledTemplateSelector")
         let results = try fetch(request)
         return results.compactMap { mapToDTO($0) }
     }
 
     /// Get a scheduled transaction by PK
-    func get(scheduleId: Int) throws -> ScheduledTransactionDTO? {
+    public func get(scheduleId: Int) throws -> ScheduledTransactionDTO? {
         guard let object = try fetchByPK(entityName: "ScheduledTemplateSelector", pk: scheduleId) else {
             return nil
         }
@@ -24,7 +24,7 @@ final class ScheduledTransactionRepository: BaseRepository, @unchecked Sendable 
     // MARK: - Write Operations
 
     /// Create a new scheduled transaction
-    func create(
+    public func create(
         templateId: Int,
         startDate: String,
         accountId: String? = nil,
@@ -71,7 +71,7 @@ final class ScheduledTransactionRepository: BaseRepository, @unchecked Sendable 
     }
 
     /// Update a scheduled transaction
-    func update(
+    public func update(
         scheduleId: Int,
         startDate: String? = nil,
         nextDate: String? = nil,
@@ -97,7 +97,7 @@ final class ScheduledTransactionRepository: BaseRepository, @unchecked Sendable 
     }
 
     /// Delete a scheduled transaction and its recurring transaction
-    func delete(scheduleId: Int) throws -> Bool {
+    public func delete(scheduleId: Int) throws -> Bool {
         try performWriteReturning { [self] ctx in
             guard let schedule = try fetchByPK(entityName: "ScheduledTemplateSelector", pk: scheduleId, in: ctx) else {
                 return false
@@ -115,7 +115,7 @@ final class ScheduledTransactionRepository: BaseRepository, @unchecked Sendable 
 
     // MARK: - DTO Mapping
 
-    func mapToDTO(_ object: NSManagedObject) -> ScheduledTransactionDTO? {
+    public func mapToDTO(_ object: NSManagedObject) -> ScheduledTransactionDTO? {
         let pk = Self.extractPK(from: object.objectID)
 
         guard let template = Self.relatedObject(object, "pTransactionTemplate") else { return nil }

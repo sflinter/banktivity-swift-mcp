@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Steve Flinter. MIT License.
 
 import Foundation
+import BanktivityLib
 import MCP
 
 /// Register scheduled transaction MCP tools

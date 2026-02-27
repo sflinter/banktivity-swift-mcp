@@ -4,26 +4,26 @@ import CoreData
 import Foundation
 
 /// Base repository providing Core Data context access and common helpers
-class BaseRepository: @unchecked Sendable {
-    let container: NSPersistentContainer
+open class BaseRepository: @unchecked Sendable {
+    public let container: NSPersistentContainer
 
-    init(container: NSPersistentContainer) {
+    public init(container: NSPersistentContainer) {
         self.container = container
     }
 
     /// Get the view context for read operations
-    var context: NSManagedObjectContext {
+    public var context: NSManagedObjectContext {
         container.viewContext
     }
 
     /// Perform a fetch request and return results
-    func fetch<T: NSFetchRequestResult>(_ request: NSFetchRequest<T>) throws -> [T] {
+    public func fetch<T: NSFetchRequestResult>(_ request: NSFetchRequest<T>) throws -> [T] {
         try context.fetch(request)
     }
 
     /// Fetch a single object by entity name and primary key (Z_PK).
     /// Handles entity inheritance by trying the base entity and all subentities.
-    func fetchByPK(entityName: String, pk: Int) throws -> NSManagedObject? {
+    public func fetchByPK(entityName: String, pk: Int) throws -> NSManagedObject? {
         let coordinator = container.persistentStoreCoordinator
         guard let store = coordinator.persistentStores.first,
               let entity = container.managedObjectModel.entitiesByName[entityName]
@@ -58,7 +58,7 @@ class BaseRepository: @unchecked Sendable {
 
     /// Construct the Core Data object URI for a given store, entity, and PK.
     /// Format: x-coredata://<storeUUID>/<entityName>/p<pk>
-    func objectURI(store: NSPersistentStore, entityName: String, pk: Int) -> URL {
+    public func objectURI(store: NSPersistentStore, entityName: String, pk: Int) -> URL {
         var components = URLComponents()
         components.scheme = "x-coredata"
         components.host = store.identifier
@@ -67,21 +67,21 @@ class BaseRepository: @unchecked Sendable {
     }
 
     /// Count entities matching a predicate
-    func count(entityName: String, predicate: NSPredicate? = nil) throws -> Int {
+    public func count(entityName: String, predicate: NSPredicate? = nil) throws -> Int {
         let request = NSFetchRequest<NSManagedObject>(entityName: entityName)
         request.predicate = predicate
         return try context.count(for: request)
     }
 
     /// Save the context
-    func save() throws {
+    public func save() throws {
         if context.hasChanges {
             try context.save()
         }
     }
 
     /// Perform work on a background context and save
-    func performWrite(_ block: @escaping (NSManagedObjectContext) throws -> Void) throws {
+    public func performWrite(_ block: @escaping (NSManagedObjectContext) throws -> Void) throws {
         let bgContext = container.newBackgroundContext()
         var writeError: Error?
         bgContext.performAndWait {
@@ -100,7 +100,7 @@ class BaseRepository: @unchecked Sendable {
     }
 
     /// Perform a write that returns a value
-    func performWriteReturning<T>(_ block: @escaping (NSManagedObjectContext) throws -> T) throws -> T {
+    public func performWriteReturning<T>(_ block: @escaping (NSManagedObjectContext) throws -> T) throws -> T {
         let bgContext = container.newBackgroundContext()
         var result: T?
         var writeError: Error?
@@ -121,28 +121,28 @@ class BaseRepository: @unchecked Sendable {
     }
 
     /// Create a new managed object in the given context
-    static func createObject(entityName: String, in context: NSManagedObjectContext) -> NSManagedObject {
+    public static func createObject(entityName: String, in context: NSManagedObjectContext) -> NSManagedObject {
         NSEntityDescription.insertNewObject(forEntityName: entityName, into: context)
     }
 
     /// Generate a UUID string for new entities
-    static func generateUUID() -> String {
+    public static func generateUUID() -> String {
         UUID().uuidString
     }
 
     /// Set a date value (as Foundation Date) on a managed object
-    static func setDate(_ object: NSManagedObject, _ key: String, isoString: String?) {
+    public static func setDate(_ object: NSManagedObject, _ key: String, isoString: String?) {
         guard let iso = isoString, let ts = DateConversion.fromISO(iso) else { return }
         object.setValue(DateConversion.toDate(ts), forKey: key)
     }
 
     /// Set current timestamp on a managed object
-    static func setNow(_ object: NSManagedObject, _ key: String) {
+    public static func setNow(_ object: NSManagedObject, _ key: String) {
         object.setValue(Date(), forKey: key)
     }
 
     /// Fetch an object by PK in a specific context (for write operations on background contexts)
-    func fetchByPK(entityName: String, pk: Int, in ctx: NSManagedObjectContext) throws -> NSManagedObject? {
+    public func fetchByPK(entityName: String, pk: Int, in ctx: NSManagedObjectContext) throws -> NSManagedObject? {
         let coordinator = container.persistentStoreCoordinator
         guard let store = coordinator.persistentStores.first,
               let entity = container.managedObjectModel.entitiesByName[entityName]
@@ -168,27 +168,27 @@ class BaseRepository: @unchecked Sendable {
     // MARK: - KVC Helpers
 
     /// Safely get a string value from a managed object
-    static func string(_ object: NSManagedObject, _ key: String) -> String? {
+    public static func string(_ object: NSManagedObject, _ key: String) -> String? {
         object.value(forKey: key) as? String
     }
 
     /// Safely get a string value with a default
-    static func stringValue(_ object: NSManagedObject, _ key: String, default defaultValue: String = "") -> String {
+    public static func stringValue(_ object: NSManagedObject, _ key: String, default defaultValue: String = "") -> String {
         (object.value(forKey: key) as? String) ?? defaultValue
     }
 
     /// Safely get an integer value from a managed object
-    static func intValue(_ object: NSManagedObject, _ key: String) -> Int {
+    public static func intValue(_ object: NSManagedObject, _ key: String) -> Int {
         (object.value(forKey: key) as? Int) ?? 0
     }
 
     /// Safely get an optional integer value
-    static func optionalInt(_ object: NSManagedObject, _ key: String) -> Int? {
+    public static func optionalInt(_ object: NSManagedObject, _ key: String) -> Int? {
         object.value(forKey: key) as? Int
     }
 
     /// Safely get a double value from a managed object
-    static func doubleValue(_ object: NSManagedObject, _ key: String) -> Double {
+    public static func doubleValue(_ object: NSManagedObject, _ key: String) -> Double {
         if let decimal = object.value(forKey: key) as? NSDecimalNumber {
             return decimal.doubleValue
         }
@@ -196,12 +196,12 @@ class BaseRepository: @unchecked Sendable {
     }
 
     /// Safely get a boolean value from a managed object
-    static func boolValue(_ object: NSManagedObject, _ key: String) -> Bool {
+    public static func boolValue(_ object: NSManagedObject, _ key: String) -> Bool {
         (object.value(forKey: key) as? Bool) ?? false
     }
 
     /// Safely get a date value (as Core Data timestamp) from a managed object
-    static func dateValue(_ object: NSManagedObject, _ key: String) -> Double? {
+    public static func dateValue(_ object: NSManagedObject, _ key: String) -> Double? {
         if let date = object.value(forKey: key) as? Date {
             return date.timeIntervalSinceReferenceDate
         }
@@ -209,7 +209,7 @@ class BaseRepository: @unchecked Sendable {
     }
 
     /// Get the currency code from an object that may have a currency relationship
-    static func currencyCode(_ object: NSManagedObject) -> String? {
+    public static func currencyCode(_ object: NSManagedObject) -> String? {
         // PrimaryAccount has "currency" relationship, Account (categories) does not
         if object.entity.relationshipsByName["currency"] != nil,
            let currency = object.value(forKey: "currency") as? NSManagedObject
@@ -220,14 +220,14 @@ class BaseRepository: @unchecked Sendable {
     }
 
     /// Get a to-one related object
-    static func relatedObject(_ object: NSManagedObject, _ key: String) -> NSManagedObject? {
+    public static func relatedObject(_ object: NSManagedObject, _ key: String) -> NSManagedObject? {
         guard object.entity.relationshipsByName[key] != nil else { return nil }
         return object.value(forKey: key) as? NSManagedObject
     }
 
     /// Extract the Z_PK (primary key) from a Core Data objectID.
     /// The URI format is: x-coredata://<storeID>/<entity>/p<pk>
-    static func extractPK(from objectID: NSManagedObjectID) -> Int {
+    public static func extractPK(from objectID: NSManagedObjectID) -> Int {
         let uri = objectID.uriRepresentation()
         let lastComponent = uri.lastPathComponent  // "p123"
         if lastComponent.hasPrefix("p"), let pk = Int(lastComponent.dropFirst()) {
@@ -237,7 +237,7 @@ class BaseRepository: @unchecked Sendable {
     }
 
     /// Get a to-many related object set
-    static func relatedSet(_ object: NSManagedObject, _ key: String) -> Set<NSManagedObject> {
+    public static func relatedSet(_ object: NSManagedObject, _ key: String) -> Set<NSManagedObject> {
         guard object.entity.relationshipsByName[key] != nil else { return [] }
         if let set = object.value(forKey: key) as? Set<NSManagedObject> {
             return set

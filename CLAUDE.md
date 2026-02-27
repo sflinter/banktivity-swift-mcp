@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-A Swift MCP (Model Context Protocol) server for [Banktivity](https://www.iggsoftware.com/banktivity/) personal finance vaults. It reads and writes `.bank8` files using Core Data's `NSPersistentContainer`, ensuring changes are properly tracked for CloudKit sync. This replaces an earlier TypeScript implementation that used direct SQL and corrupted vaults.
+A Swift MCP (Model Context Protocol) server and CLI for [Banktivity](https://www.iggsoftware.com/banktivity/) personal finance vaults. It reads and writes `.bank8` files using Core Data's `NSPersistentContainer`, ensuring changes are properly tracked for CloudKit sync. This replaces an earlier TypeScript implementation that used direct SQL and corrupted vaults.
 
 ## Build & Run
 
@@ -12,12 +12,18 @@ A Swift MCP (Model Context Protocol) server for [Banktivity](https://www.iggsoft
 swift build                    # Debug build
 swift build -c release         # Release build
 
-# Install binary
+# Install binaries
 cp .build/release/banktivity-mcp ~/.local/bin/
+cp .build/release/banktivity-cli ~/.local/bin/
 codesign -fs - ~/.local/bin/banktivity-mcp   # Re-sign after copy
+codesign -fs - ~/.local/bin/banktivity-cli
 
-# Run directly
+# Run MCP server
 BANKTIVITY_FILE_PATH="/path/to/file.bank8" swift run banktivity-mcp
+
+# Run CLI
+BANKTIVITY_FILE_PATH="/path/to/file.bank8" swift run banktivity-cli accounts list
+swift run banktivity-cli --vault "/path/to/file.bank8" accounts list
 ```
 
 ## Testing
@@ -37,15 +43,26 @@ Integration tests require a Banktivity vault at `~/Documents/Banktivity/Steves A
 
 ## Architecture
 
+Three-target package structure:
+
 ```
-main.swift → reads BANKTIVITY_FILE_PATH env
-           → PersistentContainerFactory.create() → loads/merges .momd models → NSPersistentContainer
-           → WriteGuard (lsof-based check if Banktivity.app has file open)
-           → ToolRegistry.registerAllTools() → 30+ MCP tools
-           → MCP Server (stdio transport)
+BanktivityLib        ← Pure domain library (no MCP dependency)
+  CoreData/          PersistentContainer, DateConversion, WriteGuard
+  Repositories/      BaseRepository + 10 domain repositories
+  Models/            DTOs, Constants, Errors, Formatting
+
+BanktivityMCPLib     ← MCP glue (depends on BanktivityLib + MCP SDK)
+  MCP/               ToolRegistry, ToolHelpers, Tools/*.swift
+
+banktivity-mcp       ← MCP server executable (stdio transport)
+banktivity-cli       ← CLI executable (depends on BanktivityLib + ArgumentParser)
 ```
 
-**Library/Executable split**: `BanktivityMCPLib` (library) contains all logic; `banktivity-mcp` (executable) is a thin entry point. Tests import the library via `@testable import BanktivityMCPLib`.
+**MCP server flow**: `main.swift` → reads `BANKTIVITY_FILE_PATH` env → `PersistentContainerFactory.create()` → `WriteGuard` → `ToolRegistry.registerAllTools()` → MCP Server (stdio)
+
+**CLI flow**: `banktivity-cli <subcommand>` → reads `--vault` or `BANKTIVITY_FILE_PATH` → creates container + repos → executes command → JSON output
+
+Tests import `@testable import BanktivityLib`.
 
 ### Core Data Access
 
@@ -58,7 +75,7 @@ let tx = try context.fetch(request)
 let name = tx.value(forKey: "pName") as? String
 ```
 
-Property names are prefixed with `p` (e.g., `pName`, `pDate`, `pAccountClass`, `pHidden`). Use the `dump_schema` MCP tool to inspect entity/attribute names.
+Property names are prefixed with `p` (e.g., `pName`, `pDate`, `pAccountClass`, `pHidden`). Use the `dump_schema` MCP tool or `banktivity-cli schema` to inspect entity/attribute names.
 
 ### Repository Pattern
 

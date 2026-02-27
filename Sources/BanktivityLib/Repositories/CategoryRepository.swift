@@ -4,10 +4,10 @@ import CoreData
 import Foundation
 
 /// Repository for category operations using Core Data
-final class CategoryRepository: BaseRepository, @unchecked Sendable {
+public final class CategoryRepository: BaseRepository, @unchecked Sendable {
 
     /// List categories with optional filtering
-    func list(type: String? = nil, includeHidden: Bool = false, topLevelOnly: Bool = false) throws -> [CategoryDTO] {
+    public func list(type: String? = nil, includeHidden: Bool = false, topLevelOnly: Bool = false) throws -> [CategoryDTO] {
         let request = NSFetchRequest<NSManagedObject>(entityName: "Account")
 
         var predicates: [NSPredicate] = []
@@ -39,7 +39,7 @@ final class CategoryRepository: BaseRepository, @unchecked Sendable {
     }
 
     /// Get a single category by ID
-    func get(categoryId: Int) throws -> CategoryDTO? {
+    public func get(categoryId: Int) throws -> CategoryDTO? {
         guard let object = try fetchByPK(entityName: "Account", pk: categoryId) else { return nil }
         let accountClass = Self.intValue(object, "pAccountClass")
         guard accountClass == AccountClass.income || accountClass == AccountClass.expense else {
@@ -49,7 +49,7 @@ final class CategoryRepository: BaseRepository, @unchecked Sendable {
     }
 
     /// Find a category by path (colon-separated, e.g., "Insurance:Life")
-    func findByPath(_ path: String) throws -> CategoryDTO? {
+    public func findByPath(_ path: String) throws -> CategoryDTO? {
         let request = NSFetchRequest<NSManagedObject>(entityName: "Account")
         request.predicate = NSPredicate(
             format: "(pAccountClass == %d OR pAccountClass == %d) AND pFullName ==[cd] %@",
@@ -61,7 +61,7 @@ final class CategoryRepository: BaseRepository, @unchecked Sendable {
     }
 
     /// Find categories by name (case-insensitive)
-    func findByName(_ name: String) throws -> [CategoryDTO] {
+    public func findByName(_ name: String) throws -> [CategoryDTO] {
         let request = NSFetchRequest<NSManagedObject>(entityName: "Account")
         request.predicate = NSPredicate(
             format: "(pAccountClass == %d OR pAccountClass == %d) AND pName ==[cd] %@",
@@ -72,7 +72,7 @@ final class CategoryRepository: BaseRepository, @unchecked Sendable {
     }
 
     /// Build category tree
-    func getTree(type: String? = nil) throws -> [CategoryTreeNodeDTO] {
+    public func getTree(type: String? = nil) throws -> [CategoryTreeNodeDTO] {
         let allCategories = try list(type: type, includeHidden: true)
 
         // Build tree from flat list
@@ -102,7 +102,7 @@ final class CategoryRepository: BaseRepository, @unchecked Sendable {
     }
 
     /// Resolve category ID from ID or name
-    func resolveId(categoryId: Int? = nil, categoryName: String? = nil) throws -> Int? {
+    public func resolveId(categoryId: Int? = nil, categoryName: String? = nil) throws -> Int? {
         if let id = categoryId { return id }
         if let name = categoryName {
             if let cat = try findByPath(name) { return cat.id }
@@ -115,7 +115,7 @@ final class CategoryRepository: BaseRepository, @unchecked Sendable {
     // MARK: - Write Operations
 
     /// Create a new category (income or expense)
-    func create(
+    public func create(
         name: String,
         type: String,
         parentId: Int? = nil,
@@ -173,7 +173,7 @@ final class CategoryRepository: BaseRepository, @unchecked Sendable {
 
     // MARK: - DTO Mapping
 
-    func mapToDTO(_ object: NSManagedObject) -> CategoryDTO {
+    public func mapToDTO(_ object: NSManagedObject) -> CategoryDTO {
         let accountClass = Self.intValue(object, "pAccountClass")
         let pk = Self.extractPK(from: object.objectID)
 

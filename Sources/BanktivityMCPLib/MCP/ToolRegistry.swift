@@ -2,6 +2,7 @@
 
 import CoreData
 import Foundation
+import BanktivityLib
 import MCP
 
 /// Central registry for all MCP tools.
