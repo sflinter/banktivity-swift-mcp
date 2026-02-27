@@ -62,7 +62,7 @@ registry.registerAllTools()
 
 let server = Server(
     name: "banktivity-mcp",
-    version: "1.0.0",
+    version: "0.1.0",
     capabilities: .init(tools: .init(listChanged: false))
 )
 
