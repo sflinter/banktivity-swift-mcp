@@ -155,13 +155,22 @@ public final class LineItemRepository: BaseRepository, @unchecked Sendable {
             accountName = "Unknown"
         }
 
+        let statementId: Int?
+        if let statement = Self.relatedObject(object, "pStatement") {
+            statementId = Self.extractPK(from: statement.objectID)
+        } else {
+            statementId = nil
+        }
+
         return LineItemDTO(
             id: pk,
             accountId: accountId,
             accountName: accountName,
             amount: Self.doubleValue(object, "pTransactionAmount"),
             memo: Self.string(object, "pMemo"),
-            runningBalance: Self.doubleValue(object, "pRunningBalance")
+            runningBalance: Self.doubleValue(object, "pRunningBalance"),
+            cleared: Self.boolValue(object, "pCleared"),
+            statementId: statementId
         )
     }
 }

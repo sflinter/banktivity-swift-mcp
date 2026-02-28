@@ -152,5 +152,12 @@ public final class ToolRegistry: @unchecked Sendable {
             registry: self, lineItems: lineItemRepo,
             accounts: accountRepo, writeGuard: writeGuard
         )
+
+        // Statement tools (read + write)
+        let statementRepo = StatementRepository(container: container, lineItemRepo: lineItemRepo)
+        registerStatementTools(
+            registry: self, statements: statementRepo,
+            accounts: accountRepo, lineItems: lineItemRepo, writeGuard: writeGuard
+        )
     }
 }

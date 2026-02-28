@@ -46,10 +46,13 @@ public struct LineItemDTO: Codable, Sendable {
     public let amount: Double
     public let memo: String?
     public let runningBalance: Double?
+    public let cleared: Bool
+    public let statementId: Int?
 
-    public init(id: Int, accountId: Int, accountName: String, amount: Double, memo: String?, runningBalance: Double?) {
+    public init(id: Int, accountId: Int, accountName: String, amount: Double, memo: String?, runningBalance: Double?, cleared: Bool = false, statementId: Int? = nil) {
         self.id = id; self.accountId = accountId; self.accountName = accountName
         self.amount = amount; self.memo = memo; self.runningBalance = runningBalance
+        self.cleared = cleared; self.statementId = statementId
     }
 }
 
@@ -318,5 +321,49 @@ public struct ReviewedTransactionDTO: Codable, Sendable {
         self.id = id; self.date = date; self.title = title; self.note = note
         self.accountName = accountName; self.amount = amount; self.categoryId = categoryId
         self.categoryName = categoryName; self.categoryPath = categoryPath
+    }
+}
+
+public struct StatementDTO: Codable, Sendable {
+    public let id: Int
+    public let accountId: Int
+    public let accountName: String
+    public let name: String?
+    public let note: String?
+    public let startDate: String
+    public let endDate: String
+    public let beginningBalance: Double
+    public let endingBalance: Double
+    public let reconciledLineItemCount: Int
+    public let reconciledBalance: Double
+    public let difference: Double
+    public let isBalanced: Bool
+    public let createdAt: String?
+    public let modifiedAt: String?
+
+    public init(id: Int, accountId: Int, accountName: String, name: String?, note: String?, startDate: String, endDate: String, beginningBalance: Double, endingBalance: Double, reconciledLineItemCount: Int, reconciledBalance: Double, difference: Double, isBalanced: Bool, createdAt: String?, modifiedAt: String?) {
+        self.id = id; self.accountId = accountId; self.accountName = accountName
+        self.name = name; self.note = note; self.startDate = startDate; self.endDate = endDate
+        self.beginningBalance = beginningBalance; self.endingBalance = endingBalance
+        self.reconciledLineItemCount = reconciledLineItemCount; self.reconciledBalance = reconciledBalance
+        self.difference = difference; self.isBalanced = isBalanced
+        self.createdAt = createdAt; self.modifiedAt = modifiedAt
+    }
+}
+
+public struct StatementSummaryDTO: Codable, Sendable {
+    public let id: Int
+    public let name: String?
+    public let startDate: String
+    public let endDate: String
+    public let beginningBalance: Double
+    public let endingBalance: Double
+    public let reconciledLineItemCount: Int
+    public let isBalanced: Bool
+
+    public init(id: Int, name: String?, startDate: String, endDate: String, beginningBalance: Double, endingBalance: Double, reconciledLineItemCount: Int, isBalanced: Bool) {
+        self.id = id; self.name = name; self.startDate = startDate; self.endDate = endDate
+        self.beginningBalance = beginningBalance; self.endingBalance = endingBalance
+        self.reconciledLineItemCount = reconciledLineItemCount; self.isBalanced = isBalanced
     }
 }

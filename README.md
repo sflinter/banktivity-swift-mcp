@@ -127,6 +127,15 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 - `update_scheduled_transaction` — Update a scheduled transaction
 - `delete_scheduled_transaction` — Delete a scheduled transaction
 
+### Statements (Reconciliation)
+- `list_statements` — List statements for an account
+- `get_statement` — Get a statement with reconciliation progress
+- `create_statement` — Create a new statement with balance validation
+- `delete_statement` — Delete a statement and unreconcile its line items
+- `reconcile_line_items` — Assign line items to a statement
+- `unreconcile_line_items` — Remove line items from a statement
+- `get_unreconciled_line_items` — List unreconciled line items for an account
+
 ### Diagnostic
 - `dump_schema` — Inspect the Core Data model schema (entity names, attributes, relationships)
 
@@ -154,6 +163,7 @@ banktivity-cli tags bulk-tag --transaction-ids "100,101,102" --tag-name "Vacatio
 - `templates list`, `templates get`, `templates create`, `templates update`, `templates delete`
 - `import-rules list`, `import-rules get`, `import-rules match`, `import-rules create`, `import-rules update`, `import-rules delete`
 - `scheduled list`, `scheduled get`, `scheduled create`, `scheduled update`, `scheduled delete`
+- `statements list`, `statements get`, `statements create`, `statements delete`, `statements reconcile`, `statements unreconcile`, `statements unreconciled`
 - `schema`
 
 Most commands that accept `--account-id` also accept `--account-name` as an alternative. The `transactions create` command supports `--line-items` with a JSON array for multi-line-item (split) transactions.
@@ -188,7 +198,7 @@ Banktivity's `.bank8` bundle is a directory containing compiled Core Data models
 
 1. Loads and merges all `.momd` model bundles from the vault
 2. Opens the SQLite store via `NSPersistentContainer` (no history tracking)
-3. Exposes 47 MCP tools over stdio transport
+3. Exposes 54 MCP tools over stdio transport
 4. Uses KVC (`value(forKey:)`) to access entities since we load Banktivity's own compiled models at runtime
 
 ## License
