@@ -90,7 +90,7 @@ struct Tags: AsyncParsableCommand {
                 count = try tags.tagTransaction(transactionId: transactionId, tagId: resolvedTagId)
             }
 
-            outputJSON(["message": "Tagged \(count) line items", "action": action] as [String: Any])
+            try outputJSON(["message": "Tagged \(count) line items", "action": action] as [String: Any])
         }
     }
 }

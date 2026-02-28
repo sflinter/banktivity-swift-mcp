@@ -24,9 +24,6 @@ struct BanktivityCLI: AsyncParsableCommand {
         ]
     )
 
-    @Option(name: .long, help: "Path to .bank8 vault (or set BANKTIVITY_FILE_PATH)")
-    var vault: String?
-
     /// Resolve the vault path from --vault or BANKTIVITY_FILE_PATH
     static func resolveVaultPath(vault: String?) throws -> String {
         if let path = vault ?? ProcessInfo.processInfo.environment["BANKTIVITY_FILE_PATH"] {
@@ -62,16 +59,14 @@ func outputJSON<T: Encodable>(_ value: T) throws {
     print(String(data: data, encoding: .utf8) ?? "{}")
 }
 
-func outputJSON(_ value: [String: Any]) {
-    if let data = try? JSONSerialization.data(withJSONObject: value, options: [.prettyPrinted, .sortedKeys]) {
-        print(String(data: data, encoding: .utf8) ?? "{}")
-    }
+func outputJSON(_ value: [String: Any]) throws {
+    let data = try JSONSerialization.data(withJSONObject: value, options: [.prettyPrinted, .sortedKeys])
+    print(String(data: data, encoding: .utf8) ?? "{}")
 }
 
-func outputJSON(_ value: [[String: Any]]) {
-    if let data = try? JSONSerialization.data(withJSONObject: value, options: [.prettyPrinted, .sortedKeys]) {
-        print(String(data: data, encoding: .utf8) ?? "[]")
-    }
+func outputJSON(_ value: [[String: Any]]) throws {
+    let data = try JSONSerialization.data(withJSONObject: value, options: [.prettyPrinted, .sortedKeys])
+    print(String(data: data, encoding: .utf8) ?? "[]")
 }
 
 /// Check write guard and throw if blocked

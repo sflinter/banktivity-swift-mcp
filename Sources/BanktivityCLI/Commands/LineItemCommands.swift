@@ -129,7 +129,7 @@ struct LineItems: AsyncParsableCommand {
                 throw ToolError.notFound("Line item not found: \(id)")
             }
             try lineItems.recalculateRunningBalances(accountId: info.accountId)
-            outputJSON(["message": "Line item \(id) deleted"] as [String: Any])
+            try outputJSON(["message": "Line item \(id) deleted"] as [String: Any])
         }
     }
 }

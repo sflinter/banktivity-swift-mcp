@@ -157,7 +157,7 @@ struct Scheduled: AsyncParsableCommand {
             if !deleted {
                 throw ToolError.notFound("Scheduled transaction not found: \(id)")
             }
-            outputJSON(["message": "Scheduled transaction \(id) deleted"] as [String: Any])
+            try outputJSON(["message": "Scheduled transaction \(id) deleted"] as [String: Any])
         }
     }
 }

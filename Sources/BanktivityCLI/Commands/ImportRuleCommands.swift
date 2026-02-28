@@ -143,7 +143,7 @@ struct ImportRules: AsyncParsableCommand {
             if !deleted {
                 throw ToolError.notFound("Import rule not found: \(id)")
             }
-            outputJSON(["message": "Import rule \(id) deleted"] as [String: Any])
+            try outputJSON(["message": "Import rule \(id) deleted"] as [String: Any])
         }
     }
 }

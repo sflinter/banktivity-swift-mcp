@@ -147,7 +147,7 @@ struct Templates: AsyncParsableCommand {
             if !deleted {
                 throw ToolError.notFound("Template not found: \(id)")
             }
-            outputJSON(["message": "Template \(id) deleted"] as [String: Any])
+            try outputJSON(["message": "Template \(id) deleted"] as [String: Any])
         }
     }
 }

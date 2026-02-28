@@ -50,7 +50,7 @@ struct Accounts: AsyncParsableCommand {
                 return dict
             }
 
-            outputJSON(accountsWithBalances)
+            try outputJSON(accountsWithBalances)
         }
     }
 
@@ -70,7 +70,7 @@ struct Accounts: AsyncParsableCommand {
             let balance = try accounts.getBalance(accountId: accountId)
             let account = try accounts.get(accountId: accountId)
 
-            outputJSON([
+            try outputJSON([
                 "accountId": accountId,
                 "accountName": account?.name ?? "Unknown",
                 "balance": balance,
@@ -182,7 +182,7 @@ struct Accounts: AsyncParsableCommand {
                 "tags": tagCount,
                 "netWorth": netWorthSummary,
             ]
-            outputJSON(summary)
+            try outputJSON(summary)
         }
     }
 }

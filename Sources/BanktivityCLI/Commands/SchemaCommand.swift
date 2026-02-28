@@ -25,9 +25,9 @@ struct Schema: AsyncParsableCommand {
             if filtered.isEmpty {
                 throw ToolError.notFound("Entity '\(entityFilter)' not found")
             }
-            outputJSON(filtered)
+            try outputJSON(filtered)
         } else {
-            outputJSON(schema)
+            try outputJSON(schema)
         }
     }
 }
