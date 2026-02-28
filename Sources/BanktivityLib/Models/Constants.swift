@@ -3,27 +3,27 @@
 import Foundation
 
 /// Core Data entity type constants (Z_ENT values)
-enum ZEntityType {
-    static let account = 1
-    static let category = 2
-    static let primaryAccount = 3
-    static let lineItem = 19
-    static let lineItemTemplate = 21
-    static let payee = 31
-    static let payeeInfo = 33
-    static let recurringTransaction = 35
-    static let tag = 47
-    static let templateSelector = 48
-    static let importSourceTemplateSelector = 49
-    static let scheduledTemplateSelector = 52
-    static let transaction = 53
-    static let transactionTemplate = 54
-    static let transactionType = 55
-    static let syncedHostedEntity = 46
+public enum ZEntityType {
+    public static let account = 1
+    public static let category = 2
+    public static let primaryAccount = 3
+    public static let lineItem = 19
+    public static let lineItemTemplate = 21
+    public static let payee = 31
+    public static let payeeInfo = 33
+    public static let recurringTransaction = 35
+    public static let tag = 47
+    public static let templateSelector = 48
+    public static let importSourceTemplateSelector = 49
+    public static let scheduledTemplateSelector = 52
+    public static let transaction = 53
+    public static let transactionTemplate = 54
+    public static let transactionType = 55
+    public static let syncedHostedEntity = 46
 }
 
 /// Maps entity Z_ENT values to sync entity type name strings
-let syncEntityTypeNames: [Int: String] = [
+public let syncEntityTypeNames: [Int: String] = [
     ZEntityType.account: "Account",
     ZEntityType.category: "Account",
     ZEntityType.primaryAccount: "Account",
@@ -34,23 +34,23 @@ let syncEntityTypeNames: [Int: String] = [
 ]
 
 /// Account class constants
-enum AccountClass {
-    static let realEstate = 2
-    static let cash = 1000
-    static let checking = 1001
-    static let savings = 1002
-    static let moneyMarket = 1006
-    static let investment = 2000
-    static let retirement = 2001
-    static let education = 2003
-    static let loan = 4001
-    static let creditCard = 5001
-    static let income = 6000
-    static let expense = 7000
+public enum AccountClass {
+    public static let realEstate = 2
+    public static let cash = 1000
+    public static let checking = 1001
+    public static let savings = 1002
+    public static let moneyMarket = 1006
+    public static let investment = 2000
+    public static let retirement = 2001
+    public static let education = 2003
+    public static let loan = 4001
+    public static let creditCard = 5001
+    public static let income = 6000
+    public static let expense = 7000
 }
 
 /// Asset account classes (positive net worth)
-let assetClasses: Set<Int> = [
+public let assetClasses: Set<Int> = [
     AccountClass.realEstate,
     AccountClass.cash,
     AccountClass.checking,
@@ -62,13 +62,13 @@ let assetClasses: Set<Int> = [
 ]
 
 /// Liability account classes (negative net worth)
-let liabilityClasses: Set<Int> = [
+public let liabilityClasses: Set<Int> = [
     AccountClass.loan,
     AccountClass.creditCard,
 ]
 
 /// Account class display names
-let accountClassNames: [Int: String] = [
+public let accountClassNames: [Int: String] = [
     AccountClass.realEstate: "Real Estate",
     AccountClass.cash: "Cash",
     AccountClass.checking: "Checking",
@@ -84,6 +84,6 @@ let accountClassNames: [Int: String] = [
 ]
 
 /// Get account type display name from account class
-func getAccountTypeName(_ accountClass: Int) -> String {
+public func getAccountTypeName(_ accountClass: Int) -> String {
     accountClassNames[accountClass] ?? "Unknown (\(accountClass))"
 }

@@ -4,16 +4,16 @@ import CoreData
 import Foundation
 
 /// Repository for transaction operations using Core Data
-final class TransactionRepository: BaseRepository, @unchecked Sendable {
+public final class TransactionRepository: BaseRepository, @unchecked Sendable {
     private let lineItemRepo: LineItemRepository
 
-    init(container: NSPersistentContainer, lineItemRepo: LineItemRepository) {
+    public init(container: NSPersistentContainer, lineItemRepo: LineItemRepository) {
         self.lineItemRepo = lineItemRepo
         super.init(container: container)
     }
 
     /// List transactions with optional filtering
-    func list(
+    public func list(
         accountId: Int? = nil,
         startDate: String? = nil,
         endDate: String? = nil,
@@ -66,7 +66,7 @@ final class TransactionRepository: BaseRepository, @unchecked Sendable {
     }
 
     /// Search transactions by title or note (case-insensitive LIKE)
-    func search(query: String, limit: Int = 50) throws -> [TransactionDTO] {
+    public func search(query: String, limit: Int = 50) throws -> [TransactionDTO] {
         let request = NSFetchRequest<NSManagedObject>(entityName: "Transaction")
         let pattern = "*\(query)*"
         request.predicate = NSPredicate(
@@ -82,7 +82,7 @@ final class TransactionRepository: BaseRepository, @unchecked Sendable {
     }
 
     /// Get a single transaction by primary key
-    func get(transactionId: Int) throws -> TransactionDTO? {
+    public func get(transactionId: Int) throws -> TransactionDTO? {
         guard let object = try fetchByPK(entityName: "Transaction", pk: transactionId) else {
             return nil
         }
@@ -90,14 +90,14 @@ final class TransactionRepository: BaseRepository, @unchecked Sendable {
     }
 
     /// Get total transaction count
-    func count() throws -> Int {
+    public func count() throws -> Int {
         try count(entityName: "Transaction")
     }
 
     // MARK: - Write Operations
 
     /// Create a new transaction with line items
-    func create(
+    public func create(
         date: String,
         title: String,
         note: String? = nil,
@@ -164,7 +164,7 @@ final class TransactionRepository: BaseRepository, @unchecked Sendable {
     }
 
     /// Update an existing transaction
-    func update(transactionId: Int, title: String? = nil, note: String? = nil, date: String? = nil, cleared: Bool? = nil) throws -> TransactionDTO? {
+    public func update(transactionId: Int, title: String? = nil, note: String? = nil, date: String? = nil, cleared: Bool? = nil) throws -> TransactionDTO? {
         var dateChanged = false
 
         try performWrite { [self] ctx in
@@ -196,7 +196,7 @@ final class TransactionRepository: BaseRepository, @unchecked Sendable {
     }
 
     /// Delete a transaction and its line items
-    func delete(transactionId: Int) throws -> Bool {
+    public func delete(transactionId: Int) throws -> Bool {
         // Get affected account IDs before deletion
         let lineItems = try lineItemRepo.getForTransactionPK(transactionId)
         let affectedAccountIds = Set(lineItems.map(\.accountId))
@@ -228,7 +228,7 @@ final class TransactionRepository: BaseRepository, @unchecked Sendable {
 
     // MARK: - DTO Mapping
 
-    func mapToDTO(_ object: NSManagedObject) -> TransactionDTO {
+    public func mapToDTO(_ object: NSManagedObject) -> TransactionDTO {
         let pk = Self.extractPK(from: object.objectID)
 
         var transactionTypeName: String? = nil

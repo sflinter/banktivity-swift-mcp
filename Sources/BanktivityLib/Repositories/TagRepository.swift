@@ -4,10 +4,10 @@ import CoreData
 import Foundation
 
 /// Repository for tag operations using Core Data
-final class TagRepository: BaseRepository, @unchecked Sendable {
+public final class TagRepository: BaseRepository, @unchecked Sendable {
 
     /// List all tags
-    func list() throws -> [TagDTO] {
+    public func list() throws -> [TagDTO] {
         let request = NSFetchRequest<NSManagedObject>(entityName: "Tag")
         request.sortDescriptors = [NSSortDescriptor(key: "pName", ascending: true)]
 
@@ -16,13 +16,13 @@ final class TagRepository: BaseRepository, @unchecked Sendable {
     }
 
     /// Get a tag by primary key
-    func get(tagId: Int) throws -> TagDTO? {
+    public func get(tagId: Int) throws -> TagDTO? {
         guard let object = try fetchByPK(entityName: "Tag", pk: tagId) else { return nil }
         return mapToDTO(object)
     }
 
     /// Find a tag by name (case-insensitive)
-    func findByName(_ name: String) throws -> TagDTO? {
+    public func findByName(_ name: String) throws -> TagDTO? {
         let request = NSFetchRequest<NSManagedObject>(entityName: "Tag")
         request.predicate = NSPredicate(format: "pName ==[cd] %@", name)
         request.fetchLimit = 1
@@ -33,7 +33,7 @@ final class TagRepository: BaseRepository, @unchecked Sendable {
     // MARK: - Write Operations
 
     /// Create a new tag (or return existing if name matches)
-    func create(name: String) throws -> TagDTO {
+    public func create(name: String) throws -> TagDTO {
         // Check if tag already exists
         if let existing = try findByName(name) {
             return existing
@@ -58,7 +58,7 @@ final class TagRepository: BaseRepository, @unchecked Sendable {
     }
 
     /// Delete a tag by ID
-    func delete(tagId: Int) throws -> Bool {
+    public func delete(tagId: Int) throws -> Bool {
         try performWriteReturning { [self] ctx in
             guard let tag = try fetchByPK(entityName: "Tag", pk: tagId, in: ctx) else {
                 return false
@@ -69,7 +69,7 @@ final class TagRepository: BaseRepository, @unchecked Sendable {
     }
 
     /// Add a tag to all line items of a transaction
-    func tagTransaction(transactionId: Int, tagId: Int) throws -> Int {
+    public func tagTransaction(transactionId: Int, tagId: Int) throws -> Int {
         try performWriteReturning { [self] ctx in
             guard let tx = try fetchByPK(entityName: "Transaction", pk: transactionId, in: ctx) else {
                 throw ToolError.notFound("Transaction not found: \(transactionId)")
@@ -92,7 +92,7 @@ final class TagRepository: BaseRepository, @unchecked Sendable {
     }
 
     /// Remove a tag from all line items of a transaction
-    func untagTransaction(transactionId: Int, tagId: Int) throws -> Int {
+    public func untagTransaction(transactionId: Int, tagId: Int) throws -> Int {
         try performWriteReturning { [self] ctx in
             guard let tx = try fetchByPK(entityName: "Transaction", pk: transactionId, in: ctx) else {
                 throw ToolError.notFound("Transaction not found: \(transactionId)")
@@ -115,7 +115,7 @@ final class TagRepository: BaseRepository, @unchecked Sendable {
     }
 
     /// Get transactions that have a specific tag
-    func getTransactionsByTag(
+    public func getTransactionsByTag(
         tagId: Int,
         accountId: Int? = nil,
         startDate: String? = nil,
@@ -144,7 +144,7 @@ final class TagRepository: BaseRepository, @unchecked Sendable {
 
     // MARK: - DTO Mapping
 
-    func mapToDTO(_ object: NSManagedObject) -> TagDTO {
+    public func mapToDTO(_ object: NSManagedObject) -> TagDTO {
         TagDTO(
             id: Self.extractPK(from: object.objectID),
             name: Self.stringValue(object, "pName")

@@ -3,7 +3,7 @@
 import CoreData
 import Foundation
 import Testing
-@testable import BanktivityMCPLib
+@testable import BanktivityLib
 
 @Suite("Recategorize")
 struct RecategorizeTests {

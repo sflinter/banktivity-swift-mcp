@@ -4,10 +4,10 @@ import CoreData
 import Foundation
 
 /// Repository for transaction template operations using Core Data
-final class TemplateRepository: BaseRepository, @unchecked Sendable {
+public final class TemplateRepository: BaseRepository, @unchecked Sendable {
 
     /// List all transaction templates
-    func list() throws -> [TransactionTemplateDTO] {
+    public func list() throws -> [TransactionTemplateDTO] {
         let request = NSFetchRequest<NSManagedObject>(entityName: "TransactionTemplate")
         request.sortDescriptors = [NSSortDescriptor(key: "pTitle", ascending: true)]
         let results = try fetch(request)
@@ -15,7 +15,7 @@ final class TemplateRepository: BaseRepository, @unchecked Sendable {
     }
 
     /// Get a template by PK
-    func get(templateId: Int) throws -> TransactionTemplateDTO? {
+    public func get(templateId: Int) throws -> TransactionTemplateDTO? {
         guard let object = try fetchByPK(entityName: "TransactionTemplate", pk: templateId) else {
             return nil
         }
@@ -25,7 +25,7 @@ final class TemplateRepository: BaseRepository, @unchecked Sendable {
     // MARK: - Write Operations
 
     /// Create a new transaction template
-    func create(
+    public func create(
         title: String,
         amount: Double,
         note: String? = nil,
@@ -67,7 +67,7 @@ final class TemplateRepository: BaseRepository, @unchecked Sendable {
     }
 
     /// Update an existing template
-    func update(templateId: Int, title: String? = nil, amount: Double? = nil, note: String? = nil, active: Bool? = nil) throws -> Bool {
+    public func update(templateId: Int, title: String? = nil, amount: Double? = nil, note: String? = nil, active: Bool? = nil) throws -> Bool {
         try performWriteReturning { [self] ctx in
             guard let template = try fetchByPK(entityName: "TransactionTemplate", pk: templateId, in: ctx) else {
                 return false
@@ -83,7 +83,7 @@ final class TemplateRepository: BaseRepository, @unchecked Sendable {
     }
 
     /// Delete a template and its line item templates
-    func delete(templateId: Int) throws -> Bool {
+    public func delete(templateId: Int) throws -> Bool {
         try performWriteReturning { [self] ctx in
             guard let template = try fetchByPK(entityName: "TransactionTemplate", pk: templateId, in: ctx) else {
                 return false
@@ -108,7 +108,7 @@ final class TemplateRepository: BaseRepository, @unchecked Sendable {
 
     // MARK: - DTO Mapping
 
-    func mapToDTO(_ object: NSManagedObject) -> TransactionTemplateDTO {
+    public func mapToDTO(_ object: NSManagedObject) -> TransactionTemplateDTO {
         let pk = Self.extractPK(from: object.objectID)
 
         // Get line item templates

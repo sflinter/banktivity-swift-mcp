@@ -9,11 +9,17 @@ let package = Package(
     platforms: [.macOS(.v14)],
     dependencies: [
         .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", from: "0.11.0"),
+        .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.5.0"),
     ],
     targets: [
         .target(
+            name: "BanktivityLib",
+            path: "Sources/BanktivityLib"
+        ),
+        .target(
             name: "BanktivityMCPLib",
             dependencies: [
+                "BanktivityLib",
                 .product(name: "MCP", package: "swift-sdk"),
             ],
             path: "Sources/BanktivityMCPLib"
@@ -23,10 +29,18 @@ let package = Package(
             dependencies: ["BanktivityMCPLib"],
             path: "Sources/BanktivityMCP"
         ),
+        .executableTarget(
+            name: "banktivity-cli",
+            dependencies: [
+                "BanktivityLib",
+                .product(name: "ArgumentParser", package: "swift-argument-parser"),
+            ],
+            path: "Sources/BanktivityCLI"
+        ),
         .testTarget(
-            name: "BanktivityMCPTests",
-            dependencies: ["BanktivityMCPLib"],
-            path: "Tests/BanktivityMCPTests"
+            name: "BanktivityLibTests",
+            dependencies: ["BanktivityLib"],
+            path: "Tests/BanktivityLibTests"
         ),
     ]
 )

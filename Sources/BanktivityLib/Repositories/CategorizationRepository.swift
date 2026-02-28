@@ -4,11 +4,11 @@ import CoreData
 import Foundation
 
 /// Repository for categorization operations using Core Data
-final class CategorizationRepository: BaseRepository, @unchecked Sendable {
+public final class CategorizationRepository: BaseRepository, @unchecked Sendable {
     private let categoryRepo: CategoryRepository
     private let importRuleRepo: ImportRuleRepository
 
-    init(
+    public init(
         container: NSPersistentContainer,
         categoryRepo: CategoryRepository,
         importRuleRepo: ImportRuleRepository
@@ -19,7 +19,7 @@ final class CategorizationRepository: BaseRepository, @unchecked Sendable {
     }
 
     /// Find uncategorized transactions
-    func getUncategorized(
+    public func getUncategorized(
         accountId: Int? = nil,
         startDate: String? = nil,
         endDate: String? = nil,
@@ -114,7 +114,7 @@ final class CategorizationRepository: BaseRepository, @unchecked Sendable {
     }
 
     /// Suggest category for a merchant based on import rules and historical data
-    func suggestCategory(merchantName: String) throws -> [CategorySuggestionDTO] {
+    public func suggestCategory(merchantName: String) throws -> [CategorySuggestionDTO] {
         var suggestions: [CategorySuggestionDTO] = []
 
         // Check import rules first
@@ -192,7 +192,7 @@ final class CategorizationRepository: BaseRepository, @unchecked Sendable {
     }
 
     /// Review categorizations for transactions
-    func reviewCategorizations(
+    public func reviewCategorizations(
         accountId: Int? = nil,
         categoryId: Int? = nil,
         payeePattern: String? = nil,
@@ -264,7 +264,7 @@ final class CategorizationRepository: BaseRepository, @unchecked Sendable {
     }
 
     /// Get payee category summary
-    func getPayeeCategorySummary(
+    public func getPayeeCategorySummary(
         accountId: Int? = nil,
         startDate: String? = nil,
         endDate: String? = nil,
@@ -337,7 +337,7 @@ final class CategorizationRepository: BaseRepository, @unchecked Sendable {
     // MARK: - Write Operations
 
     /// Recategorize a single transaction
-    func recategorize(transactionId: Int, categoryId: Int) throws -> RecategorizationResultDTO? {
+    public func recategorize(transactionId: Int, categoryId: Int) throws -> RecategorizationResultDTO? {
         var oldCategoryName: String?
         var newCategoryName: String = ""
 
@@ -413,7 +413,7 @@ final class CategorizationRepository: BaseRepository, @unchecked Sendable {
     }
 
     /// Bulk recategorize transactions by payee pattern
-    func bulkRecategorize(
+    public func bulkRecategorize(
         payeePattern: String,
         categoryId: Int,
         dryRun: Bool = false,

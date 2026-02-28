@@ -2,7 +2,7 @@
 
 import Foundation
 import Testing
-@testable import BanktivityMCPLib
+@testable import BanktivityLib
 
 @Suite("DateConversion")
 struct DateConversionTests {

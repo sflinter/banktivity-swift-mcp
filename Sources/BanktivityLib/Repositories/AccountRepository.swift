@@ -4,10 +4,10 @@ import CoreData
 import Foundation
 
 /// Repository for account operations using Core Data
-final class AccountRepository: BaseRepository, @unchecked Sendable {
+public final class AccountRepository: BaseRepository, @unchecked Sendable {
 
     /// List all accounts, optionally including hidden ones
-    func list(includeHidden: Bool = false) throws -> [AccountDTO] {
+    public func list(includeHidden: Bool = false) throws -> [AccountDTO] {
         let request = NSFetchRequest<NSManagedObject>(entityName: "Account")
 
         if !includeHidden {
@@ -24,13 +24,13 @@ final class AccountRepository: BaseRepository, @unchecked Sendable {
     }
 
     /// Get a single account by its primary key (Z_PK)
-    func get(accountId: Int) throws -> AccountDTO? {
+    public func get(accountId: Int) throws -> AccountDTO? {
         guard let object = try fetchByPK(entityName: "Account", pk: accountId) else { return nil }
         return mapToDTO(object)
     }
 
     /// Find an account by name (case-insensitive, checks both pName and pFullName)
-    func findByName(_ name: String) throws -> AccountDTO? {
+    public func findByName(_ name: String) throws -> AccountDTO? {
         let request = NSFetchRequest<NSManagedObject>(entityName: "Account")
         request.predicate = NSPredicate(
             format: "pName ==[cd] %@ OR pFullName ==[cd] %@", name, name
@@ -42,13 +42,13 @@ final class AccountRepository: BaseRepository, @unchecked Sendable {
     }
 
     /// Get account balance using an aggregate fetch (SUM of line item amounts)
-    func getBalance(accountId: Int) throws -> Double {
+    public func getBalance(accountId: Int) throws -> Double {
         guard let account = try fetchByPK(entityName: "Account", pk: accountId) else { return 0 }
         return try sumLineItemAmounts(predicate: NSPredicate(format: "pAccount == %@", account))
     }
 
     /// Get net worth using efficient aggregate queries
-    func getNetWorth() throws -> NetWorthDTO {
+    public func getNetWorth() throws -> NetWorthDTO {
         let assets = try sumByAccountClasses(Array(assetClasses))
         let liabilities = try sumByAccountClasses(Array(liabilityClasses))
 
@@ -56,14 +56,14 @@ final class AccountRepository: BaseRepository, @unchecked Sendable {
             assets: assets,
             liabilities: liabilities,
             netWorth: assets + liabilities,
-            formattedAssets: ToolHelpers.formatCurrency(assets),
-            formattedLiabilities: ToolHelpers.formatCurrency(liabilities),
-            formattedNetWorth: ToolHelpers.formatCurrency(assets + liabilities)
+            formattedAssets: formatCurrency(assets),
+            formattedLiabilities: formatCurrency(liabilities),
+            formattedNetWorth: formatCurrency(assets + liabilities)
         )
     }
 
     /// Get spending or income by category using aggregate queries
-    func getCategoryAnalysis(
+    public func getCategoryAnalysis(
         type: String,
         startDate: String? = nil,
         endDate: String? = nil
@@ -105,7 +105,7 @@ final class AccountRepository: BaseRepository, @unchecked Sendable {
                     category: categoryName,
                     total: total,
                     transactionCount: txCount,
-                    formattedTotal: ToolHelpers.formatCurrency(total)
+                    formattedTotal: formatCurrency(total)
                 ))
             }
         }
@@ -156,7 +156,7 @@ final class AccountRepository: BaseRepository, @unchecked Sendable {
 
     // MARK: - DTO Mapping
 
-    func mapToDTO(_ object: NSManagedObject) -> AccountDTO {
+    public func mapToDTO(_ object: NSManagedObject) -> AccountDTO {
         let accountClass = Self.intValue(object, "pAccountClass")
         let pk = Self.extractPK(from: object.objectID)
 

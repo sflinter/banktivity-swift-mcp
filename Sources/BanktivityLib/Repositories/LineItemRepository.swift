@@ -4,10 +4,10 @@ import CoreData
 import Foundation
 
 /// Repository for line item operations using Core Data
-final class LineItemRepository: BaseRepository, @unchecked Sendable {
+public final class LineItemRepository: BaseRepository, @unchecked Sendable {
 
     /// Get line items for a transaction (by managed object)
-    func getForTransaction(_ transaction: NSManagedObject) -> [LineItemDTO] {
+    public func getForTransaction(_ transaction: NSManagedObject) -> [LineItemDTO] {
         let lineItems = Self.relatedSet(transaction, "lineItems")
 
         return lineItems
@@ -16,7 +16,7 @@ final class LineItemRepository: BaseRepository, @unchecked Sendable {
     }
 
     /// Get line items for a transaction by primary key
-    func getForTransactionPK(_ transactionPK: Int) throws -> [LineItemDTO] {
+    public func getForTransactionPK(_ transactionPK: Int) throws -> [LineItemDTO] {
         guard let txObject = try fetchByPK(entityName: "Transaction", pk: transactionPK) else {
             return []
         }
@@ -24,7 +24,7 @@ final class LineItemRepository: BaseRepository, @unchecked Sendable {
     }
 
     /// Get a single line item by primary key
-    func get(lineItemId: Int) throws -> LineItemDTO? {
+    public func get(lineItemId: Int) throws -> LineItemDTO? {
         guard let object = try fetchByPK(entityName: "LineItem", pk: lineItemId) else {
             return nil
         }
@@ -34,7 +34,7 @@ final class LineItemRepository: BaseRepository, @unchecked Sendable {
     // MARK: - Write Operations
 
     /// Create a new line item for a transaction
-    func create(transactionId: Int, accountId: Int, amount: Double, memo: String? = nil) throws -> Int {
+    public func create(transactionId: Int, accountId: Int, amount: Double, memo: String? = nil) throws -> Int {
         try performWriteReturning { [self] ctx in
             guard let tx = try fetchByPK(entityName: "Transaction", pk: transactionId, in: ctx) else {
                 throw ToolError.notFound("Transaction not found: \(transactionId)")
@@ -59,7 +59,7 @@ final class LineItemRepository: BaseRepository, @unchecked Sendable {
     }
 
     /// Update a line item's account, amount, or memo
-    func update(lineItemId: Int, accountId: Int? = nil, amount: Double? = nil, memo: String? = nil) throws -> Set<Int> {
+    public func update(lineItemId: Int, accountId: Int? = nil, amount: Double? = nil, memo: String? = nil) throws -> Set<Int> {
         try performWriteReturning { [self] ctx in
             guard let li = try fetchByPK(entityName: "LineItem", pk: lineItemId, in: ctx) else {
                 throw ToolError.notFound("Line item not found: \(lineItemId)")
@@ -93,7 +93,7 @@ final class LineItemRepository: BaseRepository, @unchecked Sendable {
     }
 
     /// Delete a line item
-    func delete(lineItemId: Int) throws -> (accountId: Int, transactionId: Int)? {
+    public func delete(lineItemId: Int) throws -> (accountId: Int, transactionId: Int)? {
         try performWriteReturning { [self] ctx in
             guard let li = try fetchByPK(entityName: "LineItem", pk: lineItemId, in: ctx) else {
                 return nil
@@ -115,7 +115,7 @@ final class LineItemRepository: BaseRepository, @unchecked Sendable {
     }
 
     /// Recalculate running balances for all line items in an account
-    func recalculateRunningBalances(accountId: Int) throws {
+    public func recalculateRunningBalances(accountId: Int) throws {
         try performWrite { [self] ctx in
             guard let account = try fetchByPK(entityName: "Account", pk: accountId, in: ctx) else {
                 return
@@ -142,7 +142,7 @@ final class LineItemRepository: BaseRepository, @unchecked Sendable {
 
     // MARK: - DTO Mapping
 
-    func mapToDTO(_ object: NSManagedObject) -> LineItemDTO {
+    public func mapToDTO(_ object: NSManagedObject) -> LineItemDTO {
         let pk = Self.extractPK(from: object.objectID)
 
         let accountId: Int
