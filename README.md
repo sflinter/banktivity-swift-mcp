@@ -194,10 +194,10 @@ To install, copy the skill directory into your global Claude Code config:
 
 ```sh
 mkdir -p ~/.claude/skills
-cp -r .claude-skill-banktivity ~/.claude/skills/banktivity
+cp -r skills/banktivity ~/.claude/skills/banktivity
 ```
 
-The skill directory should contain a `SKILL.md` file that teaches Claude how to invoke `banktivity-cli` with the correct environment variable and arguments. You'll need to edit the `BANKTIVITY_FILE_PATH` in `SKILL.md` to point to your own vault.
+The `skills/banktivity/` directory contains a `SKILL.md` file that teaches Claude how to invoke `banktivity-cli` with the correct environment variable and arguments. You'll need to edit the `BANKTIVITY_FILE_PATH` in `SKILL.md` to point to your own vault.
 
 Once installed, type `/banktivity` in any Claude Code session to activate it, or Claude will activate it automatically when you ask about transactions, accounts, spending, or categories.
 
