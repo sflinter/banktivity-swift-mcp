@@ -13,7 +13,7 @@ struct Transactions: AsyncParsableCommand {
     struct List: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "List transactions")
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         @Option(name: .long, help: "Filter by account ID")
         var accountId: Int?
@@ -54,14 +54,14 @@ struct Transactions: AsyncParsableCommand {
                 limit: limit,
                 offset: offset
             )
-            try outputJSON(results)
+            try outputJSON(results, format: parent.format)
         }
     }
 
     struct Search: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Search transactions")
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         @Option(name: .long, help: "Search query")
         var query: String
@@ -76,14 +76,14 @@ struct Transactions: AsyncParsableCommand {
             let transactions = TransactionRepository(container: container, lineItemRepo: lineItemRepo)
 
             let results = try transactions.search(query: query, limit: limit)
-            try outputJSON(results)
+            try outputJSON(results, format: parent.format)
         }
     }
 
     struct Get: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Get a transaction by ID")
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         @Argument(help: "Transaction ID")
         var id: Int
@@ -97,14 +97,14 @@ struct Transactions: AsyncParsableCommand {
             guard let tx = try transactions.get(transactionId: id) else {
                 throw ToolError.notFound("Transaction not found: \(id)")
             }
-            try outputJSON(tx)
+            try outputJSON(tx, format: parent.format)
         }
     }
 
     struct Create: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Create a transaction")
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         @Option(name: .long, help: "Account ID for the primary line item")
         var accountId: Int?
@@ -188,14 +188,14 @@ struct Transactions: AsyncParsableCommand {
                 note: note,
                 lineItems: resolvedLineItems
             )
-            try outputJSON(result)
+            try outputJSON(result, format: parent.format)
         }
     }
 
     struct Update: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Update a transaction")
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         @Argument(help: "Transaction ID")
         var id: Int
@@ -235,14 +235,14 @@ struct Transactions: AsyncParsableCommand {
             ) else {
                 throw ToolError.notFound("Transaction not found: \(id)")
             }
-            try outputJSON(updated)
+            try outputJSON(updated, format: parent.format)
         }
     }
 
     struct Delete: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Delete a transaction")
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         @Argument(help: "Transaction ID")
         var id: Int
@@ -260,7 +260,7 @@ struct Transactions: AsyncParsableCommand {
             if !deleted {
                 throw ToolError.notFound("Transaction not found: \(id)")
             }
-            try outputJSON(["message": "Transaction \(id) deleted"] as [String: Any])
+            try outputJSON(["message": "Transaction \(id) deleted"] as [String: Any], format: parent.format)
         }
     }
 }

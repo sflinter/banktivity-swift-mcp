@@ -13,7 +13,7 @@ struct Templates: AsyncParsableCommand {
     struct List: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "List transaction templates")
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         func run() async throws {
             let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
@@ -21,14 +21,14 @@ struct Templates: AsyncParsableCommand {
             let templates = TemplateRepository(container: container)
 
             let results = try templates.list()
-            try outputJSON(results)
+            try outputJSON(results, format: parent.format)
         }
     }
 
     struct Get: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Get a template by ID")
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         @Argument(help: "Template ID")
         var id: Int
@@ -41,14 +41,14 @@ struct Templates: AsyncParsableCommand {
             guard let template = try templates.get(templateId: id) else {
                 throw ToolError.notFound("Template not found: \(id)")
             }
-            try outputJSON(template)
+            try outputJSON(template, format: parent.format)
         }
     }
 
     struct Create: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Create a transaction template")
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         @Option(name: .long, help: "Template title (payee name)")
         var title: String
@@ -76,14 +76,14 @@ struct Templates: AsyncParsableCommand {
                 currencyId: currencyId,
                 lineItems: nil
             )
-            try outputJSON(result)
+            try outputJSON(result, format: parent.format)
         }
     }
 
     struct Update: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Update a template")
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         @Argument(help: "Template ID")
         var id: Int
@@ -121,7 +121,7 @@ struct Templates: AsyncParsableCommand {
             )
 
             if success, let updated = try templates.get(templateId: id) {
-                try outputJSON(updated)
+                try outputJSON(updated, format: parent.format)
             } else {
                 throw ToolError.notFound("Template not found: \(id)")
             }
@@ -131,7 +131,7 @@ struct Templates: AsyncParsableCommand {
     struct Delete: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Delete a template")
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         @Argument(help: "Template ID")
         var id: Int
@@ -147,7 +147,7 @@ struct Templates: AsyncParsableCommand {
             if !deleted {
                 throw ToolError.notFound("Template not found: \(id)")
             }
-            try outputJSON(["message": "Template \(id) deleted"] as [String: Any])
+            try outputJSON(["message": "Template \(id) deleted"] as [String: Any], format: parent.format)
         }
     }
 }

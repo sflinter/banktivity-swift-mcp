@@ -16,7 +16,7 @@ struct Uncategorized: AsyncParsableCommand {
     struct List: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "List uncategorized transactions")
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         @Option(name: .long, help: "Filter by account ID")
         var accountId: Int?
@@ -49,14 +49,14 @@ struct Uncategorized: AsyncParsableCommand {
                 limit: limit,
                 excludeTransfers: excludeTransfers
             )
-            try outputJSON(results)
+            try outputJSON(results, format: parent.format)
         }
     }
 
     struct Suggest: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Suggest categories for a merchant")
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         @Argument(help: "Merchant name")
         var merchantName: String
@@ -71,14 +71,14 @@ struct Uncategorized: AsyncParsableCommand {
             )
 
             let suggestions = try categorization.suggestCategory(merchantName: merchantName)
-            try outputJSON(suggestions)
+            try outputJSON(suggestions, format: parent.format)
         }
     }
 
     struct Review: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Review categorizations")
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         @Option(name: .long, help: "Filter by account ID")
         var accountId: Int?
@@ -122,7 +122,7 @@ struct Uncategorized: AsyncParsableCommand {
                 endDate: endDate,
                 limit: limit
             )
-            try outputJSON(results)
+            try outputJSON(results, format: parent.format)
         }
     }
 
@@ -132,7 +132,7 @@ struct Uncategorized: AsyncParsableCommand {
             abstract: "Get payee category summary"
         )
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         @Option(name: .long, help: "Filter by account ID")
         var accountId: Int?
@@ -161,14 +161,14 @@ struct Uncategorized: AsyncParsableCommand {
                 endDate: endDate,
                 minTransactions: minTransactions
             )
-            try outputJSON(results)
+            try outputJSON(results, format: parent.format)
         }
     }
 
     struct Recategorize: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Recategorize a single transaction")
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         @Argument(help: "Transaction ID")
         var transactionId: Int
@@ -202,7 +202,7 @@ struct Uncategorized: AsyncParsableCommand {
             ) else {
                 throw ToolError.notFound("Transaction not found: \(transactionId)")
             }
-            try outputJSON(result)
+            try outputJSON(result, format: parent.format)
         }
     }
 
@@ -212,7 +212,7 @@ struct Uncategorized: AsyncParsableCommand {
             abstract: "Bulk recategorize by payee pattern"
         )
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         @Option(name: .long, help: "Payee/title pattern to match")
         var payeePattern: String
@@ -256,7 +256,7 @@ struct Uncategorized: AsyncParsableCommand {
                 dryRun: dryRun,
                 uncategorizedOnly: uncategorizedOnly
             )
-            try outputJSON(result)
+            try outputJSON(result, format: parent.format)
         }
     }
 }

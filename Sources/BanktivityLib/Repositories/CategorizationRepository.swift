@@ -338,8 +338,8 @@ public final class CategorizationRepository: BaseRepository, @unchecked Sendable
 
     /// Recategorize a single transaction
     public func recategorize(transactionId: Int, categoryId: Int) throws -> RecategorizationResultDTO? {
-        var oldCategoryName: String?
-        var newCategoryName: String = ""
+        nonisolated(unsafe) var oldCategoryName: String?
+        nonisolated(unsafe) var newCategoryName: String = ""
 
         try performWrite { [self] ctx in
             guard let tx = try fetchByPK(entityName: "Transaction", pk: transactionId, in: ctx) else {

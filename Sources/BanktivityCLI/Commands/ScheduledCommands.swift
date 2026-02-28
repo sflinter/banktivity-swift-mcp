@@ -13,7 +13,7 @@ struct Scheduled: AsyncParsableCommand {
     struct List: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "List scheduled transactions")
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         func run() async throws {
             let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
@@ -21,14 +21,14 @@ struct Scheduled: AsyncParsableCommand {
             let scheduled = ScheduledTransactionRepository(container: container)
 
             let results = try scheduled.list()
-            try outputJSON(results)
+            try outputJSON(results, format: parent.format)
         }
     }
 
     struct Get: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Get a scheduled transaction by ID")
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         @Argument(help: "Schedule ID")
         var id: Int
@@ -41,14 +41,14 @@ struct Scheduled: AsyncParsableCommand {
             guard let schedule = try scheduled.get(scheduleId: id) else {
                 throw ToolError.notFound("Scheduled transaction not found: \(id)")
             }
-            try outputJSON(schedule)
+            try outputJSON(schedule, format: parent.format)
         }
     }
 
     struct Create: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Create a scheduled transaction")
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         @Option(name: .long, help: "Template ID")
         var templateId: Int
@@ -83,14 +83,14 @@ struct Scheduled: AsyncParsableCommand {
                 repeatMultiplier: repeatMultiplier,
                 reminderDays: reminderDays
             )
-            try outputJSON(result)
+            try outputJSON(result, format: parent.format)
         }
     }
 
     struct Update: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Update a scheduled transaction")
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         @Argument(help: "Schedule ID")
         var id: Int
@@ -131,7 +131,7 @@ struct Scheduled: AsyncParsableCommand {
             )
 
             if success, let updated = try scheduled.get(scheduleId: id) {
-                try outputJSON(updated)
+                try outputJSON(updated, format: parent.format)
             } else {
                 throw ToolError.notFound("Scheduled transaction not found: \(id)")
             }
@@ -141,7 +141,7 @@ struct Scheduled: AsyncParsableCommand {
     struct Delete: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Delete a scheduled transaction")
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         @Argument(help: "Schedule ID")
         var id: Int
@@ -157,7 +157,7 @@ struct Scheduled: AsyncParsableCommand {
             if !deleted {
                 throw ToolError.notFound("Scheduled transaction not found: \(id)")
             }
-            try outputJSON(["message": "Scheduled transaction \(id) deleted"] as [String: Any])
+            try outputJSON(["message": "Scheduled transaction \(id) deleted"] as [String: Any], format: parent.format)
         }
     }
 }

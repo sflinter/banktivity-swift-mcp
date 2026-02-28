@@ -81,9 +81,9 @@ open class BaseRepository: @unchecked Sendable {
     }
 
     /// Perform work on a background context and save
-    public func performWrite(_ block: @escaping (NSManagedObjectContext) throws -> Void) throws {
+    public func performWrite(_ block: @escaping @Sendable (NSManagedObjectContext) throws -> Void) throws {
         let bgContext = container.newBackgroundContext()
-        var writeError: Error?
+        nonisolated(unsafe) var writeError: Error?
         bgContext.performAndWait {
             do {
                 try block(bgContext)
@@ -100,10 +100,10 @@ open class BaseRepository: @unchecked Sendable {
     }
 
     /// Perform a write that returns a value
-    public func performWriteReturning<T>(_ block: @escaping (NSManagedObjectContext) throws -> T) throws -> T {
+    public func performWriteReturning<T: Sendable>(_ block: @escaping @Sendable (NSManagedObjectContext) throws -> T) throws -> T {
         let bgContext = container.newBackgroundContext()
-        var result: T?
-        var writeError: Error?
+        nonisolated(unsafe) var result: T?
+        nonisolated(unsafe) var writeError: Error?
         bgContext.performAndWait {
             do {
                 result = try block(bgContext)
@@ -117,7 +117,10 @@ open class BaseRepository: @unchecked Sendable {
         if let error = writeError {
             throw error
         }
-        return result!
+        guard let value = result else {
+            throw RepositoryError.unexpectedNilResult
+        }
+        return value
     }
 
     /// Create a new managed object in the given context

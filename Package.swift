@@ -7,6 +7,11 @@ import PackageDescription
 let package = Package(
     name: "banktivity-mcp",
     platforms: [.macOS(.v14)],
+    products: [
+        .executable(name: "banktivity-mcp", targets: ["banktivity-mcp"]),
+        .executable(name: "banktivity-cli", targets: ["banktivity-cli"]),
+        .library(name: "BanktivityLib", targets: ["BanktivityLib"]),
+    ],
     dependencies: [
         .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", from: "0.11.0"),
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.5.0"),

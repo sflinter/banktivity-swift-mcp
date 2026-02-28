@@ -13,7 +13,7 @@ struct Tags: AsyncParsableCommand {
     struct List: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "List all tags")
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         func run() async throws {
             let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
@@ -21,14 +21,14 @@ struct Tags: AsyncParsableCommand {
             let tags = TagRepository(container: container)
 
             let results = try tags.list()
-            try outputJSON(results)
+            try outputJSON(results, format: parent.format)
         }
     }
 
     struct Create: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Create a tag")
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         @Option(name: .long, help: "Tag name")
         var name: String
@@ -41,7 +41,7 @@ struct Tags: AsyncParsableCommand {
 
             let tags = TagRepository(container: container)
             let result = try tags.create(name: name)
-            try outputJSON(result)
+            try outputJSON(result, format: parent.format)
         }
     }
 
@@ -51,7 +51,7 @@ struct Tags: AsyncParsableCommand {
             abstract: "Add or remove a tag from a transaction"
         )
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         @Option(name: .long, help: "Transaction ID")
         var transactionId: Int
@@ -90,7 +90,7 @@ struct Tags: AsyncParsableCommand {
                 count = try tags.tagTransaction(transactionId: transactionId, tagId: resolvedTagId)
             }
 
-            try outputJSON(["message": "Tagged \(count) line items", "action": action] as [String: Any])
+            try outputJSON(["message": "Tagged \(count) line items", "action": action] as [String: Any], format: parent.format)
         }
     }
 
@@ -100,7 +100,7 @@ struct Tags: AsyncParsableCommand {
             abstract: "Find transactions with a specific tag"
         )
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         @Option(name: .long, help: "Tag name")
         var tagName: String?
@@ -147,7 +147,7 @@ struct Tags: AsyncParsableCommand {
                 try? transactions.get(transactionId: BaseRepository.extractPK(from: obj.objectID))
             }
 
-            try outputJSON(txDTOs)
+            try outputJSON(txDTOs, format: parent.format)
         }
     }
 
@@ -157,7 +157,7 @@ struct Tags: AsyncParsableCommand {
             abstract: "Add or remove a tag from multiple transactions"
         )
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         @Option(name: .long, help: "Comma-separated transaction IDs")
         var transactionIds: String
@@ -206,7 +206,7 @@ struct Tags: AsyncParsableCommand {
             try outputJSON([
                 "message": "\(action == "remove" ? "Removed" : "Added") tag on \(totalCount) line items across \(ids.count) transactions",
                 "action": action,
-            ] as [String: Any])
+            ] as [String: Any], format: parent.format)
         }
     }
 }

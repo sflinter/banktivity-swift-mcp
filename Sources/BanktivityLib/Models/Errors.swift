@@ -2,6 +2,16 @@
 
 import Foundation
 
+public enum RepositoryError: Error, CustomStringConvertible {
+    case unexpectedNilResult
+
+    public var description: String {
+        switch self {
+        case .unexpectedNilResult: return "Write block completed without producing a result"
+        }
+    }
+}
+
 public enum ToolError: Error, CustomStringConvertible {
     case notFound(String)
     case missingParameter(String)

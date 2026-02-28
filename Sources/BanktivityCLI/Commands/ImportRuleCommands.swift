@@ -14,7 +14,7 @@ struct ImportRules: AsyncParsableCommand {
     struct List: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "List import rules")
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         func run() async throws {
             let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
@@ -22,14 +22,14 @@ struct ImportRules: AsyncParsableCommand {
             let importRules = ImportRuleRepository(container: container)
 
             let results = try importRules.list()
-            try outputJSON(results)
+            try outputJSON(results, format: parent.format)
         }
     }
 
     struct Get: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Get an import rule by ID")
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         @Argument(help: "Import rule ID")
         var id: Int
@@ -42,14 +42,14 @@ struct ImportRules: AsyncParsableCommand {
             guard let rule = try importRules.get(ruleId: id) else {
                 throw ToolError.notFound("Import rule not found: \(id)")
             }
-            try outputJSON(rule)
+            try outputJSON(rule, format: parent.format)
         }
     }
 
     struct Match: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Test which rules match a description")
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         @Argument(help: "Transaction description to test")
         var description: String
@@ -60,14 +60,14 @@ struct ImportRules: AsyncParsableCommand {
             let importRules = ImportRuleRepository(container: container)
 
             let matches = try importRules.match(description: description)
-            try outputJSON(matches)
+            try outputJSON(matches, format: parent.format)
         }
     }
 
     struct Create: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Create an import rule")
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         @Option(name: .long, help: "Template ID to apply")
         var templateId: Int
@@ -90,14 +90,14 @@ struct ImportRules: AsyncParsableCommand {
                 pattern: pattern,
                 accountId: accountId
             )
-            try outputJSON(result)
+            try outputJSON(result, format: parent.format)
         }
     }
 
     struct Update: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Update an import rule")
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         @Argument(help: "Import rule ID")
         var id: Int
@@ -117,7 +117,7 @@ struct ImportRules: AsyncParsableCommand {
             let importRules = ImportRuleRepository(container: container)
             let success = try importRules.update(ruleId: id, pattern: pattern, accountId: accountId)
             if success, let updated = try importRules.get(ruleId: id) {
-                try outputJSON(updated)
+                try outputJSON(updated, format: parent.format)
             } else {
                 throw ToolError.notFound("Import rule not found: \(id)")
             }
@@ -127,7 +127,7 @@ struct ImportRules: AsyncParsableCommand {
     struct Delete: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Delete an import rule")
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         @Argument(help: "Import rule ID")
         var id: Int
@@ -143,7 +143,7 @@ struct ImportRules: AsyncParsableCommand {
             if !deleted {
                 throw ToolError.notFound("Import rule not found: \(id)")
             }
-            try outputJSON(["message": "Import rule \(id) deleted"] as [String: Any])
+            try outputJSON(["message": "Import rule \(id) deleted"] as [String: Any], format: parent.format)
         }
     }
 }

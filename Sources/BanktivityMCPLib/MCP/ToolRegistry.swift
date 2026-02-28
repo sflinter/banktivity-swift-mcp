@@ -54,6 +54,7 @@ public final class ToolRegistry: @unchecked Sendable {
         do {
             return try await definition.handler(arguments)
         } catch {
+            FileHandle.standardError.write(Data("[banktivity-mcp] Tool '\(name)' error: \(error)\n".utf8))
             return ToolHelpers.errorResponse("Tool error: \(error)")
         }
     }

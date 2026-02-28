@@ -13,7 +13,7 @@ struct Categories: AsyncParsableCommand {
     struct List: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "List categories")
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         @Option(name: .long, help: "Filter by type: income or expense")
         var type: String?
@@ -34,14 +34,14 @@ struct Categories: AsyncParsableCommand {
                 includeHidden: includeHidden,
                 topLevelOnly: topLevelOnly
             )
-            try outputJSON(results)
+            try outputJSON(results, format: parent.format)
         }
     }
 
     struct Get: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Get a category by ID or name")
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         @Argument(help: "Category ID or name/path (e.g. 'Insurance:Life')")
         var identifier: String
@@ -55,19 +55,19 @@ struct Categories: AsyncParsableCommand {
                 guard let category = try categories.get(categoryId: id) else {
                     throw ToolError.notFound("Category not found: \(id)")
                 }
-                try outputJSON(category)
+                try outputJSON(category, format: parent.format)
             } else {
                 if let category = try categories.findByPath(identifier) {
-                    try outputJSON(category)
+                    try outputJSON(category, format: parent.format)
                 } else {
                     let byName = try categories.findByName(identifier)
                     guard !byName.isEmpty else {
                         throw ToolError.notFound("Category not found: \(identifier)")
                     }
                     if byName.count == 1 {
-                        try outputJSON(byName[0])
+                        try outputJSON(byName[0], format: parent.format)
                     } else {
-                        try outputJSON(byName)
+                        try outputJSON(byName, format: parent.format)
                     }
                 }
             }
@@ -77,7 +77,7 @@ struct Categories: AsyncParsableCommand {
     struct Tree: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Get category tree")
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         @Option(name: .long, help: "Filter by type: income or expense")
         var type: String?
@@ -88,14 +88,14 @@ struct Categories: AsyncParsableCommand {
             let categories = CategoryRepository(container: container)
 
             let tree = try categories.getTree(type: type)
-            try outputJSON(tree)
+            try outputJSON(tree, format: parent.format)
         }
     }
 
     struct Create: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Create a category")
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         @Option(name: .long, help: "Category name")
         var name: String
@@ -135,7 +135,7 @@ struct Categories: AsyncParsableCommand {
                 hidden: hidden,
                 currencyCode: currencyCode
             )
-            try outputJSON(result)
+            try outputJSON(result, format: parent.format)
         }
     }
 }

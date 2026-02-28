@@ -14,7 +14,7 @@ struct LineItems: AsyncParsableCommand {
     struct Get: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Get a line item by ID")
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         @Argument(help: "Line item ID")
         var id: Int
@@ -27,14 +27,14 @@ struct LineItems: AsyncParsableCommand {
             guard let item = try lineItems.get(lineItemId: id) else {
                 throw ToolError.notFound("Line item not found: \(id)")
             }
-            try outputJSON(item)
+            try outputJSON(item, format: parent.format)
         }
     }
 
     struct Add: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Add a line item to a transaction")
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         @Option(name: .long, help: "Transaction ID")
         var transactionId: Int
@@ -70,14 +70,14 @@ struct LineItems: AsyncParsableCommand {
             try lineItems.recalculateRunningBalances(accountId: resolvedId)
 
             let updatedItems = try lineItems.getForTransactionPK(transactionId)
-            try outputJSON(updatedItems)
+            try outputJSON(updatedItems, format: parent.format)
         }
     }
 
     struct Update: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Update a line item")
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         @Argument(help: "Line item ID")
         var id: Int
@@ -123,14 +123,14 @@ struct LineItems: AsyncParsableCommand {
             guard let updated = try lineItems.get(lineItemId: id) else {
                 throw ToolError.notFound("Line item not found after update")
             }
-            try outputJSON(updated)
+            try outputJSON(updated, format: parent.format)
         }
     }
 
     struct Delete: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Delete a line item")
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         @Argument(help: "Line item ID")
         var id: Int
@@ -146,7 +146,7 @@ struct LineItems: AsyncParsableCommand {
                 throw ToolError.notFound("Line item not found: \(id)")
             }
             try lineItems.recalculateRunningBalances(accountId: info.accountId)
-            try outputJSON(["message": "Line item \(id) deleted"] as [String: Any])
+            try outputJSON(["message": "Line item \(id) deleted"] as [String: Any], format: parent.format)
         }
     }
 }

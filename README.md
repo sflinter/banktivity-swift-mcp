@@ -158,6 +158,24 @@ banktivity-cli tags bulk-tag --transaction-ids "100,101,102" --tag-name "Vacatio
 
 Most commands that accept `--account-id` also accept `--account-name` as an alternative. The `transactions create` command supports `--line-items` with a JSON array for multi-line-item (split) transactions.
 
+Use `--format compact` for machine-readable single-line JSON output (default is pretty-printed).
+
+### Shell Completions
+
+ArgumentParser provides shell completion scripts automatically:
+
+```sh
+banktivity-cli --generate-completion-script bash   # Bash completions
+banktivity-cli --generate-completion-script zsh    # Zsh completions
+banktivity-cli --generate-completion-script fish   # Fish completions
+```
+
+For example, to install Zsh completions:
+
+```sh
+banktivity-cli --generate-completion-script zsh > ~/.zfunc/_banktivity-cli
+```
+
 ## Safety Features
 
 - **Write guard**: Before any mutation, the server checks if Banktivity.app has the vault open (via `lsof`). If it does, writes are blocked to prevent corruption.

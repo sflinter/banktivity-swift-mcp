@@ -13,7 +13,7 @@ struct Accounts: AsyncParsableCommand {
     struct List: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "List all accounts")
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         @Flag(name: .long, help: "Include hidden accounts")
         var includeHidden = false
@@ -50,14 +50,14 @@ struct Accounts: AsyncParsableCommand {
                 return dict
             }
 
-            try outputJSON(accountsWithBalances)
+            try outputJSON(accountsWithBalances, format: parent.format)
         }
     }
 
     struct Balance: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Get account balance")
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         @Option(name: .long, help: "Account ID")
         var accountId: Int?
@@ -79,14 +79,14 @@ struct Accounts: AsyncParsableCommand {
                 "accountName": account?.name ?? "Unknown",
                 "balance": balance,
                 "formattedBalance": formatCurrency(balance, currency: account?.currency ?? "EUR"),
-            ] as [String: Any])
+            ] as [String: Any], format: parent.format)
         }
     }
 
     struct NetWorth: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Calculate net worth")
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         func run() async throws {
             let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
@@ -94,14 +94,14 @@ struct Accounts: AsyncParsableCommand {
             let accounts = AccountRepository(container: container)
 
             let netWorth = try accounts.getNetWorth()
-            try outputJSON(netWorth)
+            try outputJSON(netWorth, format: parent.format)
         }
     }
 
     struct Spending: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Get spending by category")
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         @Option(name: .long, help: "Start date (YYYY-MM-DD)")
         var startDate: String?
@@ -117,14 +117,14 @@ struct Accounts: AsyncParsableCommand {
             let spending = try accounts.getCategoryAnalysis(
                 type: "expense", startDate: startDate, endDate: endDate
             )
-            try outputJSON(spending)
+            try outputJSON(spending, format: parent.format)
         }
     }
 
     struct Income: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Get income by category")
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         @Option(name: .long, help: "Start date (YYYY-MM-DD)")
         var startDate: String?
@@ -140,14 +140,14 @@ struct Accounts: AsyncParsableCommand {
             let income = try accounts.getCategoryAnalysis(
                 type: "income", startDate: startDate, endDate: endDate
             )
-            try outputJSON(income)
+            try outputJSON(income, format: parent.format)
         }
     }
 
     struct Summary: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Get vault summary")
 
-        @OptionGroup var parent: VaultOption
+        @OptionGroup var parent: GlobalOptions
 
         func run() async throws {
             let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
@@ -186,7 +186,7 @@ struct Accounts: AsyncParsableCommand {
                 "tags": tagCount,
                 "netWorth": netWorthSummary,
             ]
-            try outputJSON(summary)
+            try outputJSON(summary, format: parent.format)
         }
     }
 }

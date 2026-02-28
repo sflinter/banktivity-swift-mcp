@@ -7,7 +7,7 @@ import Foundation
 struct Schema: AsyncParsableCommand {
     static let configuration = CommandConfiguration(abstract: "Dump Core Data schema")
 
-    @OptionGroup var parent: VaultOption
+    @OptionGroup var parent: GlobalOptions
 
     @Option(name: .long, help: "Filter to a specific entity name")
     var entity: String?
@@ -25,9 +25,9 @@ struct Schema: AsyncParsableCommand {
             if filtered.isEmpty {
                 throw ToolError.notFound("Entity '\(entityFilter)' not found")
             }
-            try outputJSON(filtered)
+            try outputJSON(filtered, format: parent.format)
         } else {
-            try outputJSON(schema)
+            try outputJSON(schema, format: parent.format)
         }
     }
 }

@@ -53,20 +53,22 @@ struct BanktivityCLI: AsyncParsableCommand {
 
 // MARK: - JSON Output
 
-func outputJSON<T: Encodable>(_ value: T) throws {
+func outputJSON<T: Encodable>(_ value: T, format: OutputFormat = .json) throws {
     let encoder = JSONEncoder()
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    encoder.outputFormatting = format == .json ? [.prettyPrinted, .sortedKeys] : [.sortedKeys]
     let data = try encoder.encode(value)
     print(String(data: data, encoding: .utf8) ?? "{}")
 }
 
-func outputJSON(_ value: [String: Any]) throws {
-    let data = try JSONSerialization.data(withJSONObject: value, options: [.prettyPrinted, .sortedKeys])
+func outputJSON(_ value: [String: Any], format: OutputFormat = .json) throws {
+    let options: JSONSerialization.WritingOptions = format == .json ? [.prettyPrinted, .sortedKeys] : [.sortedKeys]
+    let data = try JSONSerialization.data(withJSONObject: value, options: options)
     print(String(data: data, encoding: .utf8) ?? "{}")
 }
 
-func outputJSON(_ value: [[String: Any]]) throws {
-    let data = try JSONSerialization.data(withJSONObject: value, options: [.prettyPrinted, .sortedKeys])
+func outputJSON(_ value: [[String: Any]], format: OutputFormat = .json) throws {
+    let options: JSONSerialization.WritingOptions = format == .json ? [.prettyPrinted, .sortedKeys] : [.sortedKeys]
+    let data = try JSONSerialization.data(withJSONObject: value, options: options)
     print(String(data: data, encoding: .utf8) ?? "[]")
 }
 

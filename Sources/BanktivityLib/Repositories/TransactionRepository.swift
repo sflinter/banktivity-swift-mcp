@@ -165,7 +165,7 @@ public final class TransactionRepository: BaseRepository, @unchecked Sendable {
 
     /// Update an existing transaction
     public func update(transactionId: Int, title: String? = nil, note: String? = nil, date: String? = nil, cleared: Bool? = nil) throws -> TransactionDTO? {
-        var dateChanged = false
+        nonisolated(unsafe) var dateChanged = false
 
         try performWrite { [self] ctx in
             guard let tx = try fetchByPK(entityName: "Transaction", pk: transactionId, in: ctx) else {
