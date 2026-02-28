@@ -9,10 +9,30 @@ Inspired by [banktivity-mcp](https://github.com/mhriemers/banktivity-mcp) (TypeS
 ## Requirements
 
 - macOS 14+
-- Swift 6.0+ (Xcode 16+ or Command Line Tools)
 - A Banktivity `.bank8` vault file
 
 ## Installation
+
+### Homebrew (recommended)
+
+```sh
+brew install sflinter/tap/banktivity-swift-mcp
+```
+
+This installs both `banktivity-mcp` and `banktivity-cli` as universal binaries (Apple Silicon + Intel).
+
+### Download binary
+
+Download the universal binary from [GitHub Releases](https://github.com/sflinter/banktivity-swift-mcp/releases), extract, and move to your PATH:
+
+```sh
+tar xzf banktivity-swift-mcp-v0.3.0-macos-universal.tar.gz
+mv banktivity-mcp banktivity-cli ~/.local/bin/
+```
+
+### Build from source
+
+Requires Swift 6.0+ (Xcode 16+ or Command Line Tools):
 
 ```sh
 git clone https://github.com/sflinter/banktivity-swift-mcp.git
