@@ -40,7 +40,10 @@ struct LineItems: AsyncParsableCommand {
         var transactionId: Int
 
         @Option(name: .long, help: "Account ID")
-        var accountId: Int
+        var accountId: Int?
+
+        @Option(name: .long, help: "Account name (alternative to --account-id)")
+        var accountName: String?
 
         @Option(name: .long, help: "Amount")
         var amount: Double
@@ -54,14 +57,17 @@ struct LineItems: AsyncParsableCommand {
             let writeGuard = BanktivityCLI.createWriteGuard(vaultPath: path)
             try await guardWrite(writeGuard)
 
+            let accounts = AccountRepository(container: container)
+            let resolvedId = try accounts.resolveAccountId(id: accountId, name: accountName)
+
             let lineItems = LineItemRepository(container: container)
             _ = try lineItems.create(
                 transactionId: transactionId,
-                accountId: accountId,
+                accountId: resolvedId,
                 amount: amount,
                 memo: memo
             )
-            try lineItems.recalculateRunningBalances(accountId: accountId)
+            try lineItems.recalculateRunningBalances(accountId: resolvedId)
 
             let updatedItems = try lineItems.getForTransactionPK(transactionId)
             try outputJSON(updatedItems)
@@ -79,6 +85,9 @@ struct LineItems: AsyncParsableCommand {
         @Option(name: .long, help: "New account ID")
         var accountId: Int?
 
+        @Option(name: .long, help: "New account name (alternative to --account-id)")
+        var accountName: String?
+
         @Option(name: .long, help: "New amount")
         var amount: Double?
 
@@ -91,10 +100,18 @@ struct LineItems: AsyncParsableCommand {
             let writeGuard = BanktivityCLI.createWriteGuard(vaultPath: path)
             try await guardWrite(writeGuard)
 
+            let accounts = AccountRepository(container: container)
+            let resolvedAccountId: Int?
+            if accountId != nil || accountName != nil {
+                resolvedAccountId = try accounts.resolveAccountId(id: accountId, name: accountName)
+            } else {
+                resolvedAccountId = nil
+            }
+
             let lineItems = LineItemRepository(container: container)
             let affectedAccounts = try lineItems.update(
                 lineItemId: id,
-                accountId: accountId,
+                accountId: resolvedAccountId,
                 amount: amount,
                 memo: memo
             )

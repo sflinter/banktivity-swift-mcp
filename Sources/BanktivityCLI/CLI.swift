@@ -10,6 +10,7 @@ struct BanktivityCLI: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "banktivity-cli",
         abstract: "CLI for Banktivity personal finance vaults",
+        version: version,
         subcommands: [
             Accounts.self,
             Transactions.self,

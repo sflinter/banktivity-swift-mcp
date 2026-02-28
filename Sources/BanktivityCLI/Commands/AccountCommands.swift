@@ -59,19 +59,23 @@ struct Accounts: AsyncParsableCommand {
 
         @OptionGroup var parent: VaultOption
 
-        @Argument(help: "Account ID")
-        var accountId: Int
+        @Option(name: .long, help: "Account ID")
+        var accountId: Int?
+
+        @Option(name: .long, help: "Account name (alternative to --account-id)")
+        var accountName: String?
 
         func run() async throws {
             let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
             let container = try BanktivityCLI.createContainer(vaultPath: path)
             let accounts = AccountRepository(container: container)
 
-            let balance = try accounts.getBalance(accountId: accountId)
-            let account = try accounts.get(accountId: accountId)
+            let resolvedId = try accounts.resolveAccountId(id: accountId, name: accountName)
+            let balance = try accounts.getBalance(accountId: resolvedId)
+            let account = try accounts.get(accountId: resolvedId)
 
             try outputJSON([
-                "accountId": accountId,
+                "accountId": resolvedId,
                 "accountName": account?.name ?? "Unknown",
                 "balance": balance,
                 "formattedBalance": formatCurrency(balance, currency: account?.currency ?? "EUR"),

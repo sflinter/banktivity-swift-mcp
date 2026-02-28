@@ -161,16 +161,8 @@ func resolveAccountId(
     accounts: AccountRepository,
     arguments: [String: Value]?
 ) throws -> Int {
-    if let id = ToolHelpers.getInt(arguments, key: "account_id") {
-        return id
-    }
-
-    if let name = ToolHelpers.getString(arguments, key: "account_name") {
-        if let account = try accounts.findByName(name) {
-            return account.id
-        }
-        throw ToolError.notFound("Account not found: \(name)")
-    }
-
-    throw ToolError.missingParameter("Either account_id or account_name is required")
+    try accounts.resolveAccountId(
+        id: ToolHelpers.getInt(arguments, key: "account_id"),
+        name: ToolHelpers.getString(arguments, key: "account_name")
+    )
 }

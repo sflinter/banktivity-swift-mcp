@@ -114,6 +114,20 @@ public final class AccountRepository: BaseRepository, @unchecked Sendable {
         return results
     }
 
+    /// Resolve an account from either an ID or a name, preferring ID
+    public func resolveAccountId(id: Int?, name: String?) throws -> Int {
+        if let id = id {
+            return id
+        }
+        if let name = name {
+            if let account = try findByName(name) {
+                return account.id
+            }
+            throw ToolError.notFound("Account not found: \(name)")
+        }
+        throw ToolError.missingParameter("Either account_id or account_name is required")
+    }
+
     // MARK: - Aggregate Helpers
 
     /// Sum pTransactionAmount for LineItems matching a predicate

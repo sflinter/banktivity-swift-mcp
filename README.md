@@ -19,7 +19,9 @@ git clone https://github.com/sflinter/banktivity-swift-mcp.git
 cd banktivity-swift-mcp
 swift build -c release
 cp .build/release/banktivity-mcp ~/.local/bin/
+cp .build/release/banktivity-cli ~/.local/bin/
 codesign -fs - ~/.local/bin/banktivity-mcp
+codesign -fs - ~/.local/bin/banktivity-cli
 ```
 
 ## Configuration
@@ -127,6 +129,34 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ### Diagnostic
 - `dump_schema` — Inspect the Core Data model schema (entity names, attributes, relationships)
+
+## CLI
+
+A standalone CLI (`banktivity-cli`) provides the same functionality without an MCP server. Set `BANKTIVITY_FILE_PATH` or pass `--vault`:
+
+```sh
+banktivity-cli --vault ~/Documents/Banktivity/My\ Accounts.bank8 accounts list
+banktivity-cli accounts balance --account-name "Checking"
+banktivity-cli transactions list --account-name "Checking" --start-date 2025-01-01 --limit 10
+banktivity-cli transactions create --account-name "Checking" --date 2025-06-15 --title "Coffee" --amount -4.50 --category-name "Food"
+banktivity-cli tags get-by-tag --tag-name "Vacation" --limit 20
+banktivity-cli tags bulk-tag --transaction-ids "100,101,102" --tag-name "Vacation"
+```
+
+### CLI Subcommands
+
+- `accounts list`, `accounts balance`, `accounts net-worth`, `accounts spending`, `accounts income`, `accounts summary`
+- `transactions list`, `transactions search`, `transactions get`, `transactions create`, `transactions update`, `transactions delete`
+- `categories list`, `categories get`, `categories tree`, `categories create`
+- `tags list`, `tags create`, `tags tag-transaction`, `tags get-by-tag`, `tags bulk-tag`
+- `uncategorized list`, `uncategorized suggest`, `uncategorized recategorize`, `uncategorized bulk-recategorize`, `uncategorized review`, `uncategorized payee-summary`
+- `line-items get`, `line-items add`, `line-items update`, `line-items delete`
+- `templates list`, `templates get`, `templates create`, `templates update`, `templates delete`
+- `import-rules list`, `import-rules get`, `import-rules match`, `import-rules create`, `import-rules update`, `import-rules delete`
+- `scheduled list`, `scheduled get`, `scheduled create`, `scheduled update`, `scheduled delete`
+- `schema`
+
+Most commands that accept `--account-id` also accept `--account-name` as an alternative. The `transactions create` command supports `--line-items` with a JSON array for multi-line-item (split) transactions.
 
 ## Safety Features
 

@@ -18,6 +18,9 @@ struct Transactions: AsyncParsableCommand {
         @Option(name: .long, help: "Filter by account ID")
         var accountId: Int?
 
+        @Option(name: .long, help: "Filter by account name (alternative to --account-id)")
+        var accountName: String?
+
         @Option(name: .long, help: "Start date (YYYY-MM-DD)")
         var startDate: String?
 
@@ -33,11 +36,19 @@ struct Transactions: AsyncParsableCommand {
         func run() async throws {
             let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
             let container = try BanktivityCLI.createContainer(vaultPath: path)
+            let accounts = AccountRepository(container: container)
             let lineItemRepo = LineItemRepository(container: container)
             let transactions = TransactionRepository(container: container, lineItemRepo: lineItemRepo)
 
+            let resolvedAccountId: Int?
+            if accountId != nil || accountName != nil {
+                resolvedAccountId = try accounts.resolveAccountId(id: accountId, name: accountName)
+            } else {
+                resolvedAccountId = nil
+            }
+
             let results = try transactions.list(
-                accountId: accountId,
+                accountId: resolvedAccountId,
                 startDate: startDate,
                 endDate: endDate,
                 limit: limit,
@@ -96,7 +107,10 @@ struct Transactions: AsyncParsableCommand {
         @OptionGroup var parent: VaultOption
 
         @Option(name: .long, help: "Account ID for the primary line item")
-        var accountId: Int
+        var accountId: Int?
+
+        @Option(name: .long, help: "Account name (alternative to --account-id)")
+        var accountName: String?
 
         @Option(name: .long, help: "Transaction date (YYYY-MM-DD)")
         var date: String
@@ -104,14 +118,20 @@ struct Transactions: AsyncParsableCommand {
         @Option(name: .long, help: "Transaction title/payee")
         var title: String
 
-        @Option(name: .long, help: "Transaction amount")
-        var amount: Double
+        @Option(name: .long, help: "Transaction amount (required unless --line-items is provided)")
+        var amount: Double?
 
         @Option(name: .long, help: "Category ID for the second line item")
         var categoryId: Int?
 
+        @Option(name: .long, help: "Category name (alternative to --category-id)")
+        var categoryName: String?
+
         @Option(name: .long, help: "Optional note")
         var note: String?
+
+        @Option(name: .long, help: "JSON array of line items, e.g. '[{\"account_id\":1,\"amount\":-50},{\"account_name\":\"Food\",\"amount\":50}]'")
+        var lineItems: String?
 
         func run() async throws {
             let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
@@ -119,22 +139,54 @@ struct Transactions: AsyncParsableCommand {
             let writeGuard = BanktivityCLI.createWriteGuard(vaultPath: path)
             try await guardWrite(writeGuard)
 
+            let accounts = AccountRepository(container: container)
             let lineItemRepo = LineItemRepository(container: container)
             let transactions = TransactionRepository(container: container, lineItemRepo: lineItemRepo)
 
-            var lineItems: [(accountId: Int, amount: Double, memo: String?)] = [
-                (accountId: accountId, amount: amount, memo: nil)
-            ]
+            let resolvedLineItems: [(accountId: Int, amount: Double, memo: String?)]
 
-            if let catId = categoryId {
-                lineItems.append((accountId: catId, amount: -amount, memo: nil))
+            if let lineItemsJSON = lineItems {
+                // Multi-line-item mode
+                guard let data = lineItemsJSON.data(using: .utf8),
+                      let parsed = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+                    throw ToolError.invalidInput("--line-items must be a valid JSON array")
+                }
+
+                resolvedLineItems = try parsed.map { item in
+                    let acctId = try accounts.resolveAccountId(
+                        id: item["account_id"] as? Int,
+                        name: item["account_name"] as? String
+                    )
+                    guard let amt = item["amount"] as? Double ?? (item["amount"] as? Int).map(Double.init) else {
+                        throw ToolError.missingParameter("Each line item requires an 'amount'")
+                    }
+                    let memo = item["memo"] as? String
+                    return (accountId: acctId, amount: amt, memo: memo)
+                }
+            } else {
+                // Simple mode — require account and amount
+                let resolvedAccountId = try accounts.resolveAccountId(id: accountId, name: accountName)
+                guard let amount = amount else {
+                    throw ToolError.missingParameter("--amount is required (or use --line-items for multi-line-item transactions)")
+                }
+
+                var items: [(accountId: Int, amount: Double, memo: String?)] = [
+                    (accountId: resolvedAccountId, amount: amount, memo: nil)
+                ]
+
+                if categoryId != nil || categoryName != nil {
+                    let catId = try accounts.resolveAccountId(id: categoryId, name: categoryName)
+                    items.append((accountId: catId, amount: -amount, memo: nil))
+                }
+
+                resolvedLineItems = items
             }
 
             let result = try transactions.create(
                 date: date,
                 title: title,
                 note: note,
-                lineItems: lineItems
+                lineItems: resolvedLineItems
             )
             try outputJSON(result)
         }

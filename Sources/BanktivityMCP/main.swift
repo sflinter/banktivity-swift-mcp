@@ -1,6 +1,5 @@
 // Copyright (c) 2026 Steve Flinter. MIT License.
 
-import BanktivityLib
 import BanktivityMCPLib
 import CoreData
 import Foundation
@@ -63,7 +62,7 @@ registry.registerAllTools()
 
 let server = Server(
     name: "banktivity-mcp",
-    version: "0.1.0",
+    version: version,
     capabilities: .init(tools: .init(listChanged: false))
 )
 
