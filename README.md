@@ -186,6 +186,21 @@ For example, to install Zsh completions:
 banktivity-cli --generate-completion-script zsh > ~/.zfunc/_banktivity-cli
 ```
 
+## Claude Code Skill
+
+A `/banktivity` [skill](https://docs.anthropic.com/en/docs/claude-code/skills) is available for Claude Code. It lets Claude use the CLI directly to answer natural-language questions about your finances — "What did I spend on groceries last month?", "Show me uncategorized transactions in Checking", etc.
+
+To install, copy the skill directory into your global Claude Code config:
+
+```sh
+mkdir -p ~/.claude/skills
+cp -r .claude-skill-banktivity ~/.claude/skills/banktivity
+```
+
+The skill directory should contain a `SKILL.md` file that teaches Claude how to invoke `banktivity-cli` with the correct environment variable and arguments. You'll need to edit the `BANKTIVITY_FILE_PATH` in `SKILL.md` to point to your own vault.
+
+Once installed, type `/banktivity` in any Claude Code session to activate it, or Claude will activate it automatically when you ask about transactions, accounts, spending, or categories.
+
 ## Safety Features
 
 - **Write guard**: Before any mutation, the server checks if Banktivity.app has the vault open (via `lsof`). If it does, writes are blocked to prevent corruption.
