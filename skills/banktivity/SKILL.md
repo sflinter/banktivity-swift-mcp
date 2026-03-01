@@ -1,6 +1,6 @@
 ---
 name: banktivity
-description: Query and manage Banktivity financial data. Use when the user asks about transactions, accounts, spending, categories, or tags in their Banktivity database.
+description: Query and manage Banktivity financial data. Use when the user asks about transactions, accounts, spending, categories, tags, or securities in their Banktivity database.
 allowed-tools: Bash, Read
 ---
 
@@ -65,6 +65,15 @@ Always redirect stderr with `2>/dev/null` — CoreData prints harmless warnings 
 | `reconcile_line_items` | `--statement_id N --line_item_ids 1,2,3` | Sets pCleared=true; validates account/date |
 | `unreconcile_line_items` | `--statement_id N --line_item_ids 1,2,3` | Sets pCleared=false |
 | `get_unreconciled_line_items` | `--account_id N --start_date --end_date` | Unreconciled line items for date range |
+
+### Securities
+
+| Tool | Key Arguments | Notes |
+|---|---|---|
+| `list_securities` | (none) | All securities with name, symbol, currency |
+| `get_security_prices` | `--symbol AAPL --start_date --end_date --limit N` | Price history; also accepts `--id N` |
+| `import_security_prices` | `--file_path /path/to/csv --symbol AAPL` | Supports Yahoo Finance, OHLCV, or Date/Close CSV |
+| `delete_security_prices` | `--symbol AAPL --start_date --end_date` | Delete prices; date range optional |
 
 ### Modifying
 

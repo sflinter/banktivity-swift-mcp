@@ -159,5 +159,9 @@ public final class ToolRegistry: @unchecked Sendable {
             registry: self, statements: statementRepo,
             accounts: accountRepo, lineItems: lineItemRepo, writeGuard: writeGuard
         )
+
+        // Security tools (read + write)
+        let securityRepo = SecurityRepository(container: container)
+        registerSecurityTools(registry: self, securities: securityRepo, writeGuard: writeGuard)
     }
 }

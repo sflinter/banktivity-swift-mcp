@@ -351,6 +351,54 @@ public struct StatementDTO: Codable, Sendable {
     }
 }
 
+public struct SecurityDTO: Codable, Sendable {
+    public let id: Int
+    public let name: String
+    public let symbol: String
+    public let uniqueId: String
+    public let currency: String?
+    public let securityType: Int
+
+    public init(id: Int, name: String, symbol: String, uniqueId: String, currency: String?, securityType: Int) {
+        self.id = id; self.name = name; self.symbol = symbol; self.uniqueId = uniqueId
+        self.currency = currency; self.securityType = securityType
+    }
+}
+
+public struct SecurityPriceDTO: Codable, Sendable {
+    public let id: Int
+    public let date: String
+    public let closePrice: Double
+    public let adjustedClosePrice: Double
+    public let openPrice: Double
+    public let highPrice: Double
+    public let lowPrice: Double
+    public let volume: Double
+    public let dataSource: Int
+
+    public init(id: Int, date: String, closePrice: Double, adjustedClosePrice: Double, openPrice: Double, highPrice: Double, lowPrice: Double, volume: Double, dataSource: Int) {
+        self.id = id; self.date = date; self.closePrice = closePrice
+        self.adjustedClosePrice = adjustedClosePrice; self.openPrice = openPrice
+        self.highPrice = highPrice; self.lowPrice = lowPrice
+        self.volume = volume; self.dataSource = dataSource
+    }
+}
+
+public struct PriceImportResultDTO: Codable, Sendable {
+    public let securitySymbol: String
+    public let imported: Int
+    public let skipped: Int
+    public let totalPrices: Int
+    public let dateRangeBegin: String?
+    public let dateRangeEnd: String?
+
+    public init(securitySymbol: String, imported: Int, skipped: Int, totalPrices: Int, dateRangeBegin: String?, dateRangeEnd: String?) {
+        self.securitySymbol = securitySymbol; self.imported = imported; self.skipped = skipped
+        self.totalPrices = totalPrices; self.dateRangeBegin = dateRangeBegin
+        self.dateRangeEnd = dateRangeEnd
+    }
+}
+
 public struct StatementSummaryDTO: Codable, Sendable {
     public let id: Int
     public let name: String?
