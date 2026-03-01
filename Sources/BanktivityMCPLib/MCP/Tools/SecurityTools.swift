@@ -81,6 +81,76 @@ func registerSecurityTools(
         return try ToolHelpers.jsonResponse(result)
     }
 
+    // get_security_holdings
+    registry.register(
+        name: "get_security_holdings",
+        description: "Get current security holdings (share positions) across investment accounts. Shows shares held, cost basis, and current market value.",
+        inputSchema: ToolHelpers.schema(properties: [
+            "symbol": ToolHelpers.property(type: "string", description: "Security ticker symbol (e.g. AAPL)"),
+            "id": ToolHelpers.property(type: "number", description: "Security ID (alternative to symbol)"),
+            "account_id": ToolHelpers.property(type: "number", description: "Filter to a specific account"),
+        ])
+    ) { arguments in
+        let symbol = ToolHelpers.getString(arguments, key: "symbol")
+        let id = ToolHelpers.getInt(arguments, key: "id")
+        let accountId = ToolHelpers.getInt(arguments, key: "account_id")
+
+        let results = try securities.getHoldings(accountId: accountId, symbol: symbol, id: id)
+        return try ToolHelpers.jsonResponse(results)
+    }
+
+    // get_security_trades
+    registry.register(
+        name: "get_security_trades",
+        description: "Get security trade history (buys, sells, transfers). Shows share counts, prices, amounts, and commissions.",
+        inputSchema: ToolHelpers.schema(properties: [
+            "symbol": ToolHelpers.property(type: "string", description: "Security ticker symbol (e.g. AAPL)"),
+            "id": ToolHelpers.property(type: "number", description: "Security ID (alternative to symbol)"),
+            "account_id": ToolHelpers.property(type: "number", description: "Filter to a specific account"),
+            "start_date": ToolHelpers.property(type: "string", description: "Start date in YYYY-MM-DD format"),
+            "end_date": ToolHelpers.property(type: "string", description: "End date in YYYY-MM-DD format"),
+            "limit": ToolHelpers.property(type: "number", description: "Maximum number of trades to return"),
+        ])
+    ) { arguments in
+        let symbol = ToolHelpers.getString(arguments, key: "symbol")
+        let id = ToolHelpers.getInt(arguments, key: "id")
+        let accountId = ToolHelpers.getInt(arguments, key: "account_id")
+        let startDate = ToolHelpers.getString(arguments, key: "start_date")
+        let endDate = ToolHelpers.getString(arguments, key: "end_date")
+        let limit = ToolHelpers.getInt(arguments, key: "limit")
+
+        let results = try securities.getTrades(
+            accountId: accountId, symbol: symbol, id: id,
+            startDate: startDate, endDate: endDate, limit: limit
+        )
+        return try ToolHelpers.jsonResponse(results)
+    }
+
+    // get_security_income
+    registry.register(
+        name: "get_security_income",
+        description: "Get investment income history (dividends, interest, capital gains distributions).",
+        inputSchema: ToolHelpers.schema(properties: [
+            "symbol": ToolHelpers.property(type: "string", description: "Security ticker symbol (e.g. AAPL)"),
+            "id": ToolHelpers.property(type: "number", description: "Security ID (alternative to symbol)"),
+            "account_id": ToolHelpers.property(type: "number", description: "Filter to a specific account"),
+            "start_date": ToolHelpers.property(type: "string", description: "Start date in YYYY-MM-DD format"),
+            "end_date": ToolHelpers.property(type: "string", description: "End date in YYYY-MM-DD format"),
+        ])
+    ) { arguments in
+        let symbol = ToolHelpers.getString(arguments, key: "symbol")
+        let id = ToolHelpers.getInt(arguments, key: "id")
+        let accountId = ToolHelpers.getInt(arguments, key: "account_id")
+        let startDate = ToolHelpers.getString(arguments, key: "start_date")
+        let endDate = ToolHelpers.getString(arguments, key: "end_date")
+
+        let results = try securities.getIncome(
+            accountId: accountId, symbol: symbol, id: id,
+            startDate: startDate, endDate: endDate
+        )
+        return try ToolHelpers.jsonResponse(results)
+    }
+
     // delete_security_prices
     registry.register(
         name: "delete_security_prices",

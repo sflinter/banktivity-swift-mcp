@@ -72,6 +72,9 @@ Always redirect stderr with `2>/dev/null` — CoreData prints harmless warnings 
 |---|---|---|
 | `list_securities` | (none) | All securities with name, symbol, currency |
 | `get_security_prices` | `--symbol AAPL --start_date --end_date --limit N` | Price history; also accepts `--id N` |
+| `get_security_holdings` | `--symbol AAPL --account_id N` | Current positions with shares, cost basis, market value |
+| `get_security_trades` | `--symbol AAPL --account_id N --start_date --end_date --limit N` | Trade history (buys, sells, transfers) |
+| `get_security_income` | `--symbol AAPL --account_id N --start_date --end_date` | Dividends, interest, capital gains distributions |
 | `import_security_prices` | `--file_path /path/to/csv --symbol AAPL` | Supports Yahoo Finance, OHLCV, or Date/Close CSV |
 | `delete_security_prices` | `--symbol AAPL --start_date --end_date` | Delete prices; date range optional |
 

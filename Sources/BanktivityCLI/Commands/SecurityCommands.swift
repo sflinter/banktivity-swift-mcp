@@ -7,7 +7,7 @@ import Foundation
 struct Securities: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Security and price history operations",
-        subcommands: [List.self, Prices.self, ImportPrices.self, DeletePrices.self]
+        subcommands: [List.self, Prices.self, ImportPrices.self, DeletePrices.self, Holdings.self, Trades.self, Income.self]
     )
 
     struct List: AsyncParsableCommand {
@@ -129,6 +129,96 @@ struct Securities: AsyncParsableCommand {
                 startDate: startDate, endDate: endDate
             )
             try outputJSON(["message": "Deleted \(count) price(s)"] as [String: Any], format: parent.format)
+        }
+    }
+
+    struct Holdings: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(abstract: "Show current security holdings (positions)")
+
+        @OptionGroup var parent: GlobalOptions
+
+        @Option(name: .long, help: "Security ticker symbol")
+        var symbol: String?
+
+        @Option(name: .long, help: "Security ID (alternative to --symbol)")
+        var id: Int?
+
+        @Option(name: .long, help: "Filter to a specific account ID")
+        var accountId: Int?
+
+        func run() async throws {
+            let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
+            let container = try BanktivityCLI.createContainer(vaultPath: path)
+            let securities = SecurityRepository(container: container)
+            let results = try securities.getHoldings(accountId: accountId, symbol: symbol, id: id)
+            try outputJSON(results, format: parent.format)
+        }
+    }
+
+    struct Trades: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(abstract: "Show security trade history (buys, sells, transfers)")
+
+        @OptionGroup var parent: GlobalOptions
+
+        @Option(name: .long, help: "Security ticker symbol")
+        var symbol: String?
+
+        @Option(name: .long, help: "Security ID (alternative to --symbol)")
+        var id: Int?
+
+        @Option(name: .long, help: "Filter to a specific account ID")
+        var accountId: Int?
+
+        @Option(name: .long, help: "Start date (YYYY-MM-DD)")
+        var startDate: String?
+
+        @Option(name: .long, help: "End date (YYYY-MM-DD)")
+        var endDate: String?
+
+        @Option(name: .long, help: "Maximum number of trades to return")
+        var limit: Int?
+
+        func run() async throws {
+            let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
+            let container = try BanktivityCLI.createContainer(vaultPath: path)
+            let securities = SecurityRepository(container: container)
+            let results = try securities.getTrades(
+                accountId: accountId, symbol: symbol, id: id,
+                startDate: startDate, endDate: endDate, limit: limit
+            )
+            try outputJSON(results, format: parent.format)
+        }
+    }
+
+    struct Income: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(abstract: "Show investment income (dividends, interest, capital gains)")
+
+        @OptionGroup var parent: GlobalOptions
+
+        @Option(name: .long, help: "Security ticker symbol")
+        var symbol: String?
+
+        @Option(name: .long, help: "Security ID (alternative to --symbol)")
+        var id: Int?
+
+        @Option(name: .long, help: "Filter to a specific account ID")
+        var accountId: Int?
+
+        @Option(name: .long, help: "Start date (YYYY-MM-DD)")
+        var startDate: String?
+
+        @Option(name: .long, help: "End date (YYYY-MM-DD)")
+        var endDate: String?
+
+        func run() async throws {
+            let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
+            let container = try BanktivityCLI.createContainer(vaultPath: path)
+            let securities = SecurityRepository(container: container)
+            let results = try securities.getIncome(
+                accountId: accountId, symbol: symbol, id: id,
+                startDate: startDate, endDate: endDate
+            )
+            try outputJSON(results, format: parent.format)
         }
     }
 }

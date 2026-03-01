@@ -1,6 +1,6 @@
 # Banktivity CLI — Complete Tool Reference
 
-All 55 tools with their input schemas. Invoke with:
+All 58 tools with their input schemas. Invoke with:
 ```sh
 BANKTIVITY_FILE_PATH="$HOME/Documents/Banktivity/My Accounts.bank8" banktivity-cli <tool> [--key value ...] 2>/dev/null
 ```
@@ -756,6 +756,108 @@ Delete a scheduled transaction.
     "schedule_id": { "type": "number", "description": "The scheduled transaction ID to delete" }
   },
   "required": ["schedule_id"]
+}
+```
+
+---
+
+## Securities
+
+### list_securities
+List all securities (stocks, funds, etc.) in the vault with name, symbol, and currency.
+
+```json
+{
+  "properties": {}
+}
+```
+
+### get_security_prices
+Get price history for a security. Returns prices sorted by date descending.
+
+```json
+{
+  "properties": {
+    "symbol": { "type": "string", "description": "Security ticker symbol (e.g. AAPL)" },
+    "id": { "type": "number", "description": "Security ID (alternative to symbol)" },
+    "start_date": { "type": "string", "description": "Start date in YYYY-MM-DD format" },
+    "end_date": { "type": "string", "description": "End date in YYYY-MM-DD format" },
+    "limit": { "type": "number", "description": "Maximum number of prices to return" }
+  }
+}
+```
+
+### get_security_holdings
+Get current security holdings (share positions) across investment accounts. Shows shares held, cost basis, and current market value.
+
+```json
+{
+  "properties": {
+    "symbol": { "type": "string", "description": "Security ticker symbol (e.g. AAPL)" },
+    "id": { "type": "number", "description": "Security ID (alternative to symbol)" },
+    "account_id": { "type": "number", "description": "Filter to a specific account" }
+  }
+}
+```
+
+### get_security_trades
+Get security trade history (buys, sells, transfers). Shows share counts, prices, amounts, and commissions.
+
+```json
+{
+  "properties": {
+    "symbol": { "type": "string", "description": "Security ticker symbol (e.g. AAPL)" },
+    "id": { "type": "number", "description": "Security ID (alternative to symbol)" },
+    "account_id": { "type": "number", "description": "Filter to a specific account" },
+    "start_date": { "type": "string", "description": "Start date in YYYY-MM-DD format" },
+    "end_date": { "type": "string", "description": "End date in YYYY-MM-DD format" },
+    "limit": { "type": "number", "description": "Maximum number of trades to return" }
+  }
+}
+```
+
+### get_security_income
+Get investment income history (dividends, interest, capital gains distributions).
+
+```json
+{
+  "properties": {
+    "symbol": { "type": "string", "description": "Security ticker symbol (e.g. AAPL)" },
+    "id": { "type": "number", "description": "Security ID (alternative to symbol)" },
+    "account_id": { "type": "number", "description": "Filter to a specific account" },
+    "start_date": { "type": "string", "description": "Start date in YYYY-MM-DD format" },
+    "end_date": { "type": "string", "description": "End date in YYYY-MM-DD format" }
+  }
+}
+```
+
+### import_security_prices
+Import security prices from a CSV file. Supports Yahoo Finance format, OHLCV (6 cols), or simple Date,Close (2 cols). Duplicate dates are skipped.
+
+```json
+{
+  "properties": {
+    "file_path": { "type": "string", "description": "Path to the CSV file" },
+    "symbol": { "type": "string", "description": "Security ticker symbol (e.g. AAPL)" },
+    "id": { "type": "number", "description": "Security ID (alternative to symbol)" },
+    "has_header": { "type": "boolean", "description": "Whether the CSV has a header row (default: true)" },
+    "date_format": { "type": "string", "description": "Date format string (default: yyyy-MM-dd)" }
+  },
+  "required": ["file_path"]
+}
+```
+
+### delete_security_prices
+Delete price history for a security, optionally filtered by date range.
+
+```json
+{
+  "properties": {
+    "symbol": { "type": "string", "description": "Security ticker symbol (e.g. AAPL)" },
+    "id": { "type": "number", "description": "Security ID (alternative to symbol)" },
+    "start_date": { "type": "string", "description": "Start date in YYYY-MM-DD format (optional)" },
+    "end_date": { "type": "string", "description": "End date in YYYY-MM-DD format (optional)" }
+  }
 }
 ```
 

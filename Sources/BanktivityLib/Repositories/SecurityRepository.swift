@@ -249,6 +249,273 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
         return count
     }
 
+    // MARK: - Holdings, Trades, Income
+
+    public func getHoldings(
+        accountId: Int? = nil,
+        symbol: String? = nil,
+        id: Int? = nil
+    ) throws -> [SecurityHoldingDTO] {
+        // Optionally resolve a specific security
+        var targetSecurity: NSManagedObject?
+        if symbol != nil || id != nil {
+            targetSecurity = try resolveSecurity(symbol: symbol, id: id)
+        }
+
+        // Fetch all SecurityLineItems with non-null pShares
+        let request = NSFetchRequest<NSManagedObject>(entityName: "SecurityLineItem")
+        var predicates: [NSPredicate] = [
+            NSPredicate(format: "pShares != nil")
+        ]
+        if let targetSecurity = targetSecurity {
+            predicates.append(NSPredicate(format: "pSecurity == %@", targetSecurity))
+        }
+        request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: predicates)
+        let items = try context.fetch(request)
+
+        // Group by (account PK, security PK)
+        struct PositionKey: Hashable {
+            let accountPK: Int
+            let securityPK: Int
+        }
+        struct PositionAccum {
+            var shares: Double = 0
+            var costBasis: Double = 0
+            var account: NSManagedObject?
+            var security: NSManagedObject?
+        }
+
+        var positions: [PositionKey: PositionAccum] = [:]
+
+        for sli in items {
+            guard let security = Self.relatedObject(sli, "pSecurity") else { continue }
+            guard let lineItem = Self.relatedObject(sli, "pLineItem") else { continue }
+            guard let account = Self.relatedObject(lineItem, "pAccount") else { continue }
+
+            let acctPK = Self.extractPK(from: account.objectID)
+            if let filterAcct = accountId, acctPK != filterAcct { continue }
+
+            let secPK = Self.extractPK(from: security.objectID)
+            let key = PositionKey(accountPK: acctPK, securityPK: secPK)
+
+            let shares = Self.doubleValue(sli, "pShares")
+            let amount = Self.doubleValue(sli, "pAmount")
+
+            var accum = positions[key] ?? PositionAccum()
+            accum.shares += shares
+            // Buy amounts are negative (outflow), so negate for cost basis
+            if shares > 0 {
+                accum.costBasis += -amount
+            }
+            accum.account = account
+            accum.security = security
+            positions[key] = accum
+        }
+
+        // Filter out zero-share positions and build DTOs
+        var results: [SecurityHoldingDTO] = []
+        for (_, accum) in positions {
+            guard abs(accum.shares) > 0.0001 else { continue }
+            guard let account = accum.account, let security = accum.security else { continue }
+
+            let securityId = Self.extractPK(from: security.objectID)
+            let secSymbol = Self.stringValue(security, "pSymbol")
+            let secName = Self.stringValue(security, "pName")
+            let uniqueId = Self.stringValue(security, "pUniqueID")
+
+            // Look up latest price
+            var lastPrice: Double?
+            var lastPriceDate: String?
+            let piRequest = NSFetchRequest<NSManagedObject>(entityName: "SecurityPriceItem")
+            piRequest.predicate = NSPredicate(format: "pSecurityID == %@", uniqueId)
+            piRequest.fetchLimit = 1
+            if let priceItem = try context.fetch(piRequest).first {
+                let priceRequest = NSFetchRequest<NSManagedObject>(entityName: "SecurityPrice")
+                priceRequest.predicate = NSPredicate(format: "pSecurityPriceItem == %@", priceItem)
+                priceRequest.sortDescriptors = [NSSortDescriptor(key: "pDate", ascending: false)]
+                priceRequest.fetchLimit = 1
+                if let latestPrice = try context.fetch(priceRequest).first {
+                    lastPrice = Self.doubleValue(latestPrice, "pClosePrice")
+                    let dateInt = (latestPrice.value(forKey: "pDate") as? Int32) ?? 0
+                    lastPriceDate = Self.daysSinceEpochToISO(dateInt)
+                }
+            }
+
+            let marketValue = lastPrice.map { $0 * accum.shares }
+            let currency: String? = {
+                if let curr = Self.relatedObject(security, "pCurrency") {
+                    return Self.string(curr, "pCode")
+                }
+                return nil
+            }()
+
+            results.append(SecurityHoldingDTO(
+                accountId: Self.extractPK(from: account.objectID),
+                accountName: Self.stringValue(account, "pName"),
+                securityId: securityId,
+                symbol: secSymbol,
+                securityName: secName,
+                shares: accum.shares,
+                costBasis: accum.costBasis,
+                marketValue: marketValue,
+                lastPrice: lastPrice,
+                lastPriceDate: lastPriceDate,
+                currency: currency
+            ))
+        }
+
+        return results.sorted { ($0.accountName, $0.symbol) < ($1.accountName, $1.symbol) }
+    }
+
+    public func getTrades(
+        accountId: Int? = nil,
+        symbol: String? = nil,
+        id: Int? = nil,
+        startDate: String? = nil,
+        endDate: String? = nil,
+        limit: Int? = nil
+    ) throws -> [SecurityTradeDTO] {
+        var targetSecurity: NSManagedObject?
+        if symbol != nil || id != nil {
+            targetSecurity = try resolveSecurity(symbol: symbol, id: id)
+        }
+
+        let request = NSFetchRequest<NSManagedObject>(entityName: "SecurityLineItem")
+        var predicates: [NSPredicate] = [
+            NSPredicate(format: "pShares != nil")
+        ]
+        if let targetSecurity = targetSecurity {
+            predicates.append(NSPredicate(format: "pSecurity == %@", targetSecurity))
+        }
+        request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: predicates)
+        let items = try context.fetch(request)
+
+        var trades: [SecurityTradeDTO] = []
+        for sli in items {
+            guard let security = Self.relatedObject(sli, "pSecurity") else { continue }
+            guard let lineItem = Self.relatedObject(sli, "pLineItem") else { continue }
+            guard let account = Self.relatedObject(lineItem, "pAccount") else { continue }
+            guard let transaction = Self.relatedObject(lineItem, "pTransaction") else { continue }
+
+            let acctPK = Self.extractPK(from: account.objectID)
+            if let filterAcct = accountId, acctPK != filterAcct { continue }
+
+            guard let txDate = Self.dateValue(transaction, "pDate") else { continue }
+            let dateStr = DateConversion.toISO(txDate)
+
+            if let start = startDate, dateStr < start { continue }
+            if let end = endDate, dateStr > end { continue }
+
+            let baseType: Int = {
+                if let txType = Self.relatedObject(transaction, "pTransactionType") {
+                    return Self.intValue(txType, "pBaseType")
+                }
+                return 0
+            }()
+
+            trades.append(SecurityTradeDTO(
+                id: Self.extractPK(from: transaction.objectID),
+                date: dateStr,
+                type: Self.transactionTypeName(baseType),
+                symbol: Self.stringValue(security, "pSymbol"),
+                securityName: Self.stringValue(security, "pName"),
+                shares: Self.doubleValue(sli, "pShares"),
+                pricePerShare: Self.doubleValue(sli, "pPricePerShare"),
+                amount: Self.doubleValue(sli, "pAmount"),
+                commission: Self.doubleValue(sli, "pCommission"),
+                accountName: Self.stringValue(account, "pName"),
+                accountId: acctPK
+            ))
+        }
+
+        trades.sort { $0.date > $1.date }
+        if let limit = limit { return Array(trades.prefix(limit)) }
+        return trades
+    }
+
+    public func getIncome(
+        accountId: Int? = nil,
+        symbol: String? = nil,
+        id: Int? = nil,
+        startDate: String? = nil,
+        endDate: String? = nil
+    ) throws -> [SecurityIncomeDTO] {
+        var targetSecurity: NSManagedObject?
+        if symbol != nil || id != nil {
+            targetSecurity = try resolveSecurity(symbol: symbol, id: id)
+        }
+
+        let request = NSFetchRequest<NSManagedObject>(entityName: "SecurityLineItem")
+        var predicates: [NSPredicate] = [
+            NSPredicate(format: "pIncome > 0")
+        ]
+        if let targetSecurity = targetSecurity {
+            predicates.append(NSPredicate(format: "pSecurity == %@", targetSecurity))
+        }
+        request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: predicates)
+        let items = try context.fetch(request)
+
+        var incomes: [SecurityIncomeDTO] = []
+        for sli in items {
+            guard let security = Self.relatedObject(sli, "pSecurity") else { continue }
+            guard let lineItem = Self.relatedObject(sli, "pLineItem") else { continue }
+            guard let account = Self.relatedObject(lineItem, "pAccount") else { continue }
+            guard let transaction = Self.relatedObject(lineItem, "pTransaction") else { continue }
+
+            let acctPK = Self.extractPK(from: account.objectID)
+            if let filterAcct = accountId, acctPK != filterAcct { continue }
+
+            guard let txDate = Self.dateValue(transaction, "pDate") else { continue }
+            let dateStr = DateConversion.toISO(txDate)
+
+            if let start = startDate, dateStr < start { continue }
+            if let end = endDate, dateStr > end { continue }
+
+            let baseType: Int = {
+                if let txType = Self.relatedObject(transaction, "pTransactionType") {
+                    return Self.intValue(txType, "pBaseType")
+                }
+                return 0
+            }()
+
+            incomes.append(SecurityIncomeDTO(
+                id: Self.extractPK(from: transaction.objectID),
+                date: dateStr,
+                type: Self.transactionTypeName(baseType),
+                symbol: Self.stringValue(security, "pSymbol"),
+                securityName: Self.stringValue(security, "pName"),
+                amount: Self.doubleValue(sli, "pIncome"),
+                accountName: Self.stringValue(account, "pName"),
+                accountId: acctPK
+            ))
+        }
+
+        return incomes.sorted { $0.date > $1.date }
+    }
+
+    // MARK: - Transaction Type Mapping
+
+    static func transactionTypeName(_ baseType: Int) -> String {
+        switch baseType {
+        case 100: return "Buy"
+        case 101: return "Sell"
+        case 102: return "Short Sell"
+        case 103: return "Cover Short"
+        case 200: return "Buy to Open"
+        case 201: return "Sell to Close"
+        case 210: return "Move Shares In"
+        case 211: return "Move Shares Out"
+        case 300: return "Income"
+        case 301: return "Dividend"
+        case 302: return "Interest"
+        case 303: return "Capital Gains"
+        case 304: return "Interest Charge"
+        case 400: return "Return of Capital"
+        case 500: return "Stock Split"
+        default: return "Unknown (\(baseType))"
+        }
+    }
+
     // MARK: - CSV Parsing
 
     private struct ParsedPriceRow {

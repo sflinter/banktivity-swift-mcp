@@ -351,6 +351,65 @@ public struct StatementDTO: Codable, Sendable {
     }
 }
 
+public struct SecurityHoldingDTO: Codable, Sendable {
+    public let accountId: Int
+    public let accountName: String
+    public let securityId: Int
+    public let symbol: String
+    public let securityName: String
+    public let shares: Double
+    public let costBasis: Double
+    public let marketValue: Double?
+    public let lastPrice: Double?
+    public let lastPriceDate: String?
+    public let currency: String?
+
+    public init(accountId: Int, accountName: String, securityId: Int, symbol: String, securityName: String, shares: Double, costBasis: Double, marketValue: Double?, lastPrice: Double?, lastPriceDate: String?, currency: String?) {
+        self.accountId = accountId; self.accountName = accountName; self.securityId = securityId
+        self.symbol = symbol; self.securityName = securityName; self.shares = shares
+        self.costBasis = costBasis; self.marketValue = marketValue; self.lastPrice = lastPrice
+        self.lastPriceDate = lastPriceDate; self.currency = currency
+    }
+}
+
+public struct SecurityTradeDTO: Codable, Sendable {
+    public let id: Int
+    public let date: String
+    public let type: String
+    public let symbol: String
+    public let securityName: String
+    public let shares: Double
+    public let pricePerShare: Double
+    public let amount: Double
+    public let commission: Double
+    public let accountName: String
+    public let accountId: Int
+
+    public init(id: Int, date: String, type: String, symbol: String, securityName: String, shares: Double, pricePerShare: Double, amount: Double, commission: Double, accountName: String, accountId: Int) {
+        self.id = id; self.date = date; self.type = type; self.symbol = symbol
+        self.securityName = securityName; self.shares = shares; self.pricePerShare = pricePerShare
+        self.amount = amount; self.commission = commission; self.accountName = accountName
+        self.accountId = accountId
+    }
+}
+
+public struct SecurityIncomeDTO: Codable, Sendable {
+    public let id: Int
+    public let date: String
+    public let type: String
+    public let symbol: String
+    public let securityName: String
+    public let amount: Double
+    public let accountName: String
+    public let accountId: Int
+
+    public init(id: Int, date: String, type: String, symbol: String, securityName: String, amount: Double, accountName: String, accountId: Int) {
+        self.id = id; self.date = date; self.type = type; self.symbol = symbol
+        self.securityName = securityName; self.amount = amount
+        self.accountName = accountName; self.accountId = accountId
+    }
+}
+
 public struct SecurityDTO: Codable, Sendable {
     public let id: Int
     public let name: String
