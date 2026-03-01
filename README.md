@@ -26,7 +26,7 @@ This installs both `banktivity-mcp` and `banktivity-cli` as universal binaries (
 Download the universal binary from [GitHub Releases](https://github.com/sflinter/banktivity-swift-mcp/releases), extract, and move to your PATH:
 
 ```sh
-tar xzf banktivity-swift-mcp-v0.4.0-macos-universal.tar.gz
+tar xzf banktivity-swift-mcp-v0.5.0-macos-universal.tar.gz
 mv banktivity-mcp banktivity-cli ~/.local/bin/
 ```
 
