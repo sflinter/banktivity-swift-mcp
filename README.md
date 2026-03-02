@@ -26,7 +26,7 @@ This installs both `banktivity-mcp` and `banktivity-cli` as universal binaries (
 Download the universal binary from [GitHub Releases](https://github.com/sflinter/banktivity-swift-mcp/releases), extract, and move to your PATH:
 
 ```sh
-tar xzf banktivity-swift-mcp-v0.5.0-macos-universal.tar.gz
+tar xzf banktivity-swift-mcp-v0.6.0-macos-universal.tar.gz
 mv banktivity-mcp banktivity-cli ~/.local/bin/
 ```
 
@@ -158,10 +158,12 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ### Securities
 - `list_securities` — List all securities with name, symbol, and currency
+- `create_security` — Create a new security with symbol, name, and currency
 - `get_security_prices` — Get price history for a security (by symbol or ID, optional date range/limit)
 - `get_security_holdings` — Get current holdings (positions) with shares, cost basis, and market value
 - `get_security_trades` — Get trade history (buys, sells, transfers) with shares, prices, and commissions
 - `get_security_income` — Get investment income (dividends, interest, capital gains distributions)
+- `create_share_adjustment` — Create a share adjustment (e.g. charges, stock splits, position corrections)
 - `import_security_prices` — Import prices from a CSV file (Yahoo Finance, OHLCV, or Date/Close)
 - `delete_security_prices` — Delete price history for a security (optional date range)
 
@@ -193,7 +195,7 @@ banktivity-cli tags bulk-tag --transaction-ids "100,101,102" --tag-name "Vacatio
 - `import-rules list`, `import-rules get`, `import-rules match`, `import-rules create`, `import-rules update`, `import-rules delete`
 - `scheduled list`, `scheduled get`, `scheduled create`, `scheduled update`, `scheduled delete`
 - `statements list`, `statements get`, `statements create`, `statements delete`, `statements reconcile`, `statements unreconcile`, `statements unreconciled`
-- `securities list`, `securities prices`, `securities holdings`, `securities trades`, `securities income`, `securities import-prices`, `securities delete-prices`
+- `securities list`, `securities create`, `securities prices`, `securities holdings`, `securities trades`, `securities income`, `securities adjust`, `securities import-prices`, `securities delete-prices`
 - `schema`
 
 Most commands that accept `--account-id` also accept `--account-name` as an alternative. The `transactions create` command supports `--line-items` with a JSON array for multi-line-item (split) transactions.
@@ -243,7 +245,7 @@ Banktivity's `.bank8` bundle is a directory containing compiled Core Data models
 
 1. Loads and merges all `.momd` model bundles from the vault
 2. Opens the SQLite store via `NSPersistentContainer` (no history tracking)
-3. Exposes 61 MCP tools over stdio transport
+3. Exposes 63 MCP tools over stdio transport
 4. Uses KVC (`value(forKey:)`) to access entities since we load Banktivity's own compiled models at runtime
 
 ## License

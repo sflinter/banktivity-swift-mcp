@@ -7,7 +7,7 @@ import Foundation
 struct Securities: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Security and price history operations",
-        subcommands: [List.self, Prices.self, ImportPrices.self, DeletePrices.self, Holdings.self, Trades.self, Income.self]
+        subcommands: [List.self, Create.self, Prices.self, ImportPrices.self, DeletePrices.self, Holdings.self, Trades.self, Income.self, Adjust.self]
     )
 
     struct List: AsyncParsableCommand {
@@ -21,6 +21,34 @@ struct Securities: AsyncParsableCommand {
             let securities = SecurityRepository(container: container)
             let results = try securities.listSecurities()
             try outputJSON(results, format: parent.format)
+        }
+    }
+
+    struct Create: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(abstract: "Create a new security")
+
+        @OptionGroup var parent: GlobalOptions
+
+        @Option(name: .long, help: "Ticker symbol")
+        var symbol: String
+
+        @Option(name: .long, help: "Security name")
+        var name: String
+
+        @Option(name: .long, help: "Currency code (default: EUR)")
+        var currency: String = "EUR"
+
+        func run() async throws {
+            let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
+            let container = try BanktivityCLI.createContainer(vaultPath: path)
+            let writeGuard = BanktivityCLI.createWriteGuard(vaultPath: path)
+            try await guardWrite(writeGuard)
+
+            let securities = SecurityRepository(container: container)
+            let result = try securities.createSecurity(
+                symbol: symbol, name: name, currencyCode: currency
+            )
+            try outputJSON(result, format: parent.format)
         }
     }
 
@@ -219,6 +247,47 @@ struct Securities: AsyncParsableCommand {
                 startDate: startDate, endDate: endDate
             )
             try outputJSON(results, format: parent.format)
+        }
+    }
+
+    struct Adjust: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(abstract: "Create a share adjustment transaction (e.g. for charges)")
+
+        @OptionGroup var parent: GlobalOptions
+
+        @Option(name: .long, help: "Security ticker symbol")
+        var symbol: String?
+
+        @Option(name: .long, help: "Security ID (alternative to --symbol)")
+        var id: Int?
+
+        @Option(name: .long, help: "Account ID")
+        var accountId: Int
+
+        @Option(name: .long, help: "Number of shares to adjust (negative to reduce)")
+        var shares: Double
+
+        @Option(name: .long, help: "Date of adjustment (YYYY-MM-DD)")
+        var date: String
+
+        @Option(name: .long, help: "Transaction title")
+        var title: String?
+
+        @Option(name: .long, help: "Cash amount (negative for buy outflow)")
+        var amount: Double?
+
+        func run() async throws {
+            let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
+            let container = try BanktivityCLI.createContainer(vaultPath: path)
+            let writeGuard = BanktivityCLI.createWriteGuard(vaultPath: path)
+            try await guardWrite(writeGuard)
+
+            let securities = SecurityRepository(container: container)
+            let result = try securities.createShareAdjustment(
+                accountId: accountId, symbol: symbol, id: id,
+                shares: shares, date: date, title: title, amount: amount
+            )
+            try outputJSON(result, format: parent.format)
         }
     }
 }

@@ -1,6 +1,6 @@
 # Banktivity CLI — Complete Tool Reference
 
-All 58 tools with their input schemas. Invoke with:
+All 60 tools with their input schemas. Invoke with:
 ```sh
 BANKTIVITY_FILE_PATH="$HOME/Documents/Banktivity/My Accounts.bank8" banktivity-cli <tool> [--key value ...] 2>/dev/null
 ```
@@ -772,6 +772,20 @@ List all securities (stocks, funds, etc.) in the vault with name, symbol, and cu
 }
 ```
 
+### create_security
+Create a new security (stock, fund, etc.) in the vault.
+
+```json
+{
+  "properties": {
+    "symbol": { "type": "string", "description": "Ticker symbol (e.g. AAPL, SL-CBF)" },
+    "name": { "type": "string", "description": "Security name" },
+    "currency": { "type": "string", "description": "Currency code (default: EUR)" }
+  },
+  "required": ["symbol", "name"]
+}
+```
+
 ### get_security_prices
 Get price history for a security. Returns prices sorted by date descending.
 
@@ -828,6 +842,24 @@ Get investment income history (dividends, interest, capital gains distributions)
     "start_date": { "type": "string", "description": "Start date in YYYY-MM-DD format" },
     "end_date": { "type": "string", "description": "End date in YYYY-MM-DD format" }
   }
+}
+```
+
+### create_share_adjustment
+Create a share adjustment transaction (e.g. for charges that cancel units, stock splits, or manual position corrections). Use negative shares to reduce a position.
+
+```json
+{
+  "properties": {
+    "account_id": { "type": "number", "description": "Account ID" },
+    "symbol": { "type": "string", "description": "Security ticker symbol" },
+    "id": { "type": "number", "description": "Security ID (alternative to symbol)" },
+    "shares": { "type": "number", "description": "Number of shares to adjust (negative to reduce)" },
+    "date": { "type": "string", "description": "Date of adjustment in YYYY-MM-DD format" },
+    "title": { "type": "string", "description": "Transaction title/memo" },
+    "amount": { "type": "number", "description": "Cash amount (negative for buy outflow, positive for sell inflow)" }
+  },
+  "required": ["account_id", "shares", "date"]
 }
 ```
 

@@ -94,6 +94,135 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
 
     // MARK: - Write Operations
 
+    public func createSecurity(
+        symbol: String,
+        name: String,
+        currencyCode: String = "EUR"
+    ) throws -> SecurityDTO {
+        let pk: Int = try performWriteReturning { [self] ctx in
+            let existing = NSFetchRequest<NSManagedObject>(entityName: "Security")
+            existing.predicate = NSPredicate(format: "pSymbol ==[c] %@", symbol)
+            existing.fetchLimit = 1
+            if let _ = try ctx.fetch(existing).first {
+                throw ToolError.invalidInput("Security with symbol '\(symbol)' already exists")
+            }
+
+            let currRequest = NSFetchRequest<NSManagedObject>(entityName: "Currency")
+            currRequest.predicate = NSPredicate(format: "pCode ==[c] %@", currencyCode)
+            currRequest.fetchLimit = 1
+            let currency = try ctx.fetch(currRequest).first
+
+            let sec = Self.createObject(entityName: "Security", in: ctx)
+            sec.setValue(symbol, forKey: "pSymbol")
+            sec.setValue(name, forKey: "pName")
+            sec.setValue(Self.generateUUID(), forKey: "pUniqueID")
+            sec.setValue(false, forKey: "pExcludeFromQuoteUpdates")
+            sec.setValue(false, forKey: "pIsIndex")
+            sec.setValue(false, forKey: "pTradesInPence")
+            sec.setValue(Int16(0), forKey: "pType")
+            sec.setValue(Int16(0), forKey: "pRiskType")
+            sec.setValue(NSDecimalNumber.one, forKey: "pContractSize")
+            sec.setValue(NSDecimalNumber.zero, forKey: "pParValue")
+            Self.setNow(sec, "pCreationTime")
+            Self.setNow(sec, "pModificationDate")
+            if let currency = currency { sec.setValue(currency, forKey: "pCurrency") }
+
+            return Self.extractPK(from: sec.objectID)
+        }
+
+        let security = try resolveSecurity(symbol: nil, id: pk)
+        return mapToSecurityDTO(security)
+    }
+
+    public func createShareAdjustment(
+        accountId: Int,
+        symbol: String? = nil,
+        id: Int? = nil,
+        shares: Double,
+        date: String,
+        title: String? = nil,
+        amount: Double? = nil
+    ) throws -> SecurityTradeDTO {
+        let security = try resolveSecurity(symbol: symbol, id: id)
+        let securityObjectID = security.objectID
+        let secSymbol = Self.stringValue(security, "pSymbol")
+        let secName = Self.stringValue(security, "pName")
+
+        let txPK: Int = try performWriteReturning { [self] ctx in
+            guard let securityInCtx = try? ctx.existingObject(with: securityObjectID) else {
+                throw ToolError.notFound("Security not found in write context")
+            }
+            guard let account = try fetchByPK(entityName: "Account", pk: accountId, in: ctx) else {
+                throw ToolError.notFound("Account not found: \(accountId)")
+            }
+
+            // Find the appropriate transaction type: Buy (100) or Sell (101)
+            let baseType: Int16 = shares >= 0 ? 100 : 101
+            let typeRequest = NSFetchRequest<NSManagedObject>(entityName: "TransactionType")
+            typeRequest.predicate = NSPredicate(format: "pBaseType == %d", baseType)
+            typeRequest.fetchLimit = 1
+            let txType = try ctx.fetch(typeRequest).first
+
+            // Find EUR currency
+            let currRequest = NSFetchRequest<NSManagedObject>(entityName: "Currency")
+            currRequest.fetchLimit = 1
+            let currency = try ctx.fetch(currRequest).first
+
+            // Create Transaction
+            let tx = Self.createObject(entityName: "Transaction", in: ctx)
+            let txTitle = title ?? "Charge adjustment — \(secSymbol)"
+            tx.setValue(txTitle, forKey: "pTitle")
+            tx.setValue(Self.generateUUID(), forKey: "pUniqueID")
+            tx.setValue(false, forKey: "pCleared")
+            tx.setValue(false, forKey: "pVoid")
+            tx.setValue(false, forKey: "pAdjustment")
+            Self.setDate(tx, "pDate", isoString: date)
+            Self.setNow(tx, "pCreationTime")
+            Self.setNow(tx, "pModificationDate")
+            if let currency = currency { tx.setValue(currency, forKey: "pCurrency") }
+            if let txType = txType { tx.setValue(txType, forKey: "pTransactionType") }
+
+            // Create LineItem
+            let li = Self.createObject(entityName: "LineItem", in: ctx)
+            li.setValue(0.0 as NSNumber, forKey: "pTransactionAmount")
+            li.setValue(Self.generateUUID(), forKey: "pUniqueID")
+            li.setValue(1.0 as NSNumber, forKey: "pExchangeRate")
+            li.setValue(0.0 as NSNumber, forKey: "pRunningBalance")
+            li.setValue(false, forKey: "pCleared")
+            Self.setNow(li, "pCreationTime")
+            li.setValue(account, forKey: "pAccount")
+            li.setValue(tx, forKey: "pTransaction")
+
+            // Create SecurityLineItem
+            let sli = Self.createObject(entityName: "SecurityLineItem", in: ctx)
+            sli.setValue(shares as NSNumber, forKey: "pShares")
+            let sliAmount = amount ?? 0.0
+            sli.setValue(sliAmount as NSNumber, forKey: "pAmount")
+            sli.setValue(0.0 as NSNumber, forKey: "pPricePerShare")
+            sli.setValue(0.0 as NSNumber, forKey: "pCommission")
+            sli.setValue(0.0 as NSNumber, forKey: "pIncome")
+            sli.setValue(1.0 as NSNumber, forKey: "pPriceMultiplier")
+            sli.setValue(securityInCtx, forKey: "pSecurity")
+            sli.setValue(li, forKey: "pLineItem")
+
+            return Self.extractPK(from: tx.objectID)
+        }
+
+        return SecurityTradeDTO(
+            id: txPK,
+            date: date,
+            type: shares >= 0 ? "Buy" : "Sell",
+            symbol: secSymbol,
+            securityName: secName,
+            shares: shares,
+            pricePerShare: 0,
+            amount: amount ?? 0,
+            commission: 0,
+            accountName: "",
+            accountId: accountId
+        )
+    }
+
     public func importPricesFromCSV(
         filePath: String,
         symbol: String? = nil,

@@ -19,6 +19,79 @@ func registerSecurityTools(
         return try ToolHelpers.jsonResponse(results)
     }
 
+    // create_security
+    registry.register(
+        name: "create_security",
+        description: "Create a new security (stock, fund, etc.) in the vault",
+        inputSchema: ToolHelpers.schema(
+            properties: [
+                "symbol": ToolHelpers.property(type: "string", description: "Ticker symbol (e.g. AAPL, SL-CBF)"),
+                "name": ToolHelpers.property(type: "string", description: "Security name"),
+                "currency": ToolHelpers.property(type: "string", description: "Currency code (default: EUR)"),
+            ],
+            required: ["symbol", "name"]
+        )
+    ) { arguments in
+        if let msg = await writeGuard.guardWriteAccess() {
+            return ToolHelpers.errorResponse(msg)
+        }
+
+        guard let symbol = ToolHelpers.getString(arguments, key: "symbol") else {
+            return ToolHelpers.errorResponse("symbol is required")
+        }
+        guard let name = ToolHelpers.getString(arguments, key: "name") else {
+            return ToolHelpers.errorResponse("name is required")
+        }
+        let currency = ToolHelpers.getString(arguments, key: "currency") ?? "EUR"
+
+        let result = try securities.createSecurity(
+            symbol: symbol, name: name, currencyCode: currency
+        )
+        return try ToolHelpers.jsonResponse(result)
+    }
+
+    // create_share_adjustment
+    registry.register(
+        name: "create_share_adjustment",
+        description: "Create a share adjustment transaction (e.g. for charges that cancel units, stock splits, or manual position corrections). Use negative shares to reduce a position.",
+        inputSchema: ToolHelpers.schema(
+            properties: [
+                "account_id": ToolHelpers.property(type: "number", description: "Account ID"),
+                "symbol": ToolHelpers.property(type: "string", description: "Security ticker symbol"),
+                "id": ToolHelpers.property(type: "number", description: "Security ID (alternative to symbol)"),
+                "shares": ToolHelpers.property(type: "number", description: "Number of shares to adjust (negative to reduce)"),
+                "date": ToolHelpers.property(type: "string", description: "Date of adjustment in YYYY-MM-DD format"),
+                "title": ToolHelpers.property(type: "string", description: "Transaction title/memo"),
+                "amount": ToolHelpers.property(type: "number", description: "Cash amount (negative for buy outflow, positive for sell inflow)"),
+            ],
+            required: ["account_id", "shares", "date"]
+        )
+    ) { arguments in
+        if let msg = await writeGuard.guardWriteAccess() {
+            return ToolHelpers.errorResponse(msg)
+        }
+
+        guard let accountId = ToolHelpers.getInt(arguments, key: "account_id") else {
+            return ToolHelpers.errorResponse("account_id is required")
+        }
+        guard let shares = ToolHelpers.getDouble(arguments, key: "shares") else {
+            return ToolHelpers.errorResponse("shares is required")
+        }
+        guard let date = ToolHelpers.getString(arguments, key: "date") else {
+            return ToolHelpers.errorResponse("date is required")
+        }
+        let symbol = ToolHelpers.getString(arguments, key: "symbol")
+        let id = ToolHelpers.getInt(arguments, key: "id")
+        let title = ToolHelpers.getString(arguments, key: "title")
+        let amount = ToolHelpers.getDouble(arguments, key: "amount")
+
+        let result = try securities.createShareAdjustment(
+            accountId: accountId, symbol: symbol, id: id,
+            shares: shares, date: date, title: title, amount: amount
+        )
+        return try ToolHelpers.jsonResponse(result)
+    }
+
     // get_security_prices
     registry.register(
         name: "get_security_prices",
