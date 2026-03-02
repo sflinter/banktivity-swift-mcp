@@ -23,6 +23,8 @@ open class BaseRepository: @unchecked Sendable {
 
     /// Fetch a single object by entity name and primary key (Z_PK).
     /// Handles entity inheritance by trying the base entity and all subentities.
+    /// Uses fetch requests to verify entity type, since existingObject(with:) can
+    /// return objects with wrong entity types for sibling entities in inheritance.
     public func fetchByPK(entityName: String, pk: Int) throws -> NSManagedObject? {
         let coordinator = container.persistentStoreCoordinator
         guard let store = coordinator.persistentStores.first,
@@ -31,14 +33,10 @@ open class BaseRepository: @unchecked Sendable {
             return nil
         }
 
-        // Collect all entity names to try: the base entity and all subentities.
-        // This handles entity inheritance (e.g., Account -> PrimaryAccount).
         var entityNames = [entity.name!]
         func collectSubentities(_ e: NSEntityDescription) {
             for sub in e.subentities {
-                if let name = sub.name {
-                    entityNames.append(name)
-                }
+                if let name = sub.name { entityNames.append(name) }
                 collectSubentities(sub)
             }
         }
@@ -46,11 +44,11 @@ open class BaseRepository: @unchecked Sendable {
 
         for name in entityNames {
             let uri = objectURI(store: store, entityName: name, pk: pk)
-            if let objectID = coordinator.managedObjectID(forURIRepresentation: uri),
-               let object = try? context.existingObject(with: objectID)
-            {
-                return object
-            }
+            guard let objectID = coordinator.managedObjectID(forURIRepresentation: uri) else { continue }
+            let request = NSFetchRequest<NSManagedObject>(entityName: name)
+            request.predicate = NSPredicate(format: "SELF == %@", objectID)
+            request.fetchLimit = 1
+            if let obj = try? context.fetch(request).first { return obj }
         }
 
         return nil
@@ -162,8 +160,11 @@ open class BaseRepository: @unchecked Sendable {
 
         for name in entityNames {
             let uri = objectURI(store: store, entityName: name, pk: pk)
-            if let objectID = coordinator.managedObjectID(forURIRepresentation: uri),
-               let object = try? ctx.existingObject(with: objectID) { return object }
+            guard let objectID = coordinator.managedObjectID(forURIRepresentation: uri) else { continue }
+            let request = NSFetchRequest<NSManagedObject>(entityName: name)
+            request.predicate = NSPredicate(format: "SELF == %@", objectID)
+            request.fetchLimit = 1
+            if let obj = try? ctx.fetch(request).first { return obj }
         }
         return nil
     }

@@ -72,8 +72,9 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
             statement.setValue(note, forKey: "pNote")
             statement.setValue(Self.generateUUID(), forKey: "pUniqueID")
             Self.setNow(statement, "pCreationTime")
-            Self.setNow(statement, "pModificationTime")
+            Self.setNow(statement, "pModificationDate")
 
+            try ctx.obtainPermanentIDs(for: [statement])
             return Self.extractPK(from: statement.objectID)
         }
 
@@ -143,11 +144,12 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
                     throw ToolError.invalidInput("Line item \(liId) has no account")
                 }
 
-                // Validate date range
+                // Validate date range (allow 2-day buffer before start for credit card timing)
                 if let startTs = startTs, let endTs = endTs,
                    let tx = Self.relatedObject(li, "pTransaction"),
                    let txDate = Self.dateValue(tx, "pDate") {
-                    guard txDate >= startTs && txDate <= endTs else {
+                    let bufferSeconds: Double = 2 * 86400
+                    guard txDate >= (startTs - bufferSeconds) && txDate <= endTs else {
                         let dateStr = DateConversion.toISO(txDate)
                         throw ToolError.invalidInput("Line item \(liId) transaction date \(dateStr) is outside statement date range")
                     }
@@ -232,40 +234,14 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
     // MARK: - Validation
 
     private func validateBeginningBalance(accountId: Int, startTs: Double, beginningBalance: Double, in ctx: NSManagedObjectContext) throws {
-        let request = NSFetchRequest<NSManagedObject>(entityName: "Statement")
-        let accountURI = objectURI(
-            store: container.persistentStoreCoordinator.persistentStores.first!,
-            entityName: "PrimaryAccount", pk: accountId
-        )
-        guard let accountObjID = container.persistentStoreCoordinator.managedObjectID(forURIRepresentation: accountURI),
-              let account = try? ctx.existingObject(with: accountObjID) else {
-            // No account in write context — try Account entity
-            let accountURI2 = objectURI(
-                store: container.persistentStoreCoordinator.persistentStores.first!,
-                entityName: "Account", pk: accountId
-            )
-            guard let accountObjID2 = container.persistentStoreCoordinator.managedObjectID(forURIRepresentation: accountURI2),
-                  let account2 = try? ctx.existingObject(with: accountObjID2) else {
-                return // first statement for account, no constraint
-            }
-            request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
-                NSPredicate(format: "pAccount == %@", account2),
-                NSPredicate(format: "pEndDate < %@", DateConversion.toDate(startTs) as NSDate),
-            ])
-            request.sortDescriptors = [NSSortDescriptor(key: "pEndDate", ascending: false)]
-            request.fetchLimit = 1
-            let previous = try ctx.fetch(request)
-            guard let prev = previous.first else { return }
-            let prevEndingBalance = Self.doubleValue(prev, "pEndingBalance")
-            guard abs(prevEndingBalance - beginningBalance) < 0.005 else {
-                throw ToolError.invalidInput("Beginning balance \(beginningBalance) doesn't match previous statement's ending balance \(prevEndingBalance)")
-            }
+        guard let account = try fetchByPK(entityName: "Account", pk: accountId, in: ctx) else {
             return
         }
 
+        let request = NSFetchRequest<NSManagedObject>(entityName: "Statement")
         request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
             NSPredicate(format: "pAccount == %@", account),
-            NSPredicate(format: "pEndDate < %@", DateConversion.toDate(startTs) as NSDate),
+            NSPredicate(format: "pEndDate <= %@", DateConversion.toDate(startTs) as NSDate),
         ])
         request.sortDescriptors = [NSSortDescriptor(key: "pEndDate", ascending: false)]
         request.fetchLimit = 1
@@ -344,7 +320,7 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
         }
 
         let modifiedAt: String?
-        if let ts = Self.dateValue(object, "pModificationTime") {
+        if let ts = Self.dateValue(object, "pModificationDate") {
             modifiedAt = DateConversion.toISODateTime(ts)
         } else {
             modifiedAt = nil

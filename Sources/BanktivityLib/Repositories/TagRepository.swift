@@ -46,6 +46,7 @@ public final class TagRepository: BaseRepository, @unchecked Sendable {
             tag.setValue(Self.generateUUID(), forKey: "pUniqueID")
             Self.setNow(tag, "pCreationTime")
             Self.setNow(tag, "pModificationDate")
+            try ctx.obtainPermanentIDs(for: [tag])
             return Self.extractPK(from: tag.objectID)
         }
 

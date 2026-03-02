@@ -127,6 +127,7 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
             Self.setNow(sec, "pModificationDate")
             if let currency = currency { sec.setValue(currency, forKey: "pCurrency") }
 
+            try ctx.obtainPermanentIDs(for: [sec])
             return Self.extractPK(from: sec.objectID)
         }
 
@@ -205,6 +206,7 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
             sli.setValue(securityInCtx, forKey: "pSecurity")
             sli.setValue(li, forKey: "pLineItem")
 
+            try ctx.obtainPermanentIDs(for: [tx])
             return Self.extractPK(from: tx.objectID)
         }
 
