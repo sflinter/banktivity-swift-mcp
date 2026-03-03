@@ -122,8 +122,9 @@ struct Statements: AsyncParsableCommand {
             let writeGuard = BanktivityCLI.createWriteGuard(vaultPath: path)
             try await guardWrite(writeGuard)
 
+            let syncBlobUpdater = SyncBlobUpdater(container: container)
             let lineItemRepo = LineItemRepository(container: container)
-            let statements = StatementRepository(container: container, lineItemRepo: lineItemRepo)
+            let statements = StatementRepository(container: container, lineItemRepo: lineItemRepo, syncBlobUpdater: syncBlobUpdater)
 
             let deleted = try statements.delete(statementId: statementId)
             if deleted {
@@ -151,8 +152,9 @@ struct Statements: AsyncParsableCommand {
             let writeGuard = BanktivityCLI.createWriteGuard(vaultPath: path)
             try await guardWrite(writeGuard)
 
+            let syncBlobUpdater = SyncBlobUpdater(container: container)
             let lineItemRepo = LineItemRepository(container: container)
-            let statements = StatementRepository(container: container, lineItemRepo: lineItemRepo)
+            let statements = StatementRepository(container: container, lineItemRepo: lineItemRepo, syncBlobUpdater: syncBlobUpdater)
 
             let ids = lineItemIds.split(separator: ",").compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
             guard !ids.isEmpty else {
@@ -181,8 +183,9 @@ struct Statements: AsyncParsableCommand {
             let writeGuard = BanktivityCLI.createWriteGuard(vaultPath: path)
             try await guardWrite(writeGuard)
 
+            let syncBlobUpdater = SyncBlobUpdater(container: container)
             let lineItemRepo = LineItemRepository(container: container)
-            let statements = StatementRepository(container: container, lineItemRepo: lineItemRepo)
+            let statements = StatementRepository(container: container, lineItemRepo: lineItemRepo, syncBlobUpdater: syncBlobUpdater)
 
             let ids = lineItemIds.split(separator: ",").compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
             guard !ids.isEmpty else {

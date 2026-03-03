@@ -221,8 +221,9 @@ struct Transactions: AsyncParsableCommand {
             let writeGuard = BanktivityCLI.createWriteGuard(vaultPath: path)
             try await guardWrite(writeGuard)
 
+            let syncBlobUpdater = SyncBlobUpdater(container: container)
             let lineItemRepo = LineItemRepository(container: container)
-            let transactions = TransactionRepository(container: container, lineItemRepo: lineItemRepo)
+            let transactions = TransactionRepository(container: container, lineItemRepo: lineItemRepo, syncBlobUpdater: syncBlobUpdater)
 
             let clearedValue: Bool? = cleared ? true : (uncleared ? false : nil)
 
@@ -253,8 +254,9 @@ struct Transactions: AsyncParsableCommand {
             let writeGuard = BanktivityCLI.createWriteGuard(vaultPath: path)
             try await guardWrite(writeGuard)
 
+            let syncBlobUpdater = SyncBlobUpdater(container: container)
             let lineItemRepo = LineItemRepository(container: container)
-            let transactions = TransactionRepository(container: container, lineItemRepo: lineItemRepo)
+            let transactions = TransactionRepository(container: container, lineItemRepo: lineItemRepo, syncBlobUpdater: syncBlobUpdater)
 
             let deleted = try transactions.delete(transactionId: id)
             if !deleted {

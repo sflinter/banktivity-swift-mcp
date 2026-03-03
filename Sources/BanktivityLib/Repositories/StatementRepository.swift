@@ -5,9 +5,11 @@ import Foundation
 
 public final class StatementRepository: BaseRepository, @unchecked Sendable {
     private let lineItemRepo: LineItemRepository
+    private let syncBlobUpdater: SyncBlobUpdater?
 
-    public init(container: NSPersistentContainer, lineItemRepo: LineItemRepository) {
+    public init(container: NSPersistentContainer, lineItemRepo: LineItemRepository, syncBlobUpdater: SyncBlobUpdater? = nil) {
         self.lineItemRepo = lineItemRepo
+        self.syncBlobUpdater = syncBlobUpdater
         super.init(container: container)
     }
 
@@ -89,8 +91,19 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
             return false
         }
 
+        // Gather info for blob patching before cascade
+        var txLineItems: [String: [String]] = [:]
+        let lineItems = Self.relatedSet(statement, "pLineItems")
+        for li in lineItems {
+            let liUUID = Self.stringValue(li, "pUniqueID")
+            if let tx = Self.relatedObject(li, "pTransaction") {
+                let txUUID = Self.stringValue(tx, "pUniqueID")
+                txLineItems[txUUID, default: []].append(liUUID)
+            }
+        }
+
         // Cascade: unreconcile all line items first
-        let lineItemObjectIDs = Self.relatedSet(statement, "pLineItems").map { $0.objectID }
+        let lineItemObjectIDs = lineItems.map { $0.objectID }
         if !lineItemObjectIDs.isEmpty {
             let ids = lineItemObjectIDs
             try performWrite { ctx in
@@ -106,6 +119,21 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
             guard let obj = try fetchByPK(entityName: "Statement", pk: statementId, in: ctx) else { return }
             ctx.delete(obj)
         }
+
+        // Patch sync blobs (non-fatal)
+        if let updater = syncBlobUpdater {
+            for (txUUID, liUUIDs) in txLineItems {
+                updater.updateTransactionBlob(transactionUUID: txUUID) { xml in
+                    var result = xml
+                    for liUUID in liUUIDs {
+                        result = updater.patchCleared(xml: result, lineItemUUID: liUUID, cleared: false)
+                        result = updater.patchStatement(xml: result, lineItemUUID: liUUID, statementUUID: nil)
+                    }
+                    return result
+                }
+            }
+        }
+
         return true
     }
 
@@ -121,8 +149,12 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
             throw ToolError.invalidInput("Statement has no associated account")
         }
 
+        let statementUUID = Self.stringValue(statement, "pUniqueID")
         let startTs = Self.dateValue(statement, "pStartDate")
         let endTs = Self.dateValue(statement, "pEndDate")
+
+        // Collect line item UUID → transaction UUID mapping for blob patching
+        nonisolated(unsafe) var txLineItems: [String: [(liUUID: String, liId: Int)]] = [:]
 
         try performWrite { [self] ctx in
             guard let stmtInCtx = try fetchByPK(entityName: "Statement", pk: statementId, in: ctx) else {
@@ -166,6 +198,27 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
 
                 li.setValue(stmtInCtx, forKey: "pStatement")
                 li.setValue(true, forKey: "pCleared")
+
+                // Gather info for blob patching
+                let liUUID = Self.stringValue(li, "pUniqueID")
+                if let tx = Self.relatedObject(li, "pTransaction") {
+                    let txUUID = Self.stringValue(tx, "pUniqueID")
+                    txLineItems[txUUID, default: []].append((liUUID: liUUID, liId: liId))
+                }
+            }
+        }
+
+        // Patch sync blobs (non-fatal)
+        if let updater = syncBlobUpdater {
+            for (txUUID, items) in txLineItems {
+                updater.updateTransactionBlob(transactionUUID: txUUID) { xml in
+                    var result = xml
+                    for item in items {
+                        result = updater.patchCleared(xml: result, lineItemUUID: item.liUUID, cleared: true)
+                        result = updater.patchStatement(xml: result, lineItemUUID: item.liUUID, statementUUID: statementUUID)
+                    }
+                    return result
+                }
             }
         }
 
@@ -179,6 +232,8 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
         guard try fetchByPK(entityName: "Statement", pk: statementId) != nil else {
             throw ToolError.notFound("Statement not found: \(statementId)")
         }
+
+        nonisolated(unsafe) var txLineItems: [String: [String]] = [:]
 
         try performWrite { [self] ctx in
             for liId in lineItemIds {
@@ -196,8 +251,28 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
                     continue // not assigned to any statement
                 }
 
+                let liUUID = Self.stringValue(li, "pUniqueID")
+                if let tx = Self.relatedObject(li, "pTransaction") {
+                    let txUUID = Self.stringValue(tx, "pUniqueID")
+                    txLineItems[txUUID, default: []].append(liUUID)
+                }
+
                 li.setValue(nil, forKey: "pStatement")
                 li.setValue(false, forKey: "pCleared")
+            }
+        }
+
+        // Patch sync blobs (non-fatal)
+        if let updater = syncBlobUpdater {
+            for (txUUID, liUUIDs) in txLineItems {
+                updater.updateTransactionBlob(transactionUUID: txUUID) { xml in
+                    var result = xml
+                    for liUUID in liUUIDs {
+                        result = updater.patchCleared(xml: result, lineItemUUID: liUUID, cleared: false)
+                        result = updater.patchStatement(xml: result, lineItemUUID: liUUID, statementUUID: nil)
+                    }
+                    return result
+                }
             }
         }
 

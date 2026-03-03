@@ -71,7 +71,8 @@ struct Tags: AsyncParsableCommand {
             let writeGuard = BanktivityCLI.createWriteGuard(vaultPath: path)
             try await guardWrite(writeGuard)
 
-            let tags = TagRepository(container: container)
+            let syncBlobUpdater = SyncBlobUpdater(container: container)
+            let tags = TagRepository(container: container, syncBlobUpdater: syncBlobUpdater)
 
             let resolvedTagId: Int
             if let id = tagId {
@@ -177,7 +178,8 @@ struct Tags: AsyncParsableCommand {
             let writeGuard = BanktivityCLI.createWriteGuard(vaultPath: path)
             try await guardWrite(writeGuard)
 
-            let tags = TagRepository(container: container)
+            let syncBlobUpdater = SyncBlobUpdater(container: container)
+            let tags = TagRepository(container: container, syncBlobUpdater: syncBlobUpdater)
 
             let ids = transactionIds.split(separator: ",").compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
             guard !ids.isEmpty else {

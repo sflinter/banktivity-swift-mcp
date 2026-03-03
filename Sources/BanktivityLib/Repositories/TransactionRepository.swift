@@ -6,9 +6,11 @@ import Foundation
 /// Repository for transaction operations using Core Data
 public final class TransactionRepository: BaseRepository, @unchecked Sendable {
     private let lineItemRepo: LineItemRepository
+    private let syncBlobUpdater: SyncBlobUpdater?
 
-    public init(container: NSPersistentContainer, lineItemRepo: LineItemRepository) {
+    public init(container: NSPersistentContainer, lineItemRepo: LineItemRepository, syncBlobUpdater: SyncBlobUpdater? = nil) {
         self.lineItemRepo = lineItemRepo
+        self.syncBlobUpdater = syncBlobUpdater
         super.init(container: container)
     }
 
@@ -166,11 +168,14 @@ public final class TransactionRepository: BaseRepository, @unchecked Sendable {
     /// Update an existing transaction
     public func update(transactionId: Int, title: String? = nil, note: String? = nil, date: String? = nil, cleared: Bool? = nil) throws -> TransactionDTO? {
         nonisolated(unsafe) var dateChanged = false
+        nonisolated(unsafe) var txUUID: String?
 
         try performWrite { [self] ctx in
             guard let tx = try fetchByPK(entityName: "Transaction", pk: transactionId, in: ctx) else {
                 throw ToolError.notFound("Transaction not found: \(transactionId)")
             }
+
+            txUUID = Self.stringValue(tx, "pUniqueID")
 
             if let title = title { tx.setValue(title, forKey: "pTitle") }
             if let note = note { tx.setValue(note, forKey: "pNote") }
@@ -192,12 +197,28 @@ public final class TransactionRepository: BaseRepository, @unchecked Sendable {
             }
         }
 
+        // Patch sync blob (non-fatal)
+        if let updater = syncBlobUpdater, let uuid = txUUID {
+            updater.updateTransactionBlob(transactionUUID: uuid) { xml in
+                var result = xml
+                if let t = title { result = updater.patchTransactionTitle(xml: result, title: t) }
+                if let n = note { result = updater.patchTransactionNote(xml: result, note: n) }
+                if let d = date { result = updater.patchTransactionDate(xml: result, date: d + "T00:00:00+0000") }
+                return result
+            }
+        }
+
         return try get(transactionId: transactionId)
     }
 
     /// Delete a transaction and its line items
     public func delete(transactionId: Int) throws -> Bool {
-        // Get affected account IDs before deletion
+        // Get affected account IDs and transaction UUID before deletion
+        var txUUID: String?
+        if let tx = try fetchByPK(entityName: "Transaction", pk: transactionId) {
+            txUUID = Self.stringValue(tx, "pUniqueID")
+        }
+
         let lineItems = try lineItemRepo.getForTransactionPK(transactionId)
         let affectedAccountIds = Set(lineItems.map(\.accountId))
 
@@ -220,6 +241,10 @@ public final class TransactionRepository: BaseRepository, @unchecked Sendable {
         if deleted {
             for accountId in affectedAccountIds {
                 try lineItemRepo.recalculateRunningBalances(accountId: accountId)
+            }
+            // Delete sync record (non-fatal)
+            if let updater = syncBlobUpdater, let uuid = txUUID {
+                updater.deleteSyncRecord(entityUUID: uuid)
             }
         }
 

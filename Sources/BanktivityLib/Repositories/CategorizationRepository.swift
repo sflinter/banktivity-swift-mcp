@@ -7,14 +7,17 @@ import Foundation
 public final class CategorizationRepository: BaseRepository, @unchecked Sendable {
     private let categoryRepo: CategoryRepository
     private let importRuleRepo: ImportRuleRepository
+    private let syncBlobUpdater: SyncBlobUpdater?
 
     public init(
         container: NSPersistentContainer,
         categoryRepo: CategoryRepository,
-        importRuleRepo: ImportRuleRepository
+        importRuleRepo: ImportRuleRepository,
+        syncBlobUpdater: SyncBlobUpdater? = nil
     ) {
         self.categoryRepo = categoryRepo
         self.importRuleRepo = importRuleRepo
+        self.syncBlobUpdater = syncBlobUpdater
         super.init(container: container)
     }
 
@@ -340,6 +343,7 @@ public final class CategorizationRepository: BaseRepository, @unchecked Sendable
     public func recategorize(transactionId: Int, categoryId: Int) throws -> RecategorizationResultDTO? {
         nonisolated(unsafe) var oldCategoryName: String?
         nonisolated(unsafe) var newCategoryName: String = ""
+        nonisolated(unsafe) var syncInfo: (txUUID: String, liUUID: String, catUUID: String)?
 
         try performWrite { [self] ctx in
             guard let tx = try fetchByPK(entityName: "Transaction", pk: transactionId, in: ctx) else {
@@ -350,6 +354,8 @@ public final class CategorizationRepository: BaseRepository, @unchecked Sendable
             }
 
             newCategoryName = Self.stringValue(categoryAccount, "pName")
+            let catUUID = Self.stringValue(categoryAccount, "pUniqueID")
+            let txUUID = Self.stringValue(tx, "pUniqueID")
             let lineItems = Self.relatedSet(tx, "lineItems")
 
             // Find existing category line item, primary line item, and orphaned (null-account) line items
@@ -375,6 +381,7 @@ public final class CategorizationRepository: BaseRepository, @unchecked Sendable
             if let existingCatLI = categoryLineItem {
                 // Update existing category line item to new category
                 existingCatLI.setValue(categoryAccount, forKey: "pAccount")
+                syncInfo = (txUUID: txUUID, liUUID: Self.stringValue(existingCatLI, "pUniqueID"), catUUID: catUUID)
                 // Clean up any orphaned line items
                 for orphan in orphanedLineItems {
                     ctx.delete(orphan)
@@ -382,6 +389,7 @@ public final class CategorizationRepository: BaseRepository, @unchecked Sendable
             } else if let orphan = orphanedLineItems.first {
                 // Reuse orphaned line item as the category slot
                 orphan.setValue(categoryAccount, forKey: "pAccount")
+                syncInfo = (txUUID: txUUID, liUUID: Self.stringValue(orphan, "pUniqueID"), catUUID: catUUID)
                 // Delete any additional orphans
                 for extra in orphanedLineItems.dropFirst() {
                     ctx.delete(extra)
@@ -398,10 +406,18 @@ public final class CategorizationRepository: BaseRepository, @unchecked Sendable
                 Self.setNow(catLI, "pCreationTime")
                 catLI.setValue(categoryAccount, forKey: "pAccount")
                 catLI.setValue(tx, forKey: "pTransaction")
+                // New line item won't be in existing blob — skip blob patch
             }
 
             // Mark transaction as modified
             Self.setNow(tx, "pModificationDate")
+        }
+
+        // Patch sync blob (non-fatal)
+        if let updater = syncBlobUpdater, let info = syncInfo {
+            updater.updateTransactionBlob(transactionUUID: info.txUUID) { xml in
+                updater.patchAccount(xml: xml, lineItemUUID: info.liUUID, accountUUID: info.catUUID)
+            }
         }
 
         return RecategorizationResultDTO(

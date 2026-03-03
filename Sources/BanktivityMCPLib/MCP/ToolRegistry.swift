@@ -99,11 +99,12 @@ public final class ToolRegistry: @unchecked Sendable {
     public func registerAllTools() {
         registerDiagnosticTools()
 
-        // Create repositories
+        // Create sync blob updater and repositories
+        let syncBlobUpdater = SyncBlobUpdater(container: container)
         let lineItemRepo = LineItemRepository(container: container)
         let accountRepo = AccountRepository(container: container)
-        let transactionRepo = TransactionRepository(container: container, lineItemRepo: lineItemRepo)
-        let tagRepo = TagRepository(container: container)
+        let transactionRepo = TransactionRepository(container: container, lineItemRepo: lineItemRepo, syncBlobUpdater: syncBlobUpdater)
+        let tagRepo = TagRepository(container: container, syncBlobUpdater: syncBlobUpdater)
         let categoryRepo = CategoryRepository(container: container)
         let templateRepo = TemplateRepository(container: container)
         let importRuleRepo = ImportRuleRepository(container: container)
@@ -111,7 +112,8 @@ public final class ToolRegistry: @unchecked Sendable {
         let categorizationRepo = CategorizationRepository(
             container: container,
             categoryRepo: categoryRepo,
-            importRuleRepo: importRuleRepo
+            importRuleRepo: importRuleRepo,
+            syncBlobUpdater: syncBlobUpdater
         )
 
         // Account tools
@@ -154,7 +156,7 @@ public final class ToolRegistry: @unchecked Sendable {
         )
 
         // Statement tools (read + write)
-        let statementRepo = StatementRepository(container: container, lineItemRepo: lineItemRepo)
+        let statementRepo = StatementRepository(container: container, lineItemRepo: lineItemRepo, syncBlobUpdater: syncBlobUpdater)
         registerStatementTools(
             registry: self, statements: statementRepo,
             accounts: accountRepo, lineItems: lineItemRepo, writeGuard: writeGuard

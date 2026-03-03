@@ -47,7 +47,7 @@ Three-target package structure:
 
 ```
 BanktivityLib        ← Pure domain library (no MCP dependency)
-  CoreData/          PersistentContainer, DateConversion, WriteGuard
+  CoreData/          PersistentContainer, DateConversion, WriteGuard, SyncBlobUpdater
   Repositories/      BaseRepository + 10 domain repositories
   Models/            DTOs, Constants, Errors, Formatting
 
@@ -92,3 +92,20 @@ Property names are prefixed with `p` (e.g., `pName`, `pDate`, `pAccountClass`, `
 **Handle null-account line items.** Transactions can have line items where `pAccount` is NULL (orphaned slots). The recategorize logic must reuse these rather than creating new line items, which would cause false split transactions.
 
 **WriteGuard before mutations.** All write tools check `WriteGuard.guardWriteAccess()` first. If Banktivity.app has the SQLite file open (detected via `lsof`), writes are blocked to prevent corruption.
+
+### Sync Blob Updates (SyncBlobUpdater)
+
+Banktivity's CloudKit sync uses `ZSYNCEDENTITY` records with gzipped XML blobs (`pRemoteEntityData`) representing each entity's last-synced state. When CLI/MCP tools modify transactions, the `SyncBlobUpdater` patches these blobs so Banktivity recognizes the changes and pushes them to CloudKit.
+
+**How it works**: After a Core Data write succeeds, `SyncBlobUpdater` fetches the `SyncedHostedEntity` by the transaction's `pUniqueID`, decompresses the gzip blob, applies XML string patches to the relevant fields, validates the result, and saves the compressed blob back.
+
+**Operations patched**:
+- Reconcile/unreconcile: patches `cleared` and `statement` fields on line items in the blob
+- Recategorize: patches `account` reference on the category line item
+- Tag/untag: patches `tags` collection on line items
+- Transaction update: patches `title`, `note`, `date` at the transaction level
+- Transaction delete: removes the `SyncedHostedEntity` record entirely
+
+**Non-fatal by design**: All blob updates are wrapped in try/catch. If a sync record is missing, decompression fails, or the XML can't be patched, the Core Data write still succeeds — only the sync push is skipped. Failures log to stderr.
+
+**LineItems and Statements have no separate sync records** — they're serialized inside the parent Transaction's blob. The `identifier` field in the XML maps to `pUniqueID` in Core Data.
