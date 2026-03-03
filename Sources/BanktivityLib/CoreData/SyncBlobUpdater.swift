@@ -294,7 +294,6 @@ public final class SyncBlobUpdater: @unchecked Sendable {
                 }
 
                 record.setValue(compressed, forKey: "pRemoteEntityData")
-                record.setValue(Date(), forKey: "pSyncedModificationDate")
                 try bgContext.save()
             } catch {
                 writeError = error

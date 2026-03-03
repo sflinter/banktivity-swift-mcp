@@ -199,10 +199,13 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
                 li.setValue(stmtInCtx, forKey: "pStatement")
                 li.setValue(true, forKey: "pCleared")
 
-                // Gather info for blob patching
+                // Gather info for blob patching and mark transaction modified
                 let liUUID = Self.stringValue(li, "pUniqueID")
                 if let tx = Self.relatedObject(li, "pTransaction") {
                     let txUUID = Self.stringValue(tx, "pUniqueID")
+                    if txLineItems[txUUID] == nil {
+                        Self.setNow(tx, "pModificationDate")
+                    }
                     txLineItems[txUUID, default: []].append((liUUID: liUUID, liId: liId))
                 }
             }
@@ -254,6 +257,9 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
                 let liUUID = Self.stringValue(li, "pUniqueID")
                 if let tx = Self.relatedObject(li, "pTransaction") {
                     let txUUID = Self.stringValue(tx, "pUniqueID")
+                    if txLineItems[txUUID] == nil {
+                        Self.setNow(tx, "pModificationDate")
+                    }
                     txLineItems[txUUID, default: []].append(liUUID)
                 }
 

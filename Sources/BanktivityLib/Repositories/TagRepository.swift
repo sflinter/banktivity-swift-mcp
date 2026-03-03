@@ -105,6 +105,7 @@ public final class TagRepository: BaseRepository, @unchecked Sendable {
             }
 
             if count > 0 {
+                Self.setNow(tx, "pModificationDate")
                 syncInfo = (txUUID: txUUID, lineItemTagUUIDs: liTagInfo)
             }
             return count
@@ -154,6 +155,7 @@ public final class TagRepository: BaseRepository, @unchecked Sendable {
             }
 
             if count > 0 {
+                Self.setNow(tx, "pModificationDate")
                 syncInfo = (txUUID: txUUID, lineItemTagUUIDs: liTagInfo)
             }
             return count
