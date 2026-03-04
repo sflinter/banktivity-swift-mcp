@@ -118,13 +118,6 @@ public final class TransactionRepository: BaseRepository, @unchecked Sendable {
             Self.setNow(tx, "pModificationDate")
             Self.setDate(tx, "pDate", isoString: date)
 
-            // Set default currency (fetch the first available)
-            let currRequest = NSFetchRequest<NSManagedObject>(entityName: "Currency")
-            currRequest.fetchLimit = 1
-            if let currency = try ctx.fetch(currRequest).first {
-                tx.setValue(currency, forKey: "pCurrency")
-            }
-
             // Set default transaction type (fetch the first available)
             let typeRequest = NSFetchRequest<NSManagedObject>(entityName: "TransactionType")
             typeRequest.fetchLimit = 1
@@ -133,9 +126,16 @@ public final class TransactionRepository: BaseRepository, @unchecked Sendable {
             }
 
             // Create line items
+            var currencySet = false
             for liInput in lineItems {
                 guard let account = try fetchByPK(entityName: "Account", pk: liInput.accountId, in: ctx) else {
                     throw ToolError.notFound("Account not found: \(liInput.accountId)")
+                }
+
+                // Use the first account's currency for the transaction
+                if !currencySet, let currency = Self.relatedObject(account, "currency") {
+                    tx.setValue(currency, forKey: "pCurrency")
+                    currencySet = true
                 }
 
                 let li = Self.createObject(entityName: "LineItem", in: ctx)

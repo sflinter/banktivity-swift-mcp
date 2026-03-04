@@ -164,10 +164,8 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
             typeRequest.fetchLimit = 1
             let txType = try ctx.fetch(typeRequest).first
 
-            // Find EUR currency
-            let currRequest = NSFetchRequest<NSManagedObject>(entityName: "Currency")
-            currRequest.fetchLimit = 1
-            let currency = try ctx.fetch(currRequest).first
+            // Use the account's currency (Account uses "currency" not "pCurrency")
+            let currency = Self.relatedObject(account, "currency")
 
             // Create Transaction
             let tx = Self.createObject(entityName: "Transaction", in: ctx)
