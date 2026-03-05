@@ -282,7 +282,8 @@ struct Securities: AsyncParsableCommand {
             let writeGuard = BanktivityCLI.createWriteGuard(vaultPath: path)
             try await guardWrite(writeGuard)
 
-            let securities = SecurityRepository(container: container)
+            let syncBlobUpdater = SyncBlobUpdater(container: container)
+            let securities = SecurityRepository(container: container, syncBlobUpdater: syncBlobUpdater)
             let result = try securities.createShareAdjustment(
                 accountId: accountId, symbol: symbol, id: id,
                 shares: shares, date: date, title: title, amount: amount

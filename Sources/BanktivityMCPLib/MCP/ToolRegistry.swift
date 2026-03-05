@@ -163,7 +163,7 @@ public final class ToolRegistry: @unchecked Sendable {
         )
 
         // Security tools (read + write)
-        let securityRepo = SecurityRepository(container: container)
+        let securityRepo = SecurityRepository(container: container, syncBlobUpdater: syncBlobUpdater)
         registerSecurityTools(registry: self, securities: securityRepo, writeGuard: writeGuard)
     }
 }

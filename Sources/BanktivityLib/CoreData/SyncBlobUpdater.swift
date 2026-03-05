@@ -11,6 +11,48 @@ public final class SyncBlobUpdater: @unchecked Sendable {
         self.container = container
     }
 
+    // MARK: - Sync Record Creation Structs
+
+    public struct SyncLineItem: Sendable {
+        public let accountUUID: String?
+        public let accountAmount: Double
+        public let cleared: Bool
+        public let identifier: String
+        public let memo: String?
+        public let securityLineItem: SyncSecurityLineItem?
+        public let transactionAmount: Double
+
+        public init(accountUUID: String?, accountAmount: Double, cleared: Bool, identifier: String, memo: String?, securityLineItem: SyncSecurityLineItem?, transactionAmount: Double) {
+            self.accountUUID = accountUUID
+            self.accountAmount = accountAmount
+            self.cleared = cleared
+            self.identifier = identifier
+            self.memo = memo
+            self.securityLineItem = securityLineItem
+            self.transactionAmount = transactionAmount
+        }
+    }
+
+    public struct SyncSecurityLineItem: Sendable {
+        public let amount: Double
+        public let commission: Double
+        public let pricePerShare: Double
+        public let priceMultiplier: Double
+        public let securityUUID: String
+        public let shares: Double
+        public let hasDistributionType: Bool
+
+        public init(amount: Double, commission: Double, pricePerShare: Double, priceMultiplier: Double, securityUUID: String, shares: Double, hasDistributionType: Bool) {
+            self.amount = amount
+            self.commission = commission
+            self.pricePerShare = pricePerShare
+            self.priceMultiplier = priceMultiplier
+            self.securityUUID = securityUUID
+            self.shares = shares
+            self.hasDistributionType = hasDistributionType
+        }
+    }
+
     // MARK: - High-level API
 
     public func updateTransactionBlob(transactionUUID: String, using transform: @Sendable (String) -> String) {
@@ -40,6 +82,143 @@ public final class SyncBlobUpdater: @unchecked Sendable {
         } catch {
             log("Failed to delete sync record for \(entityUUID): \(error)")
         }
+    }
+
+    // MARK: - Sync Record Creation
+
+    public func createTransactionSyncRecord(
+        transactionUUID: String, currencyUUID: String, date: String,
+        title: String, note: String?, adjustment: Bool,
+        lineItems: [SyncLineItem],
+        transactionTypeBaseType: String, transactionTypeUUID: String
+    ) {
+        do {
+            let xml = buildTransactionXML(
+                transactionUUID: transactionUUID, currencyUUID: currencyUUID, date: date,
+                title: title, note: note, adjustment: adjustment,
+                lineItems: lineItems,
+                transactionTypeBaseType: transactionTypeBaseType,
+                transactionTypeUUID: transactionTypeUUID
+            )
+
+            guard let xmlData = xml.data(using: .utf8),
+                  let compressed = Self.compressGzip(xmlData) else {
+                log("Failed to compress sync blob for new transaction \(transactionUUID)")
+                return
+            }
+
+            let bgContext = container.newBackgroundContext()
+            nonisolated(unsafe) var writeError: Error?
+            bgContext.performAndWait {
+                do {
+                    let record = NSEntityDescription.insertNewObject(forEntityName: "SyncedHostedEntity", into: bgContext)
+                    record.setValue(transactionUUID, forKey: "pLocalID")
+                    record.setValue(transactionUUID, forKey: "pRemoteID")
+                    record.setValue("Transaction", forKey: "pHostedEntityType")
+                    record.setValue(Int16(0), forKey: "pSyncedState")
+                    record.setValue(nil, forKey: "pSyncedModificationDate")
+                    record.setValue(compressed, forKey: "pRemoteEntityData")
+
+                    // Link to SyncedDocument if one exists
+                    let docRequest = NSFetchRequest<NSManagedObject>(entityName: "SyncedDocument")
+                    docRequest.fetchLimit = 1
+                    if let doc = try bgContext.fetch(docRequest).first {
+                        record.setValue(doc, forKey: "pDocument")
+                    }
+
+                    try bgContext.save()
+                } catch {
+                    writeError = error
+                }
+            }
+            if let error = writeError { throw error }
+        } catch {
+            log("Failed to create sync record for transaction \(transactionUUID): \(error)")
+        }
+    }
+
+    private func buildTransactionXML(
+        transactionUUID: String, currencyUUID: String, date: String,
+        title: String, note: String?, adjustment: Bool,
+        lineItems: [SyncLineItem],
+        transactionTypeBaseType: String, transactionTypeUUID: String
+    ) -> String {
+        var xml = "<entity type=\"Transaction\" id=\"\(transactionUUID)\">"
+        xml += "<field type=\"bool\" name=\"adjustment\">\(adjustment ? "yes" : "no")</field>"
+        xml += "<field type=\"int\" name=\"checkNumber\" null=\"null\"/>"
+        xml += "<field type=\"reference\" name=\"currency\">Currency:\(currencyUUID)</field>"
+        xml += "<field type=\"date\" name=\"date\">\(date)T00:00:00+0000</field>"
+        xml += "<collection type=\"array\" name=\"lineItems\">"
+
+        for li in lineItems {
+            xml += "<record type=\"LineItem\" name=\"element\">"
+            if let acctUUID = li.accountUUID {
+                xml += "<field type=\"reference\" name=\"account\">Account:\(acctUUID)</field>"
+            } else {
+                xml += "<field type=\"reference\" name=\"account\" null=\"null\"/>"
+            }
+            xml += "<field type=\"decimal\" name=\"accountAmount\">\(formatDecimal(li.accountAmount))</field>"
+            xml += "<field type=\"bool\" name=\"cleared\">\(li.cleared ? "yes" : "no")</field>"
+            xml += "<field type=\"string\" name=\"identifier\">\(li.identifier)</field>"
+            xml += "<collection type=\"array\" name=\"lineItemSources\" null=\"null\"/>"
+            if let memo = li.memo {
+                xml += "<field type=\"string\" name=\"memo\">\(escapeXML(memo))</field>"
+            } else {
+                xml += "<field type=\"string\" name=\"memo\" null=\"null\"/>"
+            }
+
+            if let sli = li.securityLineItem {
+                xml += "<record type=\"SecurityLineItem\" name=\"securityLineItem\">"
+                if sli.hasDistributionType {
+                    xml += "<field type=\"decimal\" name=\"commission\">\(formatDecimal(sli.commission))</field>"
+                } else {
+                    xml += "<field type=\"decimal\" name=\"commission\" null=\"null\"/>"
+                }
+                xml += "<field type=\"decimal\" name=\"cost\">\(formatDecimal(sli.amount))</field>"
+                xml += "<field enum=\"IGGCSyncAccountingSecurityCostBasisMethod\" name=\"costBasisMethod\">unknown</field>"
+                if sli.hasDistributionType {
+                    xml += "<field enum=\"IGGCSyncAccountingSecurityLineItemDistrbutionType\" name=\"distributionType\">deposit</field>"
+                }
+                xml += "<field type=\"decimal\" name=\"income\" null=\"null\"/>"
+                xml += "<collection type=\"array\" name=\"openingLots\" null=\"null\"/>"
+                xml += "<field type=\"date\" name=\"overrideDate\" null=\"null\"/>"
+                xml += "<field type=\"decimal\" name=\"pricePerShare\">\(formatDecimal(sli.pricePerShare))</field>"
+                xml += "<field type=\"reference\" name=\"security\">Security:\(sli.securityUUID)</field>"
+                xml += "<field type=\"decimal\" name=\"shares\">\(formatDecimal(sli.shares))</field>"
+                xml += "<field type=\"decimal\" name=\"valueMultiplier\">\(formatDecimal(sli.priceMultiplier))</field>"
+                xml += "</record>"
+            } else {
+                xml += "<record type=\"SecurityLineItem\" name=\"securityLineItem\" null=\"null\"/>"
+            }
+
+            xml += "<field type=\"int\" name=\"sortIndex\">0</field>"
+            xml += "<field type=\"reference\" name=\"statement\" null=\"null\"/>"
+            xml += "<collection type=\"set\" name=\"tags\" null=\"null\"/>"
+            xml += "<field type=\"decimal\" name=\"transacitonAmount\">\(formatDecimal(li.transactionAmount))</field>"
+            xml += "</record>"
+        }
+
+        xml += "</collection>"
+        if let note = note {
+            xml += "<field type=\"string\" name=\"note\">\(escapeXML(note))</field>"
+        } else {
+            xml += "<field type=\"string\" name=\"note\" null=\"null\"/>"
+        }
+        xml += "<field type=\"string\" name=\"title\">\(escapeXML(title))</field>"
+        xml += "<record type=\"TransactionType\" name=\"transactionType\">"
+        xml += "<field enum=\"IGGCSyncAccountingTransactionBaseType\" name=\"baseType\">\(transactionTypeBaseType)</field>"
+        xml += "<field type=\"reference\" name=\"transactionType\">TransactionTypeV2:\(transactionTypeUUID)</field>"
+        xml += "</record>"
+        xml += "</entity>"
+        return xml
+    }
+
+    private func formatDecimal(_ value: Double) -> String {
+        if value == value.rounded() && abs(value) < 1e15 {
+            return String(format: "%.0f", value)
+        }
+        let s = String(value)
+        return s.hasSuffix(".0") ? String(s.dropLast(2)) : s
     }
 
     // MARK: - XML Patching: Reconciliation

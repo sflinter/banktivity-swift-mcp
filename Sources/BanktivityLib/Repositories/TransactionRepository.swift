@@ -105,12 +105,21 @@ public final class TransactionRepository: BaseRepository, @unchecked Sendable {
         note: String? = nil,
         lineItems: [(accountId: Int, amount: Double, memo: String?)]
     ) throws -> TransactionDTO {
+        struct SyncInfo: Sendable {
+            let txUUID: String
+            let currencyUUID: String
+            let transactionTypeBaseType: String
+            let transactionTypeUUID: String
+            let lineItems: [SyncBlobUpdater.SyncLineItem]
+        }
+
         // Create the transaction and line items in a background context
-        try performWrite { [self] ctx in
+        let syncInfo: SyncInfo = try performWriteReturning { [self] ctx in
             let tx = Self.createObject(entityName: "Transaction", in: ctx)
+            let txUUID = Self.generateUUID()
             tx.setValue(title, forKey: "pTitle")
             tx.setValue(note, forKey: "pNote")
-            tx.setValue(Self.generateUUID(), forKey: "pUniqueID")
+            tx.setValue(txUUID, forKey: "pUniqueID")
             tx.setValue(false, forKey: "pCleared")
             tx.setValue(false, forKey: "pVoid")
             tx.setValue(false, forKey: "pAdjustment")
@@ -121,34 +130,77 @@ public final class TransactionRepository: BaseRepository, @unchecked Sendable {
             // Set default transaction type (fetch the first available)
             let typeRequest = NSFetchRequest<NSManagedObject>(entityName: "TransactionType")
             typeRequest.fetchLimit = 1
-            if let txType = try ctx.fetch(typeRequest).first {
+            let txType = try ctx.fetch(typeRequest).first
+            if let txType = txType {
                 tx.setValue(txType, forKey: "pTransactionType")
             }
 
+            let txTypeBaseType: String = {
+                guard let txType = txType else { return "deposit" }
+                let bt = Self.intValue(txType, "pBaseType")
+                switch bt {
+                case 0: return "withdrawal"
+                case 1: return "deposit"
+                default: return "deposit"
+                }
+            }()
+            let txTypeUUID = txType.map { Self.stringValue($0, "pUniqueID") } ?? ""
+
             // Create line items
             var currencySet = false
+            var currencyUUID = ""
+            var syncLineItems: [SyncBlobUpdater.SyncLineItem] = []
+
             for liInput in lineItems {
                 guard let account = try fetchByPK(entityName: "Account", pk: liInput.accountId, in: ctx) else {
                     throw ToolError.notFound("Account not found: \(liInput.accountId)")
                 }
 
+                let accountUUID = Self.stringValue(account, "pUniqueID")
+
                 // Use the first account's currency for the transaction
                 if !currencySet, let currency = Self.relatedObject(account, "currency") {
                     tx.setValue(currency, forKey: "pCurrency")
+                    currencyUUID = Self.stringValue(currency, "pUniqueID")
                     currencySet = true
                 }
 
                 let li = Self.createObject(entityName: "LineItem", in: ctx)
+                let liUUID = Self.generateUUID()
                 li.setValue(liInput.amount as NSNumber, forKey: "pTransactionAmount")
                 li.setValue(liInput.memo, forKey: "pMemo")
-                li.setValue(Self.generateUUID(), forKey: "pUniqueID")
+                li.setValue(liUUID, forKey: "pUniqueID")
                 li.setValue(1.0 as NSNumber, forKey: "pExchangeRate")
                 li.setValue(0.0 as NSNumber, forKey: "pRunningBalance")
                 li.setValue(false, forKey: "pCleared")
                 Self.setNow(li, "pCreationTime")
                 li.setValue(account, forKey: "pAccount")
                 li.setValue(tx, forKey: "pTransaction")
+
+                syncLineItems.append(SyncBlobUpdater.SyncLineItem(
+                    accountUUID: accountUUID, accountAmount: liInput.amount,
+                    cleared: false, identifier: liUUID, memo: liInput.memo,
+                    securityLineItem: nil, transactionAmount: liInput.amount
+                ))
             }
+
+            return SyncInfo(
+                txUUID: txUUID, currencyUUID: currencyUUID,
+                transactionTypeBaseType: txTypeBaseType,
+                transactionTypeUUID: txTypeUUID,
+                lineItems: syncLineItems
+            )
+        }
+
+        // Create sync record (non-fatal)
+        if let updater = syncBlobUpdater {
+            updater.createTransactionSyncRecord(
+                transactionUUID: syncInfo.txUUID, currencyUUID: syncInfo.currencyUUID,
+                date: date, title: title, note: note, adjustment: false,
+                lineItems: syncInfo.lineItems,
+                transactionTypeBaseType: syncInfo.transactionTypeBaseType,
+                transactionTypeUUID: syncInfo.transactionTypeUUID
+            )
         }
 
         // Recalculate running balances for all affected accounts

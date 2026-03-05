@@ -4,6 +4,12 @@ import CoreData
 import Foundation
 
 public final class SecurityRepository: BaseRepository, @unchecked Sendable {
+    private let syncBlobUpdater: SyncBlobUpdater?
+
+    public init(container: NSPersistentContainer, syncBlobUpdater: SyncBlobUpdater? = nil) {
+        self.syncBlobUpdater = syncBlobUpdater
+        super.init(container: container)
+    }
 
     // MARK: - Date Helpers (SecurityPrice uses int32 = days since Unix epoch)
 
@@ -148,8 +154,20 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
         let securityObjectID = security.objectID
         let secSymbol = Self.stringValue(security, "pSymbol")
         let secName = Self.stringValue(security, "pName")
+        let secUUID = Self.stringValue(security, "pUniqueID")
 
-        let txPK: Int = try performWriteReturning { [self] ctx in
+        struct SyncInfo: Sendable {
+            let txPK: Int
+            let txUUID: String
+            let txTitle: String
+            let liUUID: String
+            let accountUUID: String
+            let currencyUUID: String
+            let transactionTypeBaseType: String
+            let transactionTypeUUID: String
+        }
+
+        let info: SyncInfo = try performWriteReturning { [self] ctx in
             guard let securityInCtx = try? ctx.existingObject(with: securityObjectID) else {
                 throw ToolError.notFound("Security not found in write context")
             }
@@ -166,12 +184,17 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
 
             // Use the account's currency (Account uses "currency" not "pCurrency")
             let currency = Self.relatedObject(account, "currency")
+            let accountUUID = Self.stringValue(account, "pUniqueID")
+            let currencyUUID = currency.map { Self.stringValue($0, "pUniqueID") } ?? ""
+            let txTypeBaseType = shares >= 0 ? "buy" : "sell"
+            let txTypeUUID = txType.map { Self.stringValue($0, "pUniqueID") } ?? ""
 
             // Create Transaction
             let tx = Self.createObject(entityName: "Transaction", in: ctx)
             let txTitle = title ?? "Charge adjustment — \(secSymbol)"
+            let txUUID = Self.generateUUID()
             tx.setValue(txTitle, forKey: "pTitle")
-            tx.setValue(Self.generateUUID(), forKey: "pUniqueID")
+            tx.setValue(txUUID, forKey: "pUniqueID")
             tx.setValue(false, forKey: "pCleared")
             tx.setValue(false, forKey: "pVoid")
             tx.setValue(false, forKey: "pAdjustment")
@@ -183,8 +206,9 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
 
             // Create LineItem
             let li = Self.createObject(entityName: "LineItem", in: ctx)
+            let liUUID = Self.generateUUID()
             li.setValue(0.0 as NSNumber, forKey: "pTransactionAmount")
-            li.setValue(Self.generateUUID(), forKey: "pUniqueID")
+            li.setValue(liUUID, forKey: "pUniqueID")
             li.setValue(1.0 as NSNumber, forKey: "pExchangeRate")
             li.setValue(0.0 as NSNumber, forKey: "pRunningBalance")
             li.setValue(false, forKey: "pCleared")
@@ -205,11 +229,38 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
             sli.setValue(li, forKey: "pLineItem")
 
             try ctx.obtainPermanentIDs(for: [tx])
-            return Self.extractPK(from: tx.objectID)
+            return SyncInfo(
+                txPK: Self.extractPK(from: tx.objectID),
+                txUUID: txUUID, txTitle: txTitle, liUUID: liUUID,
+                accountUUID: accountUUID, currencyUUID: currencyUUID,
+                transactionTypeBaseType: txTypeBaseType, transactionTypeUUID: txTypeUUID
+            )
+        }
+
+        // Create sync record (non-fatal)
+        if let updater = syncBlobUpdater {
+            let sliAmount = amount ?? 0.0
+            let syncSLI = SyncBlobUpdater.SyncSecurityLineItem(
+                amount: sliAmount, commission: 0, pricePerShare: 0,
+                priceMultiplier: 1, securityUUID: secUUID,
+                shares: shares, hasDistributionType: false
+            )
+            let syncLI = SyncBlobUpdater.SyncLineItem(
+                accountUUID: info.accountUUID, accountAmount: 0,
+                cleared: false, identifier: info.liUUID, memo: nil,
+                securityLineItem: syncSLI, transactionAmount: 0
+            )
+            updater.createTransactionSyncRecord(
+                transactionUUID: info.txUUID, currencyUUID: info.currencyUUID,
+                date: date, title: info.txTitle, note: nil, adjustment: false,
+                lineItems: [syncLI],
+                transactionTypeBaseType: info.transactionTypeBaseType,
+                transactionTypeUUID: info.transactionTypeUUID
+            )
         }
 
         return SecurityTradeDTO(
-            id: txPK,
+            id: info.txPK,
             date: date,
             type: shares >= 0 ? "Buy" : "Sell",
             symbol: secSymbol,
