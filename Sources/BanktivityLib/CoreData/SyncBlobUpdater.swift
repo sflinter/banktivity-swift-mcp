@@ -327,6 +327,36 @@ public final class SyncBlobUpdater: @unchecked Sendable {
         replaceField(in: xml, name: "date", type: "date", newContent: date) ?? xml
     }
 
+    // MARK: - XML Patching: Security latestSecurityPrice
+
+    public func updateSecurityLatestPrice(securityUUID: String, closePrice: Double, date: String) {
+        let priceStr = formatDecimal(closePrice)
+        let dateStr = date.contains("T") ? date : "\(date)T00:00:00+0100"
+        updateTransactionBlob(transactionUUID: securityUUID) { xml in
+            // Replace the latestSecurityPrice record contents
+            guard let recordStart = xml.range(of: "<record type=\"SecurityPrice\" name=\"latestSecurityPrice\">"),
+                  let recordEnd = xml.range(of: "</record>", range: recordStart.upperBound..<xml.endIndex) else {
+                return xml
+            }
+
+            let newRecord = """
+                <record type="SecurityPrice" name="latestSecurityPrice">\
+                <field type="decimal" name="adjustedClosePrice" null="null"/>\
+                <field type="decimal" name="closePrice">\(priceStr)</field>\
+                <field enum="IGGCSyncAccountingSecurityPriceDataSourceType" name="dataSource">user-entered</field>\
+                <field type="date" name="date">\(dateStr)</field>\
+                <field type="decimal" name="highPrice" null="null"/>\
+                <field type="decimal" name="lowPrice" null="null"/>\
+                <field type="decimal" name="openPrice" null="null"/>\
+                <field type="decimal" name="previousClosePrice" null="null"/>\
+                <field type="decimal" name="volume" null="null"/></record>
+                """
+            var result = xml
+            result.replaceSubrange(recordStart.lowerBound..<recordEnd.upperBound, with: newRecord)
+            return result
+        }
+    }
+
     // MARK: - Gzip
 
     static func decompressGzip(_ data: Data) -> Data? {

@@ -114,7 +114,8 @@ struct Securities: AsyncParsableCommand {
             let writeGuard = BanktivityCLI.createWriteGuard(vaultPath: path)
             try await guardWrite(writeGuard)
 
-            let securities = SecurityRepository(container: container)
+            let syncBlobUpdater = SyncBlobUpdater(container: container)
+            let securities = SecurityRepository(container: container, syncBlobUpdater: syncBlobUpdater)
             let result = try securities.importPricesFromCSV(
                 filePath: file,
                 symbol: symbol, id: id,

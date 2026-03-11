@@ -350,6 +350,15 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
 
             priceItem.setValue(Date(), forKey: "pLatestImportDate")
 
+            // Find the latest price to update the Security sync blob
+            let allPriceRequest = NSFetchRequest<NSManagedObject>(entityName: "SecurityPrice")
+            allPriceRequest.predicate = NSPredicate(format: "pSecurityPriceItem == %@", priceItem)
+            allPriceRequest.sortDescriptors = [NSSortDescriptor(key: "pDate", ascending: false)]
+            allPriceRequest.fetchLimit = 1
+            let latestPrice = try ctx.fetch(allPriceRequest).first
+            let latestClosePrice = (latestPrice?.value(forKey: "pClosePrice") as? NSNumber)?.doubleValue
+            let latestDateDays = (latestPrice?.value(forKey: "pDate") as? Int32)
+
             let dateRangeBegin: String? = allDates.min().map { Self.daysSinceEpochToISO($0) }
             let dateRangeEnd: String? = allDates.max().map { Self.daysSinceEpochToISO($0) }
 
@@ -359,7 +368,16 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
                 skipped: skipped,
                 totalPrices: allDates.count,
                 dateRangeBegin: dateRangeBegin,
-                dateRangeEnd: dateRangeEnd
+                dateRangeEnd: dateRangeEnd,
+                latestClosePrice: latestClosePrice,
+                latestDateISO: latestDateDays.map { Self.daysSinceEpochToISO($0) }
+            )
+        }
+
+        // Update Security sync blob with latest price
+        if let price = result.latestClosePrice, let date = result.latestDateISO {
+            syncBlobUpdater?.updateSecurityLatestPrice(
+                securityUUID: securityUniqueId, closePrice: price, date: date
             )
         }
 

@@ -450,11 +450,14 @@ public struct PriceImportResultDTO: Codable, Sendable {
     public let totalPrices: Int
     public let dateRangeBegin: String?
     public let dateRangeEnd: String?
+    public let latestClosePrice: Double?
+    public let latestDateISO: String?
 
-    public init(securitySymbol: String, imported: Int, skipped: Int, totalPrices: Int, dateRangeBegin: String?, dateRangeEnd: String?) {
+    public init(securitySymbol: String, imported: Int, skipped: Int, totalPrices: Int, dateRangeBegin: String?, dateRangeEnd: String?, latestClosePrice: Double? = nil, latestDateISO: String? = nil) {
         self.securitySymbol = securitySymbol; self.imported = imported; self.skipped = skipped
         self.totalPrices = totalPrices; self.dateRangeBegin = dateRangeBegin
-        self.dateRangeEnd = dateRangeEnd
+        self.dateRangeEnd = dateRangeEnd; self.latestClosePrice = latestClosePrice
+        self.latestDateISO = latestDateISO
     }
 }
 
