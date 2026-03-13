@@ -1,6 +1,6 @@
 # Banktivity CLI — Complete Tool Reference
 
-All 60 tools with their input schemas. Invoke with:
+All 61 tools with their input schemas. Invoke with:
 ```sh
 BANKTIVITY_FILE_PATH="$HOME/Documents/Banktivity/My Accounts.bank8" banktivity-cli <tool> [--key value ...] 2>/dev/null
 ```
@@ -355,7 +355,7 @@ Create a new transaction with line items.
 ```
 
 ### update_transaction
-Update an existing transaction's title, note, date, or cleared status.
+Update an existing transaction's title, note, date, cleared status, or transaction type.
 
 ```json
 {
@@ -364,7 +364,8 @@ Update an existing transaction's title, note, date, or cleared status.
     "title": { "type": "string", "description": "New title" },
     "note": { "type": "string", "description": "New note" },
     "date": { "type": "string", "description": "New date in ISO format (YYYY-MM-DD)" },
-    "cleared": { "type": "boolean", "description": "Set cleared status" }
+    "cleared": { "type": "boolean", "description": "Set cleared status" },
+    "transaction_type": { "type": "string", "description": "New transaction type: deposit, withdrawal, transfer, check, buy, sell, move-shares-in, move-shares-out, dividend, etc." }
   },
   "required": ["transaction_id"]
 }
@@ -860,6 +861,23 @@ Create a share adjustment transaction (e.g. for charges that cancel units, stock
     "amount": { "type": "number", "description": "Cash amount (negative for buy outflow, positive for sell inflow)" }
   },
   "required": ["account_id", "shares", "date"]
+}
+```
+
+### update_security_line_item
+Update SecurityLineItem fields (shares, price per share, amount, security) on an existing trade transaction. CLI only: `banktivity-cli securities update-trade <transaction_id> [options]`.
+
+```json
+{
+  "properties": {
+    "transaction_id": { "type": "number", "description": "The transaction ID to update (positional argument in CLI)" },
+    "shares": { "type": "number", "description": "New number of shares" },
+    "price_per_share": { "type": "number", "description": "New price per share" },
+    "amount": { "type": "number", "description": "New cash amount (negative for buy outflow, positive for sell inflow)" },
+    "symbol": { "type": "string", "description": "New security ticker symbol" },
+    "security_id": { "type": "number", "description": "New security ID (alternative to symbol)" }
+  },
+  "required": ["transaction_id"]
 }
 ```
 

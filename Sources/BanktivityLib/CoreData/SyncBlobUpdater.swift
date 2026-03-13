@@ -327,6 +327,72 @@ public final class SyncBlobUpdater: @unchecked Sendable {
         replaceField(in: xml, name: "date", type: "date", newContent: date) ?? xml
     }
 
+    public func patchTransactionType(xml: String, baseType: String, typeUUID: String) -> String {
+        // Replace the entire TransactionType record block
+        guard let recordStart = xml.range(of: "<record type=\"TransactionType\" name=\"transactionType\">"),
+              let recordEnd = xml.range(of: "</record>", range: recordStart.upperBound..<xml.endIndex) else {
+            return xml
+        }
+        let newRecord = "<record type=\"TransactionType\" name=\"transactionType\">" +
+            "<field enum=\"IGGCSyncAccountingTransactionBaseType\" name=\"baseType\">\(baseType)</field>" +
+            "<field type=\"reference\" name=\"transactionType\">TransactionTypeV2:\(typeUUID)</field>" +
+            "</record>"
+        var result = xml
+        result.replaceSubrange(recordStart.lowerBound..<recordEnd.upperBound, with: newRecord)
+        return result
+    }
+
+    // MARK: - XML Patching: SecurityLineItem fields
+
+    public static func patchSecurityLineItemFieldStatic(xml: String, lineItemUUID: String, fieldName: String, fieldType: String, value: String) -> String {
+        // Find the line item record by UUID
+        let identifierPattern = "<field type=\"string\" name=\"identifier\">\(lineItemUUID)</field>"
+        guard let identifierRange = xml.range(of: identifierPattern) else { return xml }
+
+        // Find the SecurityLineItem record within this line item
+        let afterIdentifier = xml[identifierRange.upperBound...]
+        guard let sliStart = afterIdentifier.range(of: "<record type=\"SecurityLineItem\" name=\"securityLineItem\">") else { return xml }
+        guard let sliEnd = xml.range(of: "</record>", range: sliStart.upperBound..<xml.endIndex) else { return xml }
+
+        let sliRecord = String(xml[sliStart.lowerBound..<sliEnd.upperBound])
+
+        // Try replacing the field value within the SecurityLineItem record
+        let openTag = "<field type=\"\(fieldType)\" name=\"\(fieldName)\">"
+        let closeTag = "</field>"
+        var patched = sliRecord
+
+        if let openRange = patched.range(of: openTag),
+           let closeRange = patched.range(of: closeTag, range: openRange.upperBound..<patched.endIndex) {
+            let newField = "\(openTag)\(value)\(closeTag)"
+            patched.replaceSubrange(openRange.lowerBound..<closeRange.upperBound, with: newField)
+        } else {
+            // Try replacing null field
+            let nullField = "<field type=\"\(fieldType)\" name=\"\(fieldName)\" null=\"null\"/>"
+            if let nullRange = patched.range(of: nullField) {
+                let newField = "<field type=\"\(fieldType)\" name=\"\(fieldName)\">\(value)</field>"
+                patched.replaceSubrange(nullRange, with: newField)
+            } else {
+                // Also try enum fields (for cost basis method etc.)
+                let enumOpenTag = "<field enum=\"\(fieldType)\" name=\"\(fieldName)\">"
+                if let openRange = patched.range(of: enumOpenTag),
+                   let closeRange = patched.range(of: closeTag, range: openRange.upperBound..<patched.endIndex) {
+                    let newField = "\(enumOpenTag)\(value)\(closeTag)"
+                    patched.replaceSubrange(openRange.lowerBound..<closeRange.upperBound, with: newField)
+                } else {
+                    return xml
+                }
+            }
+        }
+
+        var result = xml
+        result.replaceSubrange(sliStart.lowerBound..<sliEnd.upperBound, with: patched)
+        return result
+    }
+
+    public func formatDecimalPublic(_ value: Double) -> String {
+        formatDecimal(value)
+    }
+
     // MARK: - XML Patching: Security latestSecurityPrice
 
     public func updateSecurityLatestPrice(securityUUID: String, closePrice: Double, date: String) {

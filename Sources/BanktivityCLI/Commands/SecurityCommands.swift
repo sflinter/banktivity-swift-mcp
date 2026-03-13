@@ -7,7 +7,7 @@ import Foundation
 struct Securities: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Security and price history operations",
-        subcommands: [List.self, Create.self, Prices.self, ImportPrices.self, DeletePrices.self, Holdings.self, Trades.self, Income.self, Adjust.self]
+        subcommands: [List.self, Create.self, Prices.self, ImportPrices.self, DeletePrices.self, Holdings.self, Trades.self, Income.self, Adjust.self, UpdateTrade.self]
     )
 
     struct List: AsyncParsableCommand {
@@ -288,6 +288,49 @@ struct Securities: AsyncParsableCommand {
             let result = try securities.createShareAdjustment(
                 accountId: accountId, symbol: symbol, id: id,
                 shares: shares, date: date, title: title, amount: amount
+            )
+            try outputJSON(result, format: parent.format)
+        }
+    }
+
+    struct UpdateTrade: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "update-trade",
+            abstract: "Update security line item fields (shares, price, amount, security) on an existing transaction"
+        )
+
+        @OptionGroup var parent: GlobalOptions
+
+        @Argument(help: "Transaction ID")
+        var transactionId: Int
+
+        @Option(name: .long, help: "Number of shares")
+        var shares: Double?
+
+        @Option(name: .long, help: "Price per share")
+        var pricePerShare: Double?
+
+        @Option(name: .long, help: "Cash amount (negative for buy outflow)")
+        var amount: Double?
+
+        @Option(name: .long, help: "Security ticker symbol")
+        var symbol: String?
+
+        @Option(name: .long, help: "Security ID (alternative to --symbol)")
+        var securityId: Int?
+
+        func run() async throws {
+            let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
+            let container = try BanktivityCLI.createContainer(vaultPath: path)
+            let writeGuard = BanktivityCLI.createWriteGuard(vaultPath: path)
+            try await guardWrite(writeGuard)
+
+            let syncBlobUpdater = SyncBlobUpdater(container: container)
+            let securities = SecurityRepository(container: container, syncBlobUpdater: syncBlobUpdater)
+            let result = try securities.updateSecurityLineItem(
+                transactionId: transactionId,
+                shares: shares, pricePerShare: pricePerShare, amount: amount,
+                securitySymbol: symbol, securityId: securityId
             )
             try outputJSON(result, format: parent.format)
         }

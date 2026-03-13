@@ -152,7 +152,7 @@ func registerTransactionTools(
     // update_transaction
     registry.register(
         name: "update_transaction",
-        description: "Update an existing transaction's title, note, date, or cleared status",
+        description: "Update an existing transaction's title, note, date, cleared status, or transaction type",
         inputSchema: ToolHelpers.schema(
             properties: [
                 "transaction_id": ToolHelpers.property(type: "number", description: "The transaction ID to update"),
@@ -160,6 +160,7 @@ func registerTransactionTools(
                 "note": ToolHelpers.property(type: "string", description: "New note"),
                 "date": ToolHelpers.property(type: "string", description: "New date in ISO format (YYYY-MM-DD)"),
                 "cleared": ToolHelpers.property(type: "boolean", description: "Set cleared status"),
+                "transaction_type": ToolHelpers.property(type: "string", description: "New transaction type: deposit, withdrawal, transfer, check, buy, sell, move-shares-in, move-shares-out, dividend, etc."),
             ],
             required: ["transaction_id"]
         )
@@ -178,13 +179,15 @@ func registerTransactionTools(
             if case .bool(let b) = v { return b }
             return nil
         }
+        let transactionType = ToolHelpers.getString(arguments, key: "transaction_type")
 
         guard let updated = try transactions.update(
             transactionId: transactionId,
             title: title,
             note: note,
             date: date,
-            cleared: cleared
+            cleared: cleared,
+            transactionType: transactionType
         ) else {
             return ToolHelpers.errorResponse("Transaction not found: \(transactionId)")
         }

@@ -274,6 +274,162 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
         )
     }
 
+    public func updateSecurityLineItem(
+        transactionId: Int,
+        shares: Double? = nil,
+        pricePerShare: Double? = nil,
+        amount: Double? = nil,
+        securitySymbol: String? = nil,
+        securityId: Int? = nil
+    ) throws -> SecurityTradeDTO {
+        // Resolve new security if specified
+        let newSecurityObjectID: NSManagedObjectID?
+        let newSecurityUUID: String?
+        if securitySymbol != nil || securityId != nil {
+            let sec = try resolveSecurity(symbol: securitySymbol, id: securityId)
+            newSecurityObjectID = sec.objectID
+            newSecurityUUID = Self.stringValue(sec, "pUniqueID")
+        } else {
+            newSecurityObjectID = nil
+            newSecurityUUID = nil
+        }
+
+        struct UpdateResult: Sendable {
+            let txUUID: String
+            let liUUID: String
+            let trade: SecurityTradeDTO
+        }
+
+        let result: UpdateResult = try performWriteReturning { [self] ctx in
+            guard let tx = try fetchByPK(entityName: "Transaction", pk: transactionId, in: ctx) else {
+                throw ToolError.notFound("Transaction not found: \(transactionId)")
+            }
+
+            // Find the line item that has a SecurityLineItem, or the first line item
+            let lineItems = Self.relatedSet(tx, "lineItems")
+            var targetLI: NSManagedObject?
+            var existingSLI: NSManagedObject?
+
+            for li in lineItems {
+                if let sli = Self.relatedObject(li, "pSecurityLineItem") {
+                    targetLI = li
+                    existingSLI = sli
+                    break
+                }
+            }
+
+            // If no SecurityLineItem found, use first line item with an account and create one
+            if targetLI == nil {
+                targetLI = lineItems.first
+            }
+
+            guard let li = targetLI else {
+                throw ToolError.notFound("No line items found for transaction \(transactionId)")
+            }
+
+            let sli: NSManagedObject
+            if let existing = existingSLI {
+                sli = existing
+            } else {
+                // Create a new SecurityLineItem
+                sli = Self.createObject(entityName: "SecurityLineItem", in: ctx)
+                sli.setValue(0.0 as NSNumber, forKey: "pShares")
+                sli.setValue(0.0 as NSNumber, forKey: "pAmount")
+                sli.setValue(0.0 as NSNumber, forKey: "pPricePerShare")
+                sli.setValue(0.0 as NSNumber, forKey: "pCommission")
+                sli.setValue(0.0 as NSNumber, forKey: "pIncome")
+                sli.setValue(1.0 as NSNumber, forKey: "pPriceMultiplier")
+                sli.setValue(li, forKey: "pLineItem")
+            }
+
+            if let shares = shares {
+                sli.setValue(shares as NSNumber, forKey: "pShares")
+            }
+            if let pricePerShare = pricePerShare {
+                sli.setValue(pricePerShare as NSNumber, forKey: "pPricePerShare")
+            }
+            if let amount = amount {
+                sli.setValue(amount as NSNumber, forKey: "pAmount")
+            }
+            if let secObjID = newSecurityObjectID,
+               let secInCtx = try? ctx.existingObject(with: secObjID) {
+                sli.setValue(secInCtx, forKey: "pSecurity")
+            }
+
+            Self.setNow(tx, "pModificationDate")
+
+            // Build return DTO
+            let txDate: String
+            if let d = Self.dateValue(tx, "pDate") {
+                txDate = DateConversion.toISO(d)
+            } else {
+                txDate = ""
+            }
+
+            let baseType: Int = {
+                if let txType = Self.relatedObject(tx, "pTransactionType") {
+                    return Self.intValue(txType, "pBaseType")
+                }
+                return 0
+            }()
+
+            let security = Self.relatedObject(sli, "pSecurity")
+            let account = Self.relatedObject(li, "pAccount")
+
+            let trade = SecurityTradeDTO(
+                id: transactionId,
+                date: txDate,
+                type: Self.transactionTypeName(baseType),
+                symbol: security.map { Self.stringValue($0, "pSymbol") } ?? "",
+                securityName: security.map { Self.stringValue($0, "pName") } ?? "",
+                shares: Self.doubleValue(sli, "pShares"),
+                pricePerShare: Self.doubleValue(sli, "pPricePerShare"),
+                amount: Self.doubleValue(sli, "pAmount"),
+                commission: Self.doubleValue(sli, "pCommission"),
+                accountName: account.map { Self.stringValue($0, "pName") } ?? "",
+                accountId: account.map { Self.extractPK(from: $0.objectID) } ?? 0
+            )
+
+            let txUUID = Self.stringValue(tx, "pUniqueID")
+            let liUUID = Self.stringValue(li, "pUniqueID")
+
+            return UpdateResult(txUUID: txUUID, liUUID: liUUID, trade: trade)
+        }
+
+        // Patch sync blob (non-fatal)
+        if let updater = syncBlobUpdater {
+            // Pre-format values for the sendable closure
+            let liUUID = result.liUUID
+            let sharesStr = shares.map { updater.formatDecimalPublic($0) }
+            let ppsStr = pricePerShare.map { updater.formatDecimalPublic($0) }
+            let amountStr = amount.map { updater.formatDecimalPublic($0) }
+            let secRef = newSecurityUUID.map { "Security:\($0)" }
+
+            updater.updateTransactionBlob(transactionUUID: result.txUUID) { xml in
+                var patched = xml
+                if let v = sharesStr {
+                    patched = SyncBlobUpdater.patchSecurityLineItemFieldStatic(
+                        xml: patched, lineItemUUID: liUUID, fieldName: "shares", fieldType: "decimal", value: v)
+                }
+                if let v = ppsStr {
+                    patched = SyncBlobUpdater.patchSecurityLineItemFieldStatic(
+                        xml: patched, lineItemUUID: liUUID, fieldName: "pricePerShare", fieldType: "decimal", value: v)
+                }
+                if let v = amountStr {
+                    patched = SyncBlobUpdater.patchSecurityLineItemFieldStatic(
+                        xml: patched, lineItemUUID: liUUID, fieldName: "cost", fieldType: "decimal", value: v)
+                }
+                if let v = secRef {
+                    patched = SyncBlobUpdater.patchSecurityLineItemFieldStatic(
+                        xml: patched, lineItemUUID: liUUID, fieldName: "security", fieldType: "reference", value: v)
+                }
+                return patched
+            }
+        }
+
+        return result.trade
+    }
+
     public func importPricesFromCSV(
         filePath: String,
         symbol: String? = nil,

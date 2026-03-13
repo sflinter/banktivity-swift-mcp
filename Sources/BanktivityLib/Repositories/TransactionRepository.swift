@@ -218,9 +218,11 @@ public final class TransactionRepository: BaseRepository, @unchecked Sendable {
     }
 
     /// Update an existing transaction
-    public func update(transactionId: Int, title: String? = nil, note: String? = nil, date: String? = nil, cleared: Bool? = nil) throws -> TransactionDTO? {
+    public func update(transactionId: Int, title: String? = nil, note: String? = nil, date: String? = nil, cleared: Bool? = nil, transactionType: String? = nil) throws -> TransactionDTO? {
         nonisolated(unsafe) var dateChanged = false
         nonisolated(unsafe) var txUUID: String?
+        nonisolated(unsafe) var newTxTypeBaseType: String?
+        nonisolated(unsafe) var newTxTypeUUID: String?
 
         try performWrite { [self] ctx in
             guard let tx = try fetchByPK(entityName: "Transaction", pk: transactionId, in: ctx) else {
@@ -236,6 +238,21 @@ public final class TransactionRepository: BaseRepository, @unchecked Sendable {
                 dateChanged = true
             }
             if let cleared = cleared { tx.setValue(cleared, forKey: "pCleared") }
+            if let transactionType = transactionType {
+                let baseType = Self.transactionTypeBaseTypeCode(transactionType)
+                guard let baseType = baseType else {
+                    throw ToolError.invalidInput("Unknown transaction type: \(transactionType). Valid types: deposit, withdrawal, buy, sell, move-shares-in, move-shares-out, short-sell, buy-to-cover")
+                }
+                let typeRequest = NSFetchRequest<NSManagedObject>(entityName: "TransactionType")
+                typeRequest.predicate = NSPredicate(format: "pBaseType == %d", baseType)
+                typeRequest.fetchLimit = 1
+                guard let txType = try ctx.fetch(typeRequest).first else {
+                    throw ToolError.notFound("TransactionType entity not found for base type \(baseType)")
+                }
+                tx.setValue(txType, forKey: "pTransactionType")
+                newTxTypeBaseType = Self.transactionTypeBaseTypeName(baseType)
+                newTxTypeUUID = Self.stringValue(txType, "pUniqueID")
+            }
             Self.setNow(tx, "pModificationDate")
         }
 
@@ -256,6 +273,9 @@ public final class TransactionRepository: BaseRepository, @unchecked Sendable {
                 if let t = title { result = updater.patchTransactionTitle(xml: result, title: t) }
                 if let n = note { result = updater.patchTransactionNote(xml: result, note: n) }
                 if let d = date { result = updater.patchTransactionDate(xml: result, date: d + "T00:00:00+0000") }
+                if let bt = newTxTypeBaseType, let tu = newTxTypeUUID {
+                    result = updater.patchTransactionType(xml: result, baseType: bt, typeUUID: tu)
+                }
                 return result
             }
         }
@@ -332,5 +352,54 @@ public final class TransactionRepository: BaseRepository, @unchecked Sendable {
             transactionType: transactionTypeName,
             lineItems: lineItems
         )
+    }
+
+    // MARK: - Transaction Type Mapping
+
+    static func transactionTypeBaseTypeCode(_ name: String) -> Int? {
+        switch name.lowercased() {
+        case "deposit": return 1
+        case "withdrawal": return 2
+        case "transfer": return 3
+        case "check": return 4
+        case "buy": return 100
+        case "sell": return 101
+        case "buy-to-open": return 102
+        case "buy-to-close": return 103
+        case "sell-to-open": return 104
+        case "sell-to-close": return 105
+        case "move-shares-in": return 210
+        case "move-shares-out": return 211
+        case "transfer-shares": return 212
+        case "split-shares": return 250
+        case "dividend": return 301
+        default: return nil
+        }
+    }
+
+    static func transactionTypeBaseTypeName(_ code: Int) -> String {
+        switch code {
+        case 1: return "deposit"
+        case 2: return "withdrawal"
+        case 3: return "transfer"
+        case 4: return "check"
+        case 100: return "buy"
+        case 101: return "sell"
+        case 102: return "buy-to-open"
+        case 103: return "buy-to-close"
+        case 104: return "sell-to-open"
+        case 105: return "sell-to-close"
+        case 210: return "move-shares-in"
+        case 211: return "move-shares-out"
+        case 212: return "transfer-shares"
+        case 250: return "split-shares"
+        case 300: return "investment-income"
+        case 301: return "dividend"
+        case 302: return "cap-gains-short"
+        case 303: return "cap-gains-long"
+        case 304: return "interest-income"
+        case 310: return "return-of-capital"
+        default: return "deposit"
+        }
     }
 }
