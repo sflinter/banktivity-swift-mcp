@@ -79,11 +79,13 @@ Always redirect stderr with `2>/dev/null` — CoreData prints harmless warnings 
 | `create_share_adjustment` | `--account_id N --symbol SYM --shares=-10 --date YYYY-MM-DD` | Share adjustment (charges, splits); `--amount` for cash |
 | `import_security_prices` | `--file_path /path/to/csv --symbol AAPL` | Supports Yahoo Finance, OHLCV, or Date/Close CSV |
 | `delete_security_prices` | `--symbol AAPL --start_date --end_date` | Delete prices; date range optional |
+| `securities update-trade` | `<transaction_id> [--shares N] [--price_per_share N] [--amount N] [--symbol SYM]` | Update SecurityLineItem fields on an existing trade transaction |
 
 ### Modifying
 
 | Tool | Key Arguments | Notes |
 |---|---|---|
+| `update_transaction` | `--transaction_id N [--title] [--note] [--date] [--cleared] [--transaction_type]` | Update title, note, date, cleared, or transaction type (deposit, withdrawal, buy, sell, etc.) |
 | `recategorize_transaction` | `--transaction_id N --category_id N` or `--category_name "Name"` | Use `--category_id` for subcategories |
 | `bulk_recategorize_by_payee` | `--payee_pattern "pat" --category_id N --dry_run true --uncategorized_only true` | **Always dry_run first** |
 | `tag_transaction` | `--transaction_id N --tag_name "name" --action add\|remove` | Add or remove a tag |

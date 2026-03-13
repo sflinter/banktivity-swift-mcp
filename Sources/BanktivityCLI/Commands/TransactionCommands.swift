@@ -215,6 +215,9 @@ struct Transactions: AsyncParsableCommand {
         @Flag(name: .long, help: "Mark as uncleared")
         var uncleared: Bool = false
 
+        @Option(name: .long, help: "New transaction type (deposit, withdrawal, transfer, check, buy, sell, move-shares-in, move-shares-out, dividend, etc.)")
+        var transactionType: String?
+
         func run() async throws {
             let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
             let container = try BanktivityCLI.createContainer(vaultPath: path)
@@ -232,7 +235,8 @@ struct Transactions: AsyncParsableCommand {
                 title: title,
                 note: note,
                 date: date,
-                cleared: clearedValue
+                cleared: clearedValue,
+                transactionType: transactionType
             ) else {
                 throw ToolError.notFound("Transaction not found: \(id)")
             }
