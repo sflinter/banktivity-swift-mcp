@@ -433,10 +433,13 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
                     throw ToolError.invalidInput("Cash line repair requires the security line item to belong to an account")
                 }
                 let offsetCandidates = lineItems.filter { candidate in
-                    candidate.objectID != li.objectID && Self.relatedObject(candidate, "pAccount") == nil
+                    guard candidate.objectID != li.objectID else { return false }
+                    guard let offsetAccount = Self.relatedObject(candidate, "pAccount") else { return true }
+                    let accountClass = Self.intValue(offsetAccount, "pAccountClass")
+                    return accountClass == AccountClass.income || accountClass == AccountClass.expense
                 }
                 guard offsetCandidates.count == 1 else {
-                    throw ToolError.invalidInput("Cash line repair requires exactly one balancing line item without an account")
+                    throw ToolError.invalidInput("Cash line repair requires exactly one unknown/category balancing line item")
                 }
                 let offsetLI = offsetCandidates.first!
                 let offsetAmount = -cashLineItemAmount

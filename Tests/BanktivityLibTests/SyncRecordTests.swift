@@ -303,6 +303,130 @@ struct SyncRecordTests {
         #expect(xml.contains("<field type=\"decimal\" name=\"transacitonAmount\">125</field>"))
     }
 
+    @Test("updateSecurityLineItem can repair cash line item amounts with category offset")
+    func updateSecurityLineItemRepairsCashLineAmountsWithCategoryOffset() throws {
+        let vault = try TestVaultHelper.createFreshVault()
+        defer { TestVaultHelper.cleanup(vault) }
+
+        let (_, eur) = try TestVaultHelper.seedCurrencies(in: vault.container)
+        let txTypes = try TestVaultHelper.seedTransactionTypes(in: vault.container)
+        _ = try TestVaultHelper.seedSyncedDocument(in: vault.container)
+        let account = try TestVaultHelper.seedInvestmentAccount(in: vault.container, currency: eur)
+        let security = try TestVaultHelper.seedSecurity(in: vault.container, currency: eur)
+        let accountPK = BaseRepository.extractPK(from: account.objectID)
+        let securityUUID = BaseRepository.stringValue(security, "pUniqueID")
+        let accountUUID = BaseRepository.stringValue(account, "pUniqueID")
+        let eurUUID = BaseRepository.stringValue(eur, "pUniqueID")
+        let sellTypeUUID = BaseRepository.stringValue(txTypes.sell, "pUniqueID")
+
+        let ctx = vault.container.viewContext
+        let category = NSEntityDescription.insertNewObject(forEntityName: "PrimaryAccount", into: ctx)
+        category.setValue("Dividend Income Tax-Free", forKey: "pName")
+        category.setValue(BaseRepository.generateUUID(), forKey: "pUniqueID")
+        category.setValue(Int16(AccountClass.income), forKey: "pAccountClass")
+        category.setValue(false, forKey: "pHidden")
+        category.setValue(eur, forKey: "currency")
+        BaseRepository.setNow(category, "pCreationTime")
+        BaseRepository.setNow(category, "pModificationDate")
+        let categoryUUID = BaseRepository.stringValue(category, "pUniqueID")
+
+        let tx = NSEntityDescription.insertNewObject(forEntityName: "Transaction", into: ctx)
+        let txUUID = BaseRepository.generateUUID()
+        tx.setValue("TEST SELL", forKey: "pTitle")
+        tx.setValue(txUUID, forKey: "pUniqueID")
+        tx.setValue(false, forKey: "pCleared")
+        tx.setValue(false, forKey: "pVoid")
+        tx.setValue(false, forKey: "pAdjustment")
+        BaseRepository.setDate(tx, "pDate", isoString: "2026-04-01")
+        BaseRepository.setNow(tx, "pCreationTime")
+        BaseRepository.setNow(tx, "pModificationDate")
+        tx.setValue(eur, forKey: "pCurrency")
+        tx.setValue(txTypes.sell, forKey: "pTransactionType")
+
+        let cashLI = NSEntityDescription.insertNewObject(forEntityName: "LineItem", into: ctx)
+        let cashLIUUID = BaseRepository.generateUUID()
+        cashLI.setValue(0.0 as NSNumber, forKey: "pTransactionAmount")
+        cashLI.setValue(cashLIUUID, forKey: "pUniqueID")
+        cashLI.setValue(1.0 as NSNumber, forKey: "pExchangeRate")
+        cashLI.setValue(0.0 as NSNumber, forKey: "pRunningBalance")
+        cashLI.setValue(false, forKey: "pCleared")
+        BaseRepository.setNow(cashLI, "pCreationTime")
+        cashLI.setValue(account, forKey: "pAccount")
+        cashLI.setValue(tx, forKey: "pTransaction")
+
+        let categoryLI = NSEntityDescription.insertNewObject(forEntityName: "LineItem", into: ctx)
+        let categoryLIUUID = BaseRepository.generateUUID()
+        categoryLI.setValue(0.0 as NSNumber, forKey: "pTransactionAmount")
+        categoryLI.setValue(categoryLIUUID, forKey: "pUniqueID")
+        categoryLI.setValue(1.0 as NSNumber, forKey: "pExchangeRate")
+        categoryLI.setValue(0.0 as NSNumber, forKey: "pRunningBalance")
+        categoryLI.setValue(false, forKey: "pCleared")
+        BaseRepository.setNow(categoryLI, "pCreationTime")
+        categoryLI.setValue(category, forKey: "pAccount")
+        categoryLI.setValue(tx, forKey: "pTransaction")
+
+        let sli = NSEntityDescription.insertNewObject(forEntityName: "SecurityLineItem", into: ctx)
+        sli.setValue(-1.0 as NSNumber, forKey: "pShares")
+        sli.setValue(100.0 as NSNumber, forKey: "pAmount")
+        sli.setValue(100.0 as NSNumber, forKey: "pPricePerShare")
+        sli.setValue(0.0 as NSNumber, forKey: "pCommission")
+        sli.setValue(0.0 as NSNumber, forKey: "pIncome")
+        sli.setValue(1.0 as NSNumber, forKey: "pPriceMultiplier")
+        sli.setValue(security, forKey: "pSecurity")
+        sli.setValue(cashLI, forKey: "pLineItem")
+
+        try ctx.obtainPermanentIDs(for: [category, tx, cashLI, categoryLI, sli])
+        try ctx.save()
+        let txPK = BaseRepository.extractPK(from: tx.objectID)
+
+        let updater = SyncBlobUpdater(container: vault.container)
+        let syncSLI = SyncBlobUpdater.SyncSecurityLineItem(
+            amount: 100, commission: 0, pricePerShare: 100,
+            priceMultiplier: 1, securityUUID: securityUUID, shares: -1,
+            hasDistributionType: false
+        )
+        let cashSyncLI = SyncBlobUpdater.SyncLineItem(
+            accountUUID: accountUUID, accountAmount: 0,
+            cleared: false, identifier: cashLIUUID, memo: nil,
+            securityLineItem: syncSLI, transactionAmount: 0
+        )
+        let categorySyncLI = SyncBlobUpdater.SyncLineItem(
+            accountUUID: categoryUUID, accountAmount: 0,
+            cleared: false, identifier: categoryLIUUID, memo: nil,
+            securityLineItem: nil, transactionAmount: 0
+        )
+        updater.createTransactionSyncRecord(
+            transactionUUID: txUUID, currencyUUID: eurUUID,
+            date: "2026-04-01", title: "TEST SELL", note: nil,
+            adjustment: false, lineItems: [cashSyncLI, categorySyncLI],
+            transactionTypeBaseType: "sell", transactionTypeUUID: sellTypeUUID
+        )
+
+        let repo = SecurityRepository(container: vault.container, syncBlobUpdater: updater)
+        let updated = try repo.updateSecurityLineItem(
+            transactionId: txPK,
+            cashLineItemAmount: 596.06
+        )
+        #expect(updated.amount == 100)
+
+        let lineItems = try LineItemRepository(container: vault.container).getForTransactionPK(txPK)
+        let accountLine = try #require(lineItems.first { $0.accountId == accountPK })
+        let categoryLine = try #require(lineItems.first { $0.accountId != accountPK })
+        #expect(abs(accountLine.amount - 596.06) < 0.000001)
+        #expect(abs(categoryLine.amount + 596.06) < 0.000001)
+
+        let request = NSFetchRequest<NSManagedObject>(entityName: "SyncedHostedEntity")
+        request.predicate = NSPredicate(format: "pLocalID == %@", txUUID)
+        let record = try #require(try vault.container.viewContext.fetch(request).first)
+        let blobData = try #require(record.value(forKey: "pRemoteEntityData") as? Data)
+        let decompressed = try #require(SyncBlobUpdater.decompressGzip(blobData))
+        let xml = try #require(String(data: decompressed, encoding: .utf8))
+        #expect(xml.contains("<field type=\"string\" name=\"identifier\">\(cashLIUUID)</field>"))
+        #expect(xml.contains("<field type=\"decimal\" name=\"accountAmount\">596.06</field>"))
+        #expect(xml.contains("<field type=\"string\" name=\"identifier\">\(categoryLIUUID)</field>"))
+        #expect(xml.contains("<field type=\"decimal\" name=\"accountAmount\">-596.06</field>"))
+    }
+
     @Test("deleteSyncRecord sets state=3 and timestamps for sync deletion")
     func deleteSyncRecord() throws {
         let vault = try TestVaultHelper.createFreshVault()
