@@ -47,7 +47,7 @@ public final class AccountRepository: BaseRepository, @unchecked Sendable {
         }
     }
 
-    /// Get account balance using an aggregate fetch (SUM of line item amounts)
+    /// Get account balance using account-currency line item amounts
     public func getBalance(accountId: Int) throws -> Double {
         try performRead { [self] ctx in
             guard let account = try fetchByPK(entityName: "Account", pk: accountId, in: ctx) else { return 0 }
@@ -227,26 +227,19 @@ public final class AccountRepository: BaseRepository, @unchecked Sendable {
 
     // MARK: - Aggregate Helpers
 
-    /// Sum pTransactionAmount for LineItems matching a predicate
+    /// Sum account-currency amounts for LineItems matching a predicate
     private func sumLineItemAmounts(predicate: NSPredicate, in ctx: NSManagedObjectContext) throws -> Double {
-        let request = NSFetchRequest<NSDictionary>(entityName: "LineItem")
+        let request = NSFetchRequest<NSManagedObject>(entityName: "LineItem")
         request.predicate = predicate
-        request.resultType = .dictionaryResultType
 
-        let sumExpr = NSExpression(forFunction: "sum:", arguments: [
-            NSExpression(forKeyPath: "pTransactionAmount")
-        ])
-        let desc = NSExpressionDescription()
-        desc.name = "total"
-        desc.expression = sumExpr
-        desc.expressionResultType = .decimalAttributeType
-        request.propertiesToFetch = [desc]
-
-        let results = try ctx.fetch(request)
-        if let result = results.first, let total = result["total"] as? NSDecimalNumber {
-            return total.doubleValue
+        let lineItems = try ctx.fetch(request)
+        var total = 0.0
+        for lineItem in lineItems {
+            let amount = Self.doubleValue(lineItem, "pTransactionAmount")
+            let exchangeRate = Self.doubleValue(lineItem, "pExchangeRate")
+            total += amount * exchangeRate
         }
-        return 0.0
+        return total
     }
 
     /// Count line items matching a predicate (used as a proxy for transaction count)
