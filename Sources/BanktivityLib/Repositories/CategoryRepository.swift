@@ -9,12 +9,12 @@ public final class CategoryRepository: BaseRepository, @unchecked Sendable {
     /// List categories with optional filtering
     public func list(type: String? = nil, includeHidden: Bool = false, topLevelOnly: Bool = false) throws -> [CategoryDTO] {
         try performRead { [self] ctx in
-            let request = NSFetchRequest<NSManagedObject>(entityName: "Account")
+            let request = NSFetchRequest<NSManagedObject>(entityName: "Category")
 
             var predicates: [NSPredicate] = []
 
             if let type = type {
-                let accountClass = type == "income" ? AccountClass.income : AccountClass.expense
+                let accountClass = try Self.categoryClass(for: type)
                 predicates.append(NSPredicate(format: "pAccountClass == %d", accountClass))
             } else {
                 // Only categories (income or expense)
@@ -43,7 +43,7 @@ public final class CategoryRepository: BaseRepository, @unchecked Sendable {
     /// Get a single category by ID
     public func get(categoryId: Int) throws -> CategoryDTO? {
         try performRead { [self] ctx in
-            guard let object = try fetchByPK(entityName: "Account", pk: categoryId, in: ctx) else { return nil }
+            guard let object = try fetchByPK(entityName: "Category", pk: categoryId, in: ctx) else { return nil }
             let accountClass = Self.intValue(object, "pAccountClass")
             guard accountClass == AccountClass.income || accountClass == AccountClass.expense else {
                 return nil
@@ -55,7 +55,7 @@ public final class CategoryRepository: BaseRepository, @unchecked Sendable {
     /// Find a category by path (colon-separated, e.g., "Insurance:Life")
     public func findByPath(_ path: String) throws -> CategoryDTO? {
         try performRead { [self] ctx in
-            let request = NSFetchRequest<NSManagedObject>(entityName: "Account")
+            let request = NSFetchRequest<NSManagedObject>(entityName: "Category")
             request.predicate = NSPredicate(
                 format: "(pAccountClass == %d OR pAccountClass == %d) AND pFullName ==[cd] %@",
                 AccountClass.income, AccountClass.expense, path
@@ -69,7 +69,7 @@ public final class CategoryRepository: BaseRepository, @unchecked Sendable {
     /// Find categories by name (case-insensitive)
     public func findByName(_ name: String) throws -> [CategoryDTO] {
         try performRead { [self] ctx in
-            let request = NSFetchRequest<NSManagedObject>(entityName: "Account")
+            let request = NSFetchRequest<NSManagedObject>(entityName: "Category")
             request.predicate = NSPredicate(
                 format: "(pAccountClass == %d OR pAccountClass == %d) AND pName ==[cd] %@",
                 AccountClass.income, AccountClass.expense, name
@@ -120,6 +120,32 @@ public final class CategoryRepository: BaseRepository, @unchecked Sendable {
         return nil
     }
 
+    /// Find income/expense rows that are not stored as Category entities.
+    public func auditCategoryEntities() throws -> [CategoryEntityAuditDTO] {
+        try performRead { ctx in
+            let request = NSFetchRequest<NSManagedObject>(entityName: "Account")
+            request.predicate = NSPredicate(
+                format: "pAccountClass == %d OR pAccountClass == %d",
+                AccountClass.income, AccountClass.expense
+            )
+            request.sortDescriptors = [NSSortDescriptor(key: "pFullName", ascending: true)]
+
+            return try ctx.fetch(request).compactMap { object in
+                guard object.entity.name != "Category" else { return nil }
+                let accountClass = Self.intValue(object, "pAccountClass")
+                return CategoryEntityAuditDTO(
+                    id: Self.extractPK(from: object.objectID),
+                    name: Self.stringValue(object, "pName"),
+                    fullName: Self.stringValue(object, "pFullName"),
+                    type: accountClass == AccountClass.income ? "income" : "expense",
+                    accountClass: accountClass,
+                    actualEntity: object.entity.name ?? "Unknown",
+                    expectedEntity: "Category"
+                )
+            }
+        }
+    }
+
     // MARK: - Write Operations
 
     /// Create a new category (income or expense)
@@ -130,10 +156,12 @@ public final class CategoryRepository: BaseRepository, @unchecked Sendable {
         hidden: Bool = false,
         currencyCode: String? = nil
     ) throws -> CategoryDTO {
-        try performWrite { [self] ctx in
-            // Categories are stored as PrimaryAccount entities
-            let cat = Self.createObject(entityName: "PrimaryAccount", in: ctx)
-            let accountClass = type == "income" ? AccountClass.income : AccountClass.expense
+        try performWriteReturning { [self] ctx in
+            let accountClass = try Self.categoryClass(for: type)
+
+            // Categories are concrete Category entities. Creating them as
+            // PrimaryAccount corrupts Banktivity's category tree in the UI.
+            let cat = Self.createObject(entityName: "Category", in: ctx)
             cat.setValue(accountClass, forKey: "pAccountClass")
             cat.setValue(name, forKey: "pName")
             cat.setValue(true, forKey: "pDebit")
@@ -146,40 +174,42 @@ public final class CategoryRepository: BaseRepository, @unchecked Sendable {
             // Set parent and full name
             var fullName = name
             if let parentId = parentId {
-                if let parent = try fetchByPK(entityName: "Account", pk: parentId, in: ctx) {
-                    cat.setValue(parent, forKey: "pParentAccount")
-                    let parentFullName = Self.stringValue(parent, "pFullName")
-                    fullName = parentFullName.isEmpty ? name : "\(parentFullName):\(name)"
+                guard let parent = try fetchByPK(entityName: "Category", pk: parentId, in: ctx) else {
+                    throw ToolError.invalidInput("Parent category not found: \(parentId)")
                 }
+                let parentClass = Self.intValue(parent, "pAccountClass")
+                guard parentClass == AccountClass.income || parentClass == AccountClass.expense else {
+                    throw ToolError.invalidInput("Parent must be an income or expense category: \(parentId)")
+                }
+                cat.setValue(parent, forKey: "pParentAccount")
+                let parentFullName = Self.stringValue(parent, "pFullName")
+                fullName = parentFullName.isEmpty ? name : "\(parentFullName):\(name)"
             }
             cat.setValue(fullName, forKey: "pFullName")
 
-            // Set currency
-            if let code = currencyCode {
+            if let code = currencyCode, cat.entity.relationshipsByName["currency"] != nil {
                 let currRequest = NSFetchRequest<NSManagedObject>(entityName: "Currency")
                 currRequest.predicate = NSPredicate(format: "pCode ==[cd] %@", code)
                 currRequest.fetchLimit = 1
                 if let currency = try ctx.fetch(currRequest).first {
                     cat.setValue(currency, forKey: "currency")
                 }
-            } else {
-                // Use default currency (first available)
-                let currRequest = NSFetchRequest<NSManagedObject>(entityName: "Currency")
-                currRequest.fetchLimit = 1
-                if let currency = try ctx.fetch(currRequest).first {
-                    cat.setValue(currency, forKey: "currency")
-                }
             }
-        }
 
-        // Re-fetch by name
-        if let result = try findByPath(parentId != nil ? "" : name) ?? findByName(name).last {
-            return result
+            try ctx.obtainPermanentIDs(for: [cat])
+            return self.mapToDTO(cat)
         }
-        throw ToolError.notFound("Failed to retrieve created category")
     }
 
     // MARK: - DTO Mapping
+
+    private static func categoryClass(for type: String) throws -> Int {
+        switch type {
+        case "income": return AccountClass.income
+        case "expense": return AccountClass.expense
+        default: throw ToolError.invalidInput("type must be 'income' or 'expense'")
+        }
+    }
 
     public func mapToDTO(_ object: NSManagedObject) -> CategoryDTO {
         let accountClass = Self.intValue(object, "pAccountClass")
