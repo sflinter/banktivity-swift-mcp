@@ -47,7 +47,7 @@ public final class AccountRepository: BaseRepository, @unchecked Sendable {
         }
     }
 
-    /// Get account balance using an aggregate fetch (SUM of line item amounts)
+    /// Get account balance using account-local line item amounts
     public func getBalance(accountId: Int) throws -> Double {
         try performRead { [self] ctx in
             guard let account = try fetchByPK(entityName: "Account", pk: accountId, in: ctx) else { return 0 }
@@ -227,26 +227,54 @@ public final class AccountRepository: BaseRepository, @unchecked Sendable {
 
     // MARK: - Aggregate Helpers
 
-    /// Sum pTransactionAmount for LineItems matching a predicate
+    /// Sum account-local LineItem amounts matching a predicate.
+    ///
+    /// Banktivity stores `pTransactionAmount` in the transaction currency. Multiplying by
+    /// `pExchangeRate` converts it to the line item's account currency.
     private func sumLineItemAmounts(predicate: NSPredicate, in ctx: NSManagedObjectContext) throws -> Double {
         let request = NSFetchRequest<NSDictionary>(entityName: "LineItem")
         request.predicate = predicate
         request.resultType = .dictionaryResultType
-
-        let sumExpr = NSExpression(forFunction: "sum:", arguments: [
-            NSExpression(forKeyPath: "pTransactionAmount")
-        ])
-        let desc = NSExpressionDescription()
-        desc.name = "total"
-        desc.expression = sumExpr
-        desc.expressionResultType = .decimalAttributeType
-        request.propertiesToFetch = [desc]
+        request.propertiesToFetch = ["pTransactionAmount", "pExchangeRate"]
 
         let results = try ctx.fetch(request)
-        if let result = results.first, let total = result["total"] as? NSDecimalNumber {
-            return total.doubleValue
+        let total = results.reduce(into: Decimal(0)) { partial, row in
+            partial += Self.accountAmount(
+                transactionAmount: row["pTransactionAmount"],
+                exchangeRate: row["pExchangeRate"]
+            )
         }
-        return 0.0
+
+        return NSDecimalNumber(decimal: total).doubleValue
+    }
+
+    static func accountAmount(transactionAmount: Any?, exchangeRate: Any?) -> Decimal {
+        let amount = decimalValue(transactionAmount) ?? Decimal(0)
+        let rate = effectiveExchangeRate(exchangeRate)
+        return amount * rate
+    }
+
+    private static func effectiveExchangeRate(_ value: Any?) -> Decimal {
+        guard let rate = decimalValue(value), rate != Decimal(0) else {
+            fputs("Warning: LineItem has missing or zero pExchangeRate; using 1.\n", stderr)
+            return Decimal(1)
+        }
+        return rate
+    }
+
+    private static func decimalValue(_ value: Any?) -> Decimal? {
+        switch value {
+        case let decimal as Decimal:
+            return decimal
+        case let number as NSDecimalNumber:
+            return number.decimalValue
+        case let number as NSNumber:
+            return number.decimalValue
+        case let string as String:
+            return Decimal(string: string)
+        default:
+            return nil
+        }
     }
 
     /// Count line items matching a predicate (used as a proxy for transaction count)
