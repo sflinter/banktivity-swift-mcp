@@ -36,7 +36,30 @@ struct AccountRepositoryBalanceTests {
         let amount = AccountRepository.accountAmount(
             transactionAmount: NSDecimalNumber(string: "100.00"),
             exchangeRate: NSDecimalNumber(string: "2.0"),
-            securityAmount: NSDecimalNumber(string: "-75.25")
+            securityAmount: NSDecimalNumber(string: "-75.25"),
+            transactionBaseType: 100
+        )
+
+        #expect(amount == Decimal(string: "124.75")!)
+    }
+
+    @Test func lineItemAccountAmountExcludesSecurityOffsetForShareAdjustments() {
+        let amount = AccountRepository.accountAmount(
+            transactionAmount: NSDecimalNumber(string: "100.00"),
+            exchangeRate: NSDecimalNumber(string: "2.0"),
+            securityAmount: NSDecimalNumber(string: "-75.25"),
+            transactionBaseType: 210
+        )
+
+        #expect(amount == Decimal(200))
+    }
+
+    @Test func lineItemAccountAmountIncludesSecurityOffsetForUnknownBaseType() {
+        let amount = AccountRepository.accountAmount(
+            transactionAmount: NSDecimalNumber(string: "100.00"),
+            exchangeRate: NSDecimalNumber(string: "2.0"),
+            securityAmount: NSDecimalNumber(string: "-75.25"),
+            transactionBaseType: 999
         )
 
         #expect(amount == Decimal(string: "124.75")!)
