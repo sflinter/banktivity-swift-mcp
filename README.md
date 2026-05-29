@@ -66,7 +66,8 @@ Add to your MCP settings (`~/.claude/settings.json` or project `.mcp.json`):
     "banktivity": {
       "command": "/Users/you/.local/bin/banktivity-mcp",
       "env": {
-        "BANKTIVITY_FILE_PATH": "/Users/you/Documents/Banktivity/My Accounts.bank8"
+        "BANKTIVITY_FILE_PATH": "/Users/you/Documents/Banktivity/My Accounts.bank8",
+        "BANKTIVITY_REPORTING_CURRENCY": "USD"
       }
     }
   }
@@ -83,12 +84,18 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
     "banktivity": {
       "command": "/Users/you/.local/bin/banktivity-mcp",
       "env": {
-        "BANKTIVITY_FILE_PATH": "/Users/you/Documents/Banktivity/My Accounts.bank8"
+        "BANKTIVITY_FILE_PATH": "/Users/you/Documents/Banktivity/My Accounts.bank8",
+        "BANKTIVITY_REPORTING_CURRENCY": "USD"
       }
     }
   }
 }
 ```
+
+`BANKTIVITY_REPORTING_CURRENCY` is optional. It controls aggregate formatting for
+tools such as `get_net_worth` and `get_summary`. If unset, aggregate values keep
+the previous default of EUR. Unknown currency codes fall back to EUR with a
+warning.
 
 ## Available Tools
 
