@@ -276,7 +276,7 @@ public final class AccountRepository: BaseRepository, @unchecked Sendable {
             name: Self.stringValue(object, "pName"),
             fullName: Self.stringValue(object, "pFullName"),
             accountClass: accountClass,
-            accountType: getAccountTypeName(accountClass),
+            accountType: accountTypeName(for: accountClass),
             hidden: Self.boolValue(object, "pHidden"),
             currency: Self.currencyCode(object),
             balance: nil,

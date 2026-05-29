@@ -66,13 +66,21 @@ public struct TurtleSerializer: RDFSerializer, Sendable {
 
     private func accountType(_ accountClass: Int) -> String {
         switch accountClass {
-        case AccountClass.checking, AccountClass.savings, AccountClass.cash, AccountClass.moneyMarket:
+        case AccountClass.checking, AccountClass.savings, AccountClass.cash,
+             AccountClass.moneyMarket, AccountClass.certificateOfDeposit,
+             AccountClass.healthSavingsAccount, AccountClass.current:
             return "schema:BankAccount"
         case AccountClass.creditCard:
             return "schema:CreditCard"
-        case AccountClass.investment, AccountClass.retirement, AccountClass.education:
+        case AccountClass.investment, AccountClass.ira, AccountClass.sep,
+             AccountClass.fourOhOneK, AccountClass.fourOhThreeB,
+             AccountClass.collegeSavings529, AccountClass.mutualFund,
+             AccountClass.rrsp, AccountClass.resp, AccountClass.tfsa,
+             AccountClass.hsaInvestment:
             return "schema:InvestmentOrDeposit"
-        case AccountClass.loan:
+        case AccountClass.loan, AccountClass.mortgage, AccountClass.studentLoan,
+             AccountClass.autoLoan, AccountClass.revolvingDebt,
+             AccountClass.lineOfCredit, AccountClass.heloc:
             return "schema:LoanOrCredit"
         case AccountClass.realEstate:
             return "pfo:RealEstateAccount"
