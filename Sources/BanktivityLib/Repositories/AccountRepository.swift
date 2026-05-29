@@ -262,19 +262,19 @@ public final class AccountRepository: BaseRepository, @unchecked Sendable {
         guard !accountIds.isEmpty else { return [:] }
 
         return try performRead { ctx in
-            let request = NSFetchRequest<NSDictionary>(entityName: "LineItem")
-            request.resultType = .dictionaryResultType
-            request.propertiesToFetch = ["pAccount", "pTransactionAmount", "pExchangeRate"]
+            let request = NSFetchRequest<NSManagedObject>(entityName: "LineItem")
+            request.predicate = NSPredicate(format: "pAccount != nil")
+            request.fetchBatchSize = 1000
 
             let results = try ctx.fetch(request)
-            let totals = results.reduce(into: [Int: Decimal]()) { partial, row in
-                guard let account = row["pAccount"] as? NSManagedObject else { return }
+            let totals = results.reduce(into: [Int: Decimal]()) { partial, lineItem in
+                guard let account = Self.relatedObject(lineItem, "pAccount") else { return }
                 let accountId = Self.extractPK(from: account.objectID)
                 guard accountIds.contains(accountId) else { return }
 
                 partial[accountId, default: Decimal(0)] += Self.accountAmount(
-                    transactionAmount: row["pTransactionAmount"],
-                    exchangeRate: row["pExchangeRate"]
+                    transactionAmount: lineItem.value(forKey: "pTransactionAmount"),
+                    exchangeRate: lineItem.value(forKey: "pExchangeRate")
                 )
             }
 
