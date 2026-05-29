@@ -132,8 +132,12 @@ public final class AccountRepository: BaseRepository, @unchecked Sendable {
         if !includeCategories {
             accountList = accountList.filter { $0.accountClass < AccountClass.income }
         }
-        return try accountList.map { account in
-            let balance = try getBalance(accountId: account.id)
+
+        let accountIds = Set(accountList.map(\.id))
+        let balances = try balancesByAccountId(accountIds)
+
+        return accountList.map { account in
+            let balance = balances[account.id] ?? 0
             return AccountDTO(
                 id: account.id,
                 name: account.name,
@@ -246,6 +250,30 @@ public final class AccountRepository: BaseRepository, @unchecked Sendable {
         }
 
         return NSDecimalNumber(decimal: total).doubleValue
+    }
+
+    private func balancesByAccountId(_ accountIds: Set<Int>) throws -> [Int: Double] {
+        guard !accountIds.isEmpty else { return [:] }
+
+        return try performRead { ctx in
+            let request = NSFetchRequest<NSManagedObject>(entityName: "LineItem")
+            request.predicate = NSPredicate(format: "pAccount != nil")
+            request.fetchBatchSize = 1000
+
+            let results = try ctx.fetch(request)
+            let totals = results.reduce(into: [Int: Decimal]()) { partial, lineItem in
+                guard let account = Self.relatedObject(lineItem, "pAccount") else { return }
+                let accountId = Self.extractPK(from: account.objectID)
+                guard accountIds.contains(accountId) else { return }
+
+                partial[accountId, default: Decimal(0)] += Self.accountAmount(
+                    transactionAmount: lineItem.value(forKey: "pTransactionAmount"),
+                    exchangeRate: lineItem.value(forKey: "pExchangeRate")
+                )
+            }
+
+            return totals.mapValues { NSDecimalNumber(decimal: $0).doubleValue }
+        }
     }
 
     static func accountAmount(transactionAmount: Any?, exchangeRate: Any?) -> Decimal {
