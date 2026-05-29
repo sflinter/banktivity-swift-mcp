@@ -44,6 +44,11 @@ struct BanktivityCLI: AsyncParsableCommand {
         try PersistentContainerFactory.create(bankFilePath: vaultPath)
     }
 
+    /// Resolve reporting currency from BANKTIVITY_REPORTING_CURRENCY
+    static func reportingCurrency() -> String {
+        ReportingCurrency.resolve(ProcessInfo.processInfo.environment["BANKTIVITY_REPORTING_CURRENCY"])
+    }
+
     /// Create a WriteGuard for the given vault path
     static func createWriteGuard(vaultPath: String) -> WriteGuard {
         let dbPath = URL(fileURLWithPath: vaultPath)

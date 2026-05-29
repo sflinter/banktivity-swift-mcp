@@ -132,8 +132,12 @@ public final class AccountRepository: BaseRepository, @unchecked Sendable {
         if !includeCategories {
             accountList = accountList.filter { $0.accountClass < AccountClass.income }
         }
-        return try accountList.map { account in
-            let balance = try getBalance(accountId: account.id)
+
+        let accountIds = Set(accountList.map(\.id))
+        let balances = try balancesByAccountId(accountIds)
+
+        return accountList.map { account in
+            let balance = balances[account.id] ?? 0
             return AccountDTO(
                 id: account.id,
                 name: account.name,
@@ -252,6 +256,30 @@ public final class AccountRepository: BaseRepository, @unchecked Sendable {
         let amount = decimalValue(transactionAmount) ?? Decimal(0)
         let rate = effectiveExchangeRate(exchangeRate)
         return amount * rate
+    }
+
+    private func balancesByAccountId(_ accountIds: Set<Int>) throws -> [Int: Double] {
+        guard !accountIds.isEmpty else { return [:] }
+
+        return try performRead { ctx in
+            let request = NSFetchRequest<NSDictionary>(entityName: "LineItem")
+            request.resultType = .dictionaryResultType
+            request.propertiesToFetch = ["pAccount", "pTransactionAmount", "pExchangeRate"]
+
+            let results = try ctx.fetch(request)
+            let totals = results.reduce(into: [Int: Decimal]()) { partial, row in
+                guard let account = row["pAccount"] as? NSManagedObject else { return }
+                let accountId = Self.extractPK(from: account.objectID)
+                guard accountIds.contains(accountId) else { return }
+
+                partial[accountId, default: Decimal(0)] += Self.accountAmount(
+                    transactionAmount: row["pTransactionAmount"],
+                    exchangeRate: row["pExchangeRate"]
+                )
+            }
+
+            return totals.mapValues { NSDecimalNumber(decimal: $0).doubleValue }
+        }
     }
 
     private static func effectiveExchangeRate(_ value: Any?) -> Decimal {

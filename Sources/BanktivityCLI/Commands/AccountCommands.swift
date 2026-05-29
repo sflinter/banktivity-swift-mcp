@@ -24,7 +24,7 @@ struct Accounts: AsyncParsableCommand {
         func run() async throws {
             let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
             let container = try BanktivityCLI.createContainer(vaultPath: path)
-            let accounts = AccountRepository(container: container)
+            let accounts = AccountRepository(container: container, reportingCurrency: BanktivityCLI.reportingCurrency())
 
             let result = try accounts.listWithBalances(
                 includeHidden: includeHidden,
@@ -48,7 +48,7 @@ struct Accounts: AsyncParsableCommand {
         func run() async throws {
             let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
             let container = try BanktivityCLI.createContainer(vaultPath: path)
-            let accounts = AccountRepository(container: container)
+            let accounts = AccountRepository(container: container, reportingCurrency: BanktivityCLI.reportingCurrency())
 
             let resolvedId = try accounts.resolveAccountId(id: accountId, name: accountName)
             let balance = try accounts.getBalance(accountId: resolvedId)
@@ -71,7 +71,7 @@ struct Accounts: AsyncParsableCommand {
         func run() async throws {
             let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
             let container = try BanktivityCLI.createContainer(vaultPath: path)
-            let accounts = AccountRepository(container: container)
+            let accounts = AccountRepository(container: container, reportingCurrency: BanktivityCLI.reportingCurrency())
 
             let netWorth = try accounts.getNetWorth()
             try outputJSON(netWorth, format: parent.format)
@@ -92,7 +92,7 @@ struct Accounts: AsyncParsableCommand {
         func run() async throws {
             let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
             let container = try BanktivityCLI.createContainer(vaultPath: path)
-            let accounts = AccountRepository(container: container)
+            let accounts = AccountRepository(container: container, reportingCurrency: BanktivityCLI.reportingCurrency())
 
             let spending = try accounts.getCategoryAnalysis(
                 type: "expense", startDate: startDate, endDate: endDate
@@ -115,7 +115,7 @@ struct Accounts: AsyncParsableCommand {
         func run() async throws {
             let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
             let container = try BanktivityCLI.createContainer(vaultPath: path)
-            let accounts = AccountRepository(container: container)
+            let accounts = AccountRepository(container: container, reportingCurrency: BanktivityCLI.reportingCurrency())
 
             let income = try accounts.getCategoryAnalysis(
                 type: "income", startDate: startDate, endDate: endDate
@@ -147,7 +147,7 @@ struct Accounts: AsyncParsableCommand {
             let writeGuard = BanktivityCLI.createWriteGuard(vaultPath: path)
             try await guardWrite(writeGuard)
 
-            let accounts = AccountRepository(container: container)
+            let accounts = AccountRepository(container: container, reportingCurrency: BanktivityCLI.reportingCurrency())
 
             let typeMap: [String: Int] = [
                 "asset": AccountClass.asset,
@@ -210,7 +210,7 @@ struct Accounts: AsyncParsableCommand {
         func run() async throws {
             let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
             let container = try BanktivityCLI.createContainer(vaultPath: path)
-            let accounts = AccountRepository(container: container)
+            let accounts = AccountRepository(container: container, reportingCurrency: BanktivityCLI.reportingCurrency())
             let tags = TagRepository(container: container)
 
             let summary = try accounts.getSummary(tagCount: try tags.list().count)
