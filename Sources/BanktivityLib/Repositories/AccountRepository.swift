@@ -65,9 +65,9 @@ public final class AccountRepository: BaseRepository, @unchecked Sendable {
                 assets: assets,
                 liabilities: liabilities,
                 netWorth: assets + liabilities,
-                formattedAssets: formatCurrency(assets),
-                formattedLiabilities: formatCurrency(liabilities),
-                formattedNetWorth: formatCurrency(assets + liabilities)
+                formattedAssets: formatCurrency(assets, currency: reportingCurrency),
+                formattedLiabilities: formatCurrency(liabilities, currency: reportingCurrency),
+                formattedNetWorth: formatCurrency(assets + liabilities, currency: reportingCurrency)
             )
         }
     }
@@ -116,7 +116,7 @@ public final class AccountRepository: BaseRepository, @unchecked Sendable {
                         category: categoryName,
                         total: total,
                         transactionCount: txCount,
-                        formattedTotal: formatCurrency(total)
+                        formattedTotal: formatCurrency(total, currency: reportingCurrency)
                     ))
                 }
             }
