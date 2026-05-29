@@ -107,17 +107,59 @@ public struct CategorySpendingDTO: Codable, Sendable {
 }
 
 public struct NetWorthDTO: Codable, Sendable {
+    public let reportingCurrency: String
     public let assets: Double
     public let liabilities: Double
     public let netWorth: Double
     public let formattedAssets: String?
     public let formattedLiabilities: String?
     public let formattedNetWorth: String?
+    public let breakdown: NetWorthBreakdownDTO
+    public let warnings: [String]
 
-    public init(assets: Double, liabilities: Double, netWorth: Double, formattedAssets: String?, formattedLiabilities: String?, formattedNetWorth: String?) {
+    public init(
+        reportingCurrency: String = ReportingCurrency.defaultCode,
+        assets: Double,
+        liabilities: Double,
+        netWorth: Double,
+        formattedAssets: String?,
+        formattedLiabilities: String?,
+        formattedNetWorth: String?,
+        breakdown: NetWorthBreakdownDTO = NetWorthBreakdownDTO(byCurrency: [:]),
+        warnings: [String] = []
+    ) {
+        self.reportingCurrency = ReportingCurrency.resolve(reportingCurrency)
         self.assets = assets; self.liabilities = liabilities; self.netWorth = netWorth
         self.formattedAssets = formattedAssets; self.formattedLiabilities = formattedLiabilities
         self.formattedNetWorth = formattedNetWorth
+        self.breakdown = breakdown
+        self.warnings = warnings
+    }
+}
+
+public struct NetWorthBreakdownDTO: Codable, Sendable {
+    public let byCurrency: [String: CurrencyBreakdownDTO]
+
+    public init(byCurrency: [String: CurrencyBreakdownDTO]) {
+        self.byCurrency = byCurrency
+    }
+}
+
+public struct CurrencyBreakdownDTO: Codable, Sendable {
+    public let originalSum: Double
+    public let rate: Double
+    public let rateDate: String?
+    public let converted: Double
+    public let hops: Int
+    public let path: [String]
+
+    public init(originalSum: Double, rate: Double, rateDate: String?, converted: Double, hops: Int, path: [String]) {
+        self.originalSum = originalSum
+        self.rate = rate
+        self.rateDate = rateDate
+        self.converted = converted
+        self.hops = hops
+        self.path = path
     }
 }
 
