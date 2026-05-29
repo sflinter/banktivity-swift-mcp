@@ -234,28 +234,32 @@ public final class AccountRepository: BaseRepository, @unchecked Sendable {
     /// Sum account-local LineItem amounts matching a predicate.
     ///
     /// Banktivity stores `pTransactionAmount` in the transaction currency. Multiplying by
-    /// `pExchangeRate` converts it to the line item's account currency.
+    /// `pExchangeRate` converts it to the line item's account currency. Investment line items
+    /// can also carry account-currency cash offsets on the related `SecurityLineItem.pAmount`.
     private func sumLineItemAmounts(predicate: NSPredicate, in ctx: NSManagedObjectContext) throws -> Double {
-        let request = NSFetchRequest<NSDictionary>(entityName: "LineItem")
+        let request = NSFetchRequest<NSManagedObject>(entityName: "LineItem")
         request.predicate = predicate
-        request.resultType = .dictionaryResultType
-        request.propertiesToFetch = ["pTransactionAmount", "pExchangeRate"]
+        request.fetchBatchSize = 1000
+        request.relationshipKeyPathsForPrefetching = ["pSecurityLineItem"]
 
         let results = try ctx.fetch(request)
-        let total = results.reduce(into: Decimal(0)) { partial, row in
+        let total = results.reduce(into: Decimal(0)) { partial, lineItem in
+            let securityLineItem = Self.relatedObject(lineItem, "pSecurityLineItem")
             partial += Self.accountAmount(
-                transactionAmount: row["pTransactionAmount"],
-                exchangeRate: row["pExchangeRate"]
+                transactionAmount: lineItem.value(forKey: "pTransactionAmount"),
+                exchangeRate: lineItem.value(forKey: "pExchangeRate"),
+                securityAmount: securityLineItem?.value(forKey: "pAmount")
             )
         }
 
         return NSDecimalNumber(decimal: total).doubleValue
     }
 
-    static func accountAmount(transactionAmount: Any?, exchangeRate: Any?) -> Decimal {
+    static func accountAmount(transactionAmount: Any?, exchangeRate: Any?, securityAmount: Any? = nil) -> Decimal {
         let amount = decimalValue(transactionAmount) ?? Decimal(0)
         let rate = effectiveExchangeRate(exchangeRate)
-        return amount * rate
+        let offset = decimalValue(securityAmount) ?? Decimal(0)
+        return (amount * rate) + offset
     }
 
     private func balancesByAccountId(_ accountIds: Set<Int>) throws -> [Int: Double] {
@@ -265,16 +269,19 @@ public final class AccountRepository: BaseRepository, @unchecked Sendable {
             let request = NSFetchRequest<NSManagedObject>(entityName: "LineItem")
             request.predicate = NSPredicate(format: "pAccount != nil")
             request.fetchBatchSize = 1000
+            request.relationshipKeyPathsForPrefetching = ["pAccount", "pSecurityLineItem"]
 
             let results = try ctx.fetch(request)
             let totals = results.reduce(into: [Int: Decimal]()) { partial, lineItem in
                 guard let account = Self.relatedObject(lineItem, "pAccount") else { return }
                 let accountId = Self.extractPK(from: account.objectID)
                 guard accountIds.contains(accountId) else { return }
+                let securityLineItem = Self.relatedObject(lineItem, "pSecurityLineItem")
 
                 partial[accountId, default: Decimal(0)] += Self.accountAmount(
                     transactionAmount: lineItem.value(forKey: "pTransactionAmount"),
-                    exchangeRate: lineItem.value(forKey: "pExchangeRate")
+                    exchangeRate: lineItem.value(forKey: "pExchangeRate"),
+                    securityAmount: securityLineItem?.value(forKey: "pAmount")
                 )
             }
 
