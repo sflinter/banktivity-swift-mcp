@@ -17,6 +17,18 @@ guard let bankFilePath = ProcessInfo.processInfo.environment["BANKTIVITY_FILE_PA
     exit(1)
 }
 
+let rawReportingCurrency = ProcessInfo.processInfo.environment["BANKTIVITY_REPORTING_CURRENCY"]
+let reportingCurrency = ReportingCurrency.resolve(rawReportingCurrency)
+if let rawReportingCurrency,
+   !rawReportingCurrency.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+   rawReportingCurrency.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() != reportingCurrency
+{
+    FileHandle.standardError.write(
+        "Warning: Unknown BANKTIVITY_REPORTING_CURRENCY '\(rawReportingCurrency)'; falling back to \(reportingCurrency)\n"
+            .data(using: .utf8)!
+    )
+}
+
 // Verify the file exists
 guard FileManager.default.fileExists(atPath: bankFilePath) else {
     FileHandle.standardError.write(
@@ -54,7 +66,8 @@ let writeGuard = WriteGuard(dbPath: dbPath)
 let registry = ToolRegistry(
     container: container,
     writeGuard: writeGuard,
-    bankFilePath: bankFilePath
+    bankFilePath: bankFilePath,
+    reportingCurrency: reportingCurrency
 )
 registry.registerAllTools()
 
