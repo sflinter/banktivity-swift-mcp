@@ -31,4 +31,14 @@ struct AccountRepositoryBalanceTests {
 
         #expect(amount == Decimal(string: "12.34")!)
     }
+
+    @Test func lineItemAccountAmountIncludesSecurityOffset() {
+        let amount = AccountRepository.accountAmount(
+            transactionAmount: NSDecimalNumber(string: "100.00"),
+            exchangeRate: NSDecimalNumber(string: "2.0"),
+            securityAmount: NSDecimalNumber(string: "-75.25")
+        )
+
+        #expect(amount == Decimal(string: "124.75")!)
+    }
 }
