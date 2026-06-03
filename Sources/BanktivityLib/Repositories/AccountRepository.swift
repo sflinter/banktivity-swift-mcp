@@ -50,7 +50,9 @@ public final class AccountRepository: BaseRepository, @unchecked Sendable {
     /// Get account balance using an aggregate fetch (SUM of line item amounts)
     public func getBalance(accountId: Int) throws -> Double {
         try performRead { [self] ctx in
-            guard let account = try fetchByPK(entityName: "Account", pk: accountId, in: ctx) else { return 0 }
+            guard let account = try fetchByPK(entityName: "Account", pk: accountId, in: ctx) else {
+                throw ToolError.notFound("Account not found: \(accountId)")
+            }
             return try self.sumLineItemAmounts(predicate: NSPredicate(format: "pAccount == %@", account), in: ctx)
         }
     }
@@ -175,6 +177,9 @@ public final class AccountRepository: BaseRepository, @unchecked Sendable {
     /// Resolve an account from either an ID or a name, preferring ID
     public func resolveAccountId(id: Int?, name: String?) throws -> Int {
         if let id = id {
+            guard try get(accountId: id) != nil else {
+                throw ToolError.notFound("Account not found: \(id)")
+            }
             return id
         }
         if let name = name {
