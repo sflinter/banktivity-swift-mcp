@@ -3,9 +3,9 @@
 import ArgumentParser
 import BanktivityLib
 import CoreData
+import Darwin
 import Foundation
 
-@main
 struct BanktivityCLI: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "banktivity-cli",
@@ -54,6 +54,31 @@ struct BanktivityCLI: AsyncParsableCommand {
     }
 }
 
+@main
+enum BanktivityCLIEntrypoint {
+    static func main() async {
+        do {
+            var command = try BanktivityCLI.parseAsRoot()
+            if var asyncCommand = command as? AsyncParsableCommand {
+                try await asyncCommand.run()
+            } else {
+                try command.run()
+            }
+        } catch let error as ToolError {
+            exitWithBanktivityError(error.description, category: error.cliExitCategory)
+        } catch let error as RepositoryError {
+            exitWithBanktivityError(error.description, category: error.cliExitCategory)
+        } catch {
+            BanktivityCLI.exit(withError: error)
+        }
+    }
+
+    private static func exitWithBanktivityError(_ message: String, category: CLIExitCategory) -> Never {
+        writeStderr("Error: [\(category.rawValue)] \(message)")
+        exit(category.exitCode)
+    }
+}
+
 // MARK: - JSON Output
 
 func outputJSON<T: Encodable>(_ value: T, format: OutputFormat = .json) throws {
@@ -73,6 +98,14 @@ func outputJSON(_ value: [[String: Any]], format: OutputFormat = .json) throws {
     let options: JSONSerialization.WritingOptions = format == .json ? [.prettyPrinted, .sortedKeys] : [.sortedKeys]
     let data = try JSONSerialization.data(withJSONObject: value, options: options)
     print(String(data: data, encoding: .utf8) ?? "[]")
+}
+
+func emitWarning(_ message: String) {
+    writeStderr("Warning: \(message)")
+}
+
+func writeStderr(_ message: String) {
+    FileHandle.standardError.write(Data((message + "\n").utf8))
 }
 
 /// Check write guard and throw if blocked
