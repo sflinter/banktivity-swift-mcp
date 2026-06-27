@@ -301,9 +301,11 @@ public struct RecategorizationResultDTO: Codable, Sendable {
 public struct BulkRecategorizeResultDTO: Codable, Sendable {
     public let affected: [RecategorizationResultDTO]
     public let count: Int
+    /// Number of matched transactions skipped because they are transfers (>= 2 non-category legs).
+    public let skippedTransfers: Int
 
-    public init(affected: [RecategorizationResultDTO], count: Int) {
-        self.affected = affected; self.count = count
+    public init(affected: [RecategorizationResultDTO], count: Int, skippedTransfers: Int = 0) {
+        self.affected = affected; self.count = count; self.skippedTransfers = skippedTransfers
     }
 }
 
