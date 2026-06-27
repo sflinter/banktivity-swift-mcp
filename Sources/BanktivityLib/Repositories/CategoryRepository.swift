@@ -122,7 +122,17 @@ public final class CategoryRepository: BaseRepository, @unchecked Sendable {
 
     // MARK: - Write Operations
 
-    /// Create a new category (income or expense)
+    /// Creating a category via the CLI/MCP is intentionally disabled — fails safely instead of
+    /// corrupting the vault. See issue #26.
+    ///
+    /// The previous implementation created a `PrimaryAccount` entity (an account) rather than a
+    /// `Category`, producing an account/category hybrid that shows up as an account **and freezes
+    /// Banktivity's report engine**. A correct implementation must create a `Category` (Z_ENT=2)
+    /// with proper income/expense-tree placement *and* emit a matching `Category` sync blob
+    /// (`SyncBlobUpdater` only knows how to build `Transaction` records today) — otherwise the new
+    /// category would never reach the user's other devices and would leave dangling references
+    /// once transactions are filed into it. Until that exists, refuse rather than corrupt: create
+    /// categories in Banktivity, then recategorise into them via the CLI (which works correctly).
     public func create(
         name: String,
         type: String,
@@ -130,53 +140,10 @@ public final class CategoryRepository: BaseRepository, @unchecked Sendable {
         hidden: Bool = false,
         currencyCode: String? = nil
     ) throws -> CategoryDTO {
-        try performWrite { [self] ctx in
-            // Categories are stored as PrimaryAccount entities
-            let cat = Self.createObject(entityName: "PrimaryAccount", in: ctx)
-            let accountClass = type == "income" ? AccountClass.income : AccountClass.expense
-            cat.setValue(accountClass, forKey: "pAccountClass")
-            cat.setValue(name, forKey: "pName")
-            cat.setValue(true, forKey: "pDebit")
-            cat.setValue(hidden, forKey: "pHidden")
-            cat.setValue(false, forKey: "pTaxable")
-            cat.setValue(Self.generateUUID(), forKey: "pUniqueID")
-            Self.setNow(cat, "pCreationTime")
-            Self.setNow(cat, "pModificationDate")
-
-            // Set parent and full name
-            var fullName = name
-            if let parentId = parentId {
-                if let parent = try fetchByPK(entityName: "Account", pk: parentId, in: ctx) {
-                    cat.setValue(parent, forKey: "pParentAccount")
-                    let parentFullName = Self.stringValue(parent, "pFullName")
-                    fullName = parentFullName.isEmpty ? name : "\(parentFullName):\(name)"
-                }
-            }
-            cat.setValue(fullName, forKey: "pFullName")
-
-            // Set currency
-            if let code = currencyCode {
-                let currRequest = NSFetchRequest<NSManagedObject>(entityName: "Currency")
-                currRequest.predicate = NSPredicate(format: "pCode ==[cd] %@", code)
-                currRequest.fetchLimit = 1
-                if let currency = try ctx.fetch(currRequest).first {
-                    cat.setValue(currency, forKey: "currency")
-                }
-            } else {
-                // Use default currency (first available)
-                let currRequest = NSFetchRequest<NSManagedObject>(entityName: "Currency")
-                currRequest.fetchLimit = 1
-                if let currency = try ctx.fetch(currRequest).first {
-                    cat.setValue(currency, forKey: "currency")
-                }
-            }
-        }
-
-        // Re-fetch by name
-        if let result = try findByPath(parentId != nil ? "" : name) ?? findByName(name).last {
-            return result
-        }
-        throw ToolError.notFound("Failed to retrieve created category")
+        throw ToolError.invalidInput(
+            "Creating categories via the CLI is not supported: it would create a malformed entity "
+            + "that appears as an account and freezes Banktivity's reports. Create the category in "
+            + "Banktivity, then recategorise into it. See issue #26.")
     }
 
     // MARK: - DTO Mapping
