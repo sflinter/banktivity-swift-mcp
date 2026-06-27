@@ -138,7 +138,11 @@ public final class LineItemRepository: BaseRepository, @unchecked Sendable {
             var runningBalance = 0.0
 
             for li in lineItems {
-                let amount = Self.doubleValue(li, "pTransactionAmount")
+                // pTransactionAmount is in the transaction's currency; pExchangeRate converts it
+                // to the account's currency (1.0 for same-currency line items). Without this,
+                // running balances on cross-currency accounts are wrong.
+                let rate = Self.doubleValue(li, "pExchangeRate")
+                let amount = Self.doubleValue(li, "pTransactionAmount") * (rate == 0 ? 1 : rate)
                 runningBalance += amount
                 li.setValue(runningBalance as NSNumber, forKey: "pRunningBalance")
             }

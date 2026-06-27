@@ -47,11 +47,28 @@ public final class AccountRepository: BaseRepository, @unchecked Sendable {
         }
     }
 
-    /// Get account balance using an aggregate fetch (SUM of line item amounts)
+    /// Get an account's current balance: the running balance of its most recent line item —
+    /// the value Banktivity itself displays.
+    ///
+    /// This is correct for every account type, where summing line-item amounts is not:
+    /// `pTransactionAmount` is in the transaction's currency (so a plain SUM is wrong for
+    /// cross-currency / FX-wash accounts and multi-currency wallets), and on investment accounts
+    /// security legs further break a naive sum. The running balance already accounts for all of
+    /// this. The most recent line item is selected by `pTransaction.pDate` then `pCreationTime`;
+    /// `pIntraDaySortIndex` is deliberately avoided as a tiebreaker because it is unreliable on
+    /// back-dated imports and same-date multi-entry transactions.
     public func getBalance(accountId: Int) throws -> Double {
         try performRead { [self] ctx in
             guard let account = try fetchByPK(entityName: "Account", pk: accountId, in: ctx) else { return 0 }
-            return try self.sumLineItemAmounts(predicate: NSPredicate(format: "pAccount == %@", account), in: ctx)
+            let request = NSFetchRequest<NSManagedObject>(entityName: "LineItem")
+            request.predicate = NSPredicate(format: "pAccount == %@", account)
+            request.sortDescriptors = [
+                NSSortDescriptor(key: "pTransaction.pDate", ascending: false),
+                NSSortDescriptor(key: "pCreationTime", ascending: false),
+            ]
+            request.fetchLimit = 1
+            guard let latest = try ctx.fetch(request).first else { return 0 }
+            return Self.doubleValue(latest, "pRunningBalance")
         }
     }
 
