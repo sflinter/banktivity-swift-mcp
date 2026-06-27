@@ -374,6 +374,7 @@ public final class CategorizationRepository: BaseRepository, @unchecked Sendable
             var primaryLineItem: NSManagedObject?
             var orphanedLineItems: [NSManagedObject] = []
             var oldCategoryName: String?
+            var nonCategoryLegCount = 0
 
             for li in lineItems {
                 guard let account = Self.relatedObject(li, "pAccount") else {
@@ -387,7 +388,17 @@ public final class CategorizationRepository: BaseRepository, @unchecked Sendable
                     oldCategoryName = Self.stringValue(account, "pName")
                 } else {
                     primaryLineItem = li
+                    nonCategoryLegCount += 1
                 }
+            }
+
+            // A transaction with two or more non-category (bank/asset) legs is a transfer — it
+            // has no category. Refuse rather than fabricate one: creating a category leg here
+            // unbalances the double entry (Banktivity then injects a phantom "Unknown" leg to
+            // rebalance), which corrupts the transfer into a spurious split.
+            if nonCategoryLegCount >= 2 {
+                throw ToolError.invalidInput(
+                    "Transaction \(transactionId) is a transfer (\(nonCategoryLegCount) non-category line items) and cannot be categorized")
             }
 
             var syncInfo: (txUUID: String, liUUID: String, catUUID: String)?
@@ -461,6 +472,7 @@ public final class CategorizationRepository: BaseRepository, @unchecked Sendable
             let title: String
             let hasCat: Bool
             let oldCatName: String?
+            let nonCatLegs: Int
         }
 
         let txDataList: [TxData] = try performRead { ctx in
@@ -473,26 +485,39 @@ public final class CategorizationRepository: BaseRepository, @unchecked Sendable
                 let lineItems = Self.relatedSet(tx, "lineItems")
                 var hasCat = false
                 var oldCatName: String?
+                var nonCatLegs = 0
                 for li in lineItems {
                     guard let account = Self.relatedObject(li, "pAccount") else { continue }
                     let acClass = Self.intValue(account, "pAccountClass")
                     if acClass == AccountClass.income || acClass == AccountClass.expense {
                         hasCat = true
                         oldCatName = Self.stringValue(account, "pName")
+                    } else {
+                        nonCatLegs += 1
                     }
                 }
                 return TxData(
                     id: Self.extractPK(from: tx.objectID),
                     title: Self.stringValue(tx, "pTitle"),
                     hasCat: hasCat,
-                    oldCatName: oldCatName
+                    oldCatName: oldCatName,
+                    nonCatLegs: nonCatLegs
                 )
             }
         }
 
         var results: [RecategorizationResultDTO] = []
+        var skippedTransfers = 0
 
         for txData in txDataList {
+            // Never categorize a transfer (>= 2 non-category legs) — doing so corrupts the double
+            // entry. Skip and count so one transfer can't abort the batch, and so the dry-run
+            // preview doesn't list transfers as about to be changed.
+            if txData.nonCatLegs >= 2 {
+                skippedTransfers += 1
+                continue
+            }
+
             // Check if already categorized
             if uncategorizedOnly && txData.hasCat { continue }
 
@@ -511,7 +536,8 @@ public final class CategorizationRepository: BaseRepository, @unchecked Sendable
             }
         }
 
-        return BulkRecategorizeResultDTO(affected: results, count: results.count)
+        return BulkRecategorizeResultDTO(
+            affected: results, count: results.count, skippedTransfers: skippedTransfers)
     }
 
     /// Helper to get transaction title by ID (for recategorization results)
