@@ -47,11 +47,29 @@ public final class AccountRepository: BaseRepository, @unchecked Sendable {
         }
     }
 
-    /// Get account balance using an aggregate fetch (SUM of line item amounts)
+    /// Get account balance: register cash (SUM of plain LineItem amounts) plus the
+    /// market value of any security holdings in the account.
+    ///
+    /// Cash lives on the plain LineItem — the register view, which is what the
+    /// Banktivity desktop displays. SecurityLineItem.pAmount is the trade's cash
+    /// detail (drives cost basis) and must NOT be added on top of the line items:
+    /// doing so double-counts wherever the register lines carry the trade cash
+    /// (the repaired/native convention). See the 2026-07-23 Elevated Investments
+    /// register repair for the history of this bug.
     public func getBalance(accountId: Int) throws -> Double {
+        let breakdown = try getBalanceBreakdown(accountId: accountId)
+        return breakdown.cash + breakdown.holdingsValue
+    }
+
+    /// Cash / holdings-market-value breakdown for an account.
+    public func getBalanceBreakdown(accountId: Int) throws -> (cash: Double, holdingsValue: Double) {
         try performRead { [self] ctx in
-            guard let account = try fetchByPK(entityName: "Account", pk: accountId, in: ctx) else { return 0 }
-            return try self.sumLineItemAmounts(predicate: NSPredicate(format: "pAccount == %@", account), in: ctx)
+            guard let account = try fetchByPK(entityName: "Account", pk: accountId, in: ctx) else { return (0, 0) }
+            let cash = try self.latestRunningBalance(account: account, in: ctx)
+            let holdings = try self.sumHoldingsMarketValue(
+                sliPredicate: NSPredicate(format: "pLineItem.pAccount == %@ AND pShares != nil", account),
+                in: ctx)
+            return (cash, holdings)
         }
     }
 
@@ -256,13 +274,128 @@ public final class AccountRepository: BaseRepository, @unchecked Sendable {
         return try ctx.count(for: request)
     }
 
-    /// Sum line item amounts for accounts with the given account classes
+    /// Banktivity's own register cash balance for an account: the `pRunningBalance`
+    /// of its most recent line item.
+    ///
+    /// This must NOT be computed by summing `pTransactionAmount`. A security trade
+    /// in the native convention leaves the register line at zero and carries its
+    /// cash on `SecurityLineItem.pAmount`, so such a sum silently drops every buy
+    /// cost and sell proceed while still counting plain cash transfers in and out —
+    /// leaving any account funded by trade proceeds off by the net of all trade
+    /// cash. Registers rewritten to carry trade cash on the line item itself (the
+    /// "repaired" convention) break the mirror-image way if that cash is added back.
+    /// `pRunningBalance` is maintained by Banktivity and matches what the app shows
+    /// under either convention.
+    ///
+    /// The most recent line item is selected by `pTransaction.pDate` then `pCreationTime`.
+    /// `pIntraDaySortIndex` is deliberately not used as a tiebreaker — it is unreliable on
+    /// back-dated imports and same-date multi-entry transactions (matching the choice in
+    /// upstream PR #27). Including it changed no account balance in a 45-account vault.
+    ///
+    /// KNOWN LIMITATION: the write paths in this library set `pRunningBalance` to 0
+    /// on newly created line items and never recompute the rows after them (see
+    /// TransactionRepository.createTransaction, SecurityRepository.createShareAdjustment,
+    /// CategorizationRepository). A transaction written through this library therefore
+    /// reads back as cash 0 for its account until Banktivity itself reopens the vault
+    /// and recalculates. Reads are correct for any app-maintained register; fixing this
+    /// properly means recomputing the account's running balances on write.
+    private func latestRunningBalance(
+        _ accountPredicate: NSPredicate, in ctx: NSManagedObjectContext
+    ) throws -> Double {
+        let request = NSFetchRequest<NSManagedObject>(entityName: "LineItem")
+        request.predicate = accountPredicate
+        request.sortDescriptors = [
+            NSSortDescriptor(key: "pTransaction.pDate", ascending: false),
+            NSSortDescriptor(key: "pCreationTime", ascending: false)
+        ]
+        request.fetchLimit = 1
+        guard let latest = try ctx.fetch(request).first else { return 0.0 }
+        return Self.doubleValue(latest, "pRunningBalance")
+    }
+
+    private func latestRunningBalance(
+        account: NSManagedObject, in ctx: NSManagedObjectContext
+    ) throws -> Double {
+        try latestRunningBalance(NSPredicate(format: "pAccount == %@", account), in: ctx)
+    }
+
+    /// Register cash plus holdings market value for accounts with the given classes.
+    /// Cash is summed per account from each register's running balance — see
+    /// `latestRunningBalance` for why it cannot be one aggregate sum.
     private func sumByAccountClasses(_ classes: [Int], in ctx: NSManagedObjectContext) throws -> Double {
-        let predicates = classes.map { cls in
-            NSPredicate(format: "pAccount.pAccountClass == %d", cls)
+        let accountRequest = NSFetchRequest<NSManagedObject>(entityName: "Account")
+        accountRequest.predicate = NSCompoundPredicate(orPredicateWithSubpredicates: classes.map { cls in
+            NSPredicate(format: "pAccountClass == %d", cls)
+        })
+        var lineItemTotal = 0.0
+        for account in try ctx.fetch(accountRequest) {
+            lineItemTotal += try latestRunningBalance(account: account, in: ctx)
         }
-        let compound = NSCompoundPredicate(orPredicateWithSubpredicates: predicates)
-        return try sumLineItemAmounts(predicate: compound, in: ctx)
+
+        let sliPredicates = classes.map { cls in
+            NSPredicate(format: "pLineItem.pAccount.pAccountClass == %d AND pShares != nil", cls)
+        }
+        let sliCompound = NSCompoundPredicate(orPredicateWithSubpredicates: sliPredicates)
+        let holdingsTotal = try sumHoldingsMarketValue(sliPredicate: sliCompound, in: ctx)
+
+        return lineItemTotal + holdingsTotal
+    }
+
+    /// Market value of security positions whose SecurityLineItems match the
+    /// predicate: accumulates net shares per security, then multiplies by the
+    /// latest close price. Securities with no price history contribute 0.
+    private func sumHoldingsMarketValue(
+        sliPredicate: NSPredicate, in ctx: NSManagedObjectContext
+    ) throws -> Double {
+        let request = NSFetchRequest<NSManagedObject>(entityName: "SecurityLineItem")
+        request.predicate = sliPredicate
+        let items = try ctx.fetch(request)
+
+        var sharesBySecurity: [String: Double] = [:]  // pUniqueID -> net shares
+        for sli in items {
+            guard let security = Self.relatedObject(sli, "pSecurity") else { continue }
+            let uniqueId = Self.stringValue(security, "pUniqueID")
+            guard !uniqueId.isEmpty else { continue }
+            sharesBySecurity[uniqueId, default: 0] += Self.doubleValue(sli, "pShares")
+        }
+
+        var total = 0.0
+        for (uniqueId, shares) in sharesBySecurity {
+            guard abs(shares) > 0.0001 else { continue }
+            let piRequest = NSFetchRequest<NSManagedObject>(entityName: "SecurityPriceItem")
+            piRequest.predicate = NSPredicate(format: "pSecurityID == %@", uniqueId)
+            piRequest.fetchLimit = 1
+            guard let priceItem = try ctx.fetch(piRequest).first else { continue }
+            let priceRequest = NSFetchRequest<NSManagedObject>(entityName: "SecurityPrice")
+            priceRequest.predicate = NSPredicate(format: "pSecurityPriceItem == %@", priceItem)
+            priceRequest.sortDescriptors = [NSSortDescriptor(key: "pDate", ascending: false)]
+            priceRequest.fetchLimit = 1
+            guard let latest = try ctx.fetch(priceRequest).first else { continue }
+            total += shares * Self.doubleValue(latest, "pClosePrice")
+        }
+        return total
+    }
+
+    /// Sum pAmount (cash effect) for SecurityLineItems matching a predicate
+    private func sumSecurityLineItemCash(predicate: NSPredicate, in ctx: NSManagedObjectContext) throws -> Double {
+        let request = NSFetchRequest<NSDictionary>(entityName: "SecurityLineItem")
+        request.predicate = predicate
+        request.resultType = .dictionaryResultType
+
+        let sumExpr = NSExpression(forFunction: "sum:", arguments: [
+            NSExpression(forKeyPath: "pAmount")
+        ])
+        let desc = NSExpressionDescription()
+        desc.name = "total"
+        desc.expression = sumExpr
+        desc.expressionResultType = .decimalAttributeType
+        request.propertiesToFetch = [desc]
+
+        let results = try ctx.fetch(request)
+        if let result = results.first, let total = result["total"] as? NSDecimalNumber {
+            return total.doubleValue
+        }
+        return 0.0
     }
 
     // MARK: - DTO Mapping
