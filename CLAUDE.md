@@ -26,6 +26,8 @@ BANKTIVITY_FILE_PATH="/path/to/file.bank8" swift run banktivity-cli accounts lis
 swift run banktivity-cli --vault "/path/to/file.bank8" accounts list
 ```
 
+If the build fails with `module compiled with Swift 6.x cannot be imported by the Swift 6.y compiler` (e.g. for `ArgumentParserToolInfo`), the `.build` cache was produced by a different Swift toolchain. Fix with `rm -rf .build && swift build`.
+
 ## Testing
 
 Tests use Swift Testing framework (`import Testing`). The Command Line Tools don't ship Testing or XCTest, so tests must run with the Xcode toolchain:
