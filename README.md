@@ -47,12 +47,15 @@ make install        # Build universal binary and install to ~/.local/bin
 Other Makefile targets:
 
 ```sh
+make help           # List available targets with short descriptions
 make build          # Debug build
 make test           # Run all tests
 make release        # Universal release build (arm64 + x86_64)
 make package        # Build release tarball with SHA256
 make clean          # Remove build artifacts
 ```
+
+`make test` builds the CLI first and runs the suite single-worker under the same release configuration and Xcode framework paths as `make release`, so a test failure reproduces the way a release build would hit it. Use `make test-filter FILTER=TestName` when iterating on one test.
 
 ## Configuration
 
