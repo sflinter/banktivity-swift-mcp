@@ -3,7 +3,7 @@
 A Swift library, [MCP](https://modelcontextprotocol.io/) server, and CLI for [Banktivity](https://www.iggsoftware.com/banktivity/) personal finance files. Provides full read/write access to `.bank8` vaults — accounts, transactions, categories, tags, templates, import rules, scheduled transactions, statements, securities, and RDF export.
 
 - **BanktivityLib** — pure domain library with Core Data repositories and RDF export, no server dependencies
-- **banktivity-mcp** — MCP server exposing 64 tools over stdio, for AI assistants like Claude
+- **banktivity-mcp** — MCP server exposing 67 tools over stdio, for AI assistants like Claude
 - **banktivity-cli** — standalone CLI for scripting and automation
 
 Inspired by [banktivity-mcp](https://github.com/mhriemers/banktivity-mcp) (TypeScript/Node.js), this is a ground-up rewrite in Swift. The original uses `better-sqlite3` to read and write Core Data's SQLite store directly, bypassing Core Data's internal change tracking. This works for reads, but direct SQL writes are invisible to CloudKit sync — Banktivity doesn't know the data changed, and the vault can become corrupted or fail to sync. This Swift version uses `NSPersistentContainer` so all mutations go through Core Data's API, ensuring proper change tracking and CloudKit compatibility.
@@ -159,6 +159,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ### Statements (Reconciliation)
 - `list_statements` — List statements for an account
+- `get_account_reconciliation_status` — Get statement count and latest statement end date for an account
 - `get_statement` — Get a statement with reconciliation progress
 - `create_statement` — Create a new statement with balance validation
 - `delete_statement` — Delete a statement and unreconcile its line items
@@ -208,12 +209,12 @@ banktivity-cli export turtle --output vault.ttl
 - `templates list`, `templates get`, `templates create`, `templates update`, `templates delete`
 - `import-rules list`, `import-rules get`, `import-rules match`, `import-rules create`, `import-rules update`, `import-rules delete`
 - `scheduled list`, `scheduled get`, `scheduled create`, `scheduled update`, `scheduled delete`
-- `statements list`, `statements get`, `statements create`, `statements delete`, `statements reconcile`, `statements unreconcile`, `statements unreconciled`
+- `statements list`, `statements status`, `statements get`, `statements create`, `statements delete`, `statements reconcile`, `statements unreconcile`, `statements unreconciled`
 - `securities list`, `securities create`, `securities prices`, `securities holdings`, `securities trades`, `securities income`, `securities adjust`, `securities import-prices`, `securities delete-prices`
 - `export turtle`
 - `schema`
 
-Most commands that accept `--account-id` also accept `--account-name` as an alternative. The `transactions create` command supports `--line-items` with a JSON array for multi-line-item (split) transactions.
+Most commands that accept `--account-id` also accept `--account-name` as an alternative. Statement dates use local-day statement boundaries, and statement reconciliation preserves existing cleared-state semantics when assigning or unassigning line items. The `transactions create` command supports `--line-items` with a JSON array for multi-line-item (split) transactions.
 
 Use `--format compact` for machine-readable single-line JSON output (default is pretty-printed).
 
@@ -260,7 +261,7 @@ Banktivity's `.bank8` bundle is a directory containing compiled Core Data models
 
 1. Loads and merges all `.momd` model bundles from the vault
 2. Opens the SQLite store via `NSPersistentContainer` (no history tracking)
-3. Exposes 64 MCP tools over stdio transport
+3. Exposes 67 MCP tools over stdio transport
 4. Uses KVC (`value(forKey:)`) to access entities since we load Banktivity's own compiled models at runtime
 
 ## License

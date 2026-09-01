@@ -59,12 +59,15 @@ Always redirect stderr with `2>/dev/null` — CoreData prints harmless warnings 
 | Tool | Key Arguments | Notes |
 |---|---|---|
 | `list_statements` | `--account_id N` or `--account_name "name"` | List statements for an account |
+| `get_account_reconciliation_status` / `statements status` | `--account_id N` or `--account_name "name"` | Read-only statement count and latest statement end date |
 | `get_statement` | `--statement_id N` | Full details with reconciliation progress |
 | `create_statement` | `--account_id N --start_date --end_date --beginning_balance --ending_balance` | Validates balance continuity |
 | `delete_statement` | `--statement_id N` | Cascade-unreconciles line items |
-| `reconcile_line_items` | `--statement_id N --line_item_ids 1,2,3` | Sets pCleared=true; validates account/date |
+| `reconcile_line_items` | `--statement_id N --line_item_ids 1,2,3` | Assigns selected line items to a statement; rejects wrong-account or already-assigned rows |
 | `unreconcile_line_items` | `--statement_id N --line_item_ids 1,2,3` | Sets pCleared=false |
 | `get_unreconciled_line_items` | `--account_id N --start_date --end_date` | Unreconciled line items for date range |
+
+Use `get_account_reconciliation_status` through MCP or `banktivity-cli statements status` before planning statement creation. Statement dates are local-day boundaries; filter candidate line items on the caller side before `reconcile_line_items`, and preserve existing cleared-state semantics unless the user explicitly asks for a different repair.
 
 ### Securities
 
