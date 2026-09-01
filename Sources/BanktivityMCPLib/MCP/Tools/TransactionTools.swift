@@ -149,6 +149,69 @@ func registerTransactionTools(
         return try ToolHelpers.jsonResponse(result)
     }
 
+    // repair_forex_transfer
+    registry.register(
+        name: "repair_forex_transfer",
+        description: "Repair an existing cross-currency transfer using source-currency gross amount, provider fee split, target amount, and exchange rate",
+        inputSchema: ToolHelpers.schema(
+            properties: [
+                "transaction_id": ToolHelpers.property(type: "number", description: "Existing transaction ID to repair"),
+                "source_account_id": ToolHelpers.property(type: "number", description: "Source account ID, in the source currency"),
+                "target_account_id": ToolHelpers.property(type: "number", description: "Target account ID, in the target currency"),
+                "fee_category_id": ToolHelpers.property(type: "number", description: "Expense category/account ID for the source-currency provider fee"),
+                "gross_source_amount": ToolHelpers.property(type: "number", description: "Gross source amount debited from the source account"),
+                "source_fee_amount": ToolHelpers.property(type: "number", description: "Provider fee in the source currency"),
+                "target_amount": ToolHelpers.property(type: "number", description: "Amount received in the target account currency"),
+                "exchange_rate": ToolHelpers.property(type: "number", description: "Provider exchange rate from source-after-fee to target currency"),
+                "title": ToolHelpers.property(type: "string", description: "Optional replacement title"),
+                "note": ToolHelpers.property(type: "string", description: "Optional replacement note"),
+                "date": ToolHelpers.property(type: "string", description: "Optional replacement date in ISO format (YYYY-MM-DD)"),
+                "source_memo": ToolHelpers.property(type: "string", description: "Optional source line memo"),
+                "target_memo": ToolHelpers.property(type: "string", description: "Optional target line memo"),
+                "fee_memo": ToolHelpers.property(type: "string", description: "Optional fee line memo"),
+            ],
+            required: [
+                "transaction_id", "source_account_id", "target_account_id", "fee_category_id",
+                "gross_source_amount", "source_fee_amount", "target_amount", "exchange_rate",
+            ]
+        )
+    ) { arguments in
+        if let msg = await writeGuard.guardWriteAccess() {
+            return ToolHelpers.errorResponse(msg)
+        }
+        guard let transactionId = ToolHelpers.getInt(arguments, key: "transaction_id"),
+              let sourceAccountId = ToolHelpers.getInt(arguments, key: "source_account_id"),
+              let targetAccountId = ToolHelpers.getInt(arguments, key: "target_account_id"),
+              let feeCategoryId = ToolHelpers.getInt(arguments, key: "fee_category_id"),
+              let grossSourceAmount = ToolHelpers.getDouble(arguments, key: "gross_source_amount"),
+              let sourceFeeAmount = ToolHelpers.getDouble(arguments, key: "source_fee_amount"),
+              let targetAmount = ToolHelpers.getDouble(arguments, key: "target_amount"),
+              let exchangeRate = ToolHelpers.getDouble(arguments, key: "exchange_rate") else {
+            return ToolHelpers.errorResponse("transaction_id, source_account_id, target_account_id, fee_category_id, gross_source_amount, source_fee_amount, target_amount, and exchange_rate are required")
+        }
+
+        guard let repaired = try transactions.repairForexTransfer(
+            transactionId: transactionId,
+            sourceAccountId: sourceAccountId,
+            targetAccountId: targetAccountId,
+            feeCategoryId: feeCategoryId,
+            grossSourceAmount: grossSourceAmount,
+            sourceFeeAmount: sourceFeeAmount,
+            targetAmount: targetAmount,
+            exchangeRate: exchangeRate,
+            title: ToolHelpers.getString(arguments, key: "title"),
+            note: ToolHelpers.getString(arguments, key: "note"),
+            date: ToolHelpers.getString(arguments, key: "date"),
+            sourceMemo: ToolHelpers.getString(arguments, key: "source_memo"),
+            targetMemo: ToolHelpers.getString(arguments, key: "target_memo"),
+            feeMemo: ToolHelpers.getString(arguments, key: "fee_memo")
+        ) else {
+            return ToolHelpers.errorResponse("Transaction not found after repair")
+        }
+
+        return try ToolHelpers.jsonResponse(repaired)
+    }
+
     // update_transaction
     registry.register(
         name: "update_transaction",

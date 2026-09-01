@@ -139,7 +139,8 @@ public final class LineItemRepository: BaseRepository, @unchecked Sendable {
 
             for li in lineItems {
                 let amount = Self.doubleValue(li, "pTransactionAmount")
-                runningBalance += amount
+                let exchangeRate = Self.doubleValue(li, "pExchangeRate")
+                runningBalance += amount * exchangeRate
                 li.setValue(runningBalance as NSNumber, forKey: "pRunningBalance")
             }
         }
@@ -205,6 +206,7 @@ public final class LineItemRepository: BaseRepository, @unchecked Sendable {
             accountId: accountId,
             accountName: accountName,
             amount: Self.doubleValue(object, "pTransactionAmount"),
+            exchangeRate: Self.doubleValue(object, "pExchangeRate"),
             memo: Self.string(object, "pMemo"),
             runningBalance: Self.doubleValue(object, "pRunningBalance"),
             cleared: Self.boolValue(object, "pCleared"),

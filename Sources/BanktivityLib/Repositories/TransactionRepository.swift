@@ -326,6 +326,181 @@ public final class TransactionRepository: BaseRepository, @unchecked Sendable {
         return try get(transactionId: transactionId)
     }
 
+    public func repairForexTransfer(
+        transactionId: Int,
+        sourceAccountId: Int,
+        targetAccountId: Int,
+        feeCategoryId: Int,
+        grossSourceAmount: Double,
+        sourceFeeAmount: Double,
+        targetAmount: Double,
+        exchangeRate: Double,
+        title: String? = nil,
+        note: String? = nil,
+        date: String? = nil,
+        sourceMemo: String? = nil,
+        targetMemo: String? = nil,
+        feeMemo: String? = nil
+    ) throws -> TransactionDTO? {
+        guard grossSourceAmount > 0 else {
+            throw ToolError.invalidInput("grossSourceAmount must be positive")
+        }
+        guard sourceFeeAmount >= 0 && sourceFeeAmount < grossSourceAmount else {
+            throw ToolError.invalidInput("sourceFeeAmount must be non-negative and less than grossSourceAmount")
+        }
+        guard targetAmount > 0 && exchangeRate > 0 else {
+            throw ToolError.invalidInput("targetAmount and exchangeRate must be positive")
+        }
+
+        let sourceAfterFee = grossSourceAmount - sourceFeeAmount
+        let computedTarget = sourceAfterFee * exchangeRate
+        guard abs(computedTarget - targetAmount) <= 0.02 else {
+            throw ToolError.invalidInput(
+                "targetAmount does not match source-after-fee times exchangeRate: \(computedTarget) vs \(targetAmount)"
+            )
+        }
+
+        struct RepairInfo: Sendable {
+            let txUUID: String
+            let affectedAccountIds: [Int]
+            let syncLineItems: [SyncBlobUpdater.SyncLineItem]
+        }
+
+        let syncInfo = try performWriteReturning { [self] ctx -> RepairInfo in
+            guard let tx = try fetchByPK(entityName: "Transaction", pk: transactionId, in: ctx) else {
+                throw ToolError.notFound("Transaction not found: \(transactionId)")
+            }
+            guard let sourceAccount = try fetchByPK(entityName: "Account", pk: sourceAccountId, in: ctx) else {
+                throw ToolError.notFound("Source account not found: \(sourceAccountId)")
+            }
+            guard let targetAccount = try fetchByPK(entityName: "Account", pk: targetAccountId, in: ctx) else {
+                throw ToolError.notFound("Target account not found: \(targetAccountId)")
+            }
+            guard let feeCategory = try fetchByPK(entityName: "Account", pk: feeCategoryId, in: ctx) else {
+                throw ToolError.notFound("Fee category not found: \(feeCategoryId)")
+            }
+
+            let sourceUUID = Self.stringValue(sourceAccount, "pUniqueID")
+            let targetUUID = Self.stringValue(targetAccount, "pUniqueID")
+            let feeUUID = Self.stringValue(feeCategory, "pUniqueID")
+            let txUUID = Self.stringValue(tx, "pUniqueID")
+
+            if let title = title { tx.setValue(title, forKey: "pTitle") }
+            if let note = note { tx.setValue(note, forKey: "pNote") }
+            if let date = date { Self.setDate(tx, "pDate", isoString: date) }
+            if let currency = Self.relatedObject(sourceAccount, "currency") {
+                tx.setValue(currency, forKey: "pCurrency")
+            }
+
+            let typeRequest = NSFetchRequest<NSManagedObject>(entityName: "TransactionType")
+            typeRequest.predicate = NSPredicate(format: "pBaseType == %d", Self.transactionTypeBaseTypeCode("transfer") ?? 3)
+            typeRequest.fetchLimit = 1
+            if let transferType = try ctx.fetch(typeRequest).first {
+                tx.setValue(transferType, forKey: "pTransactionType")
+            }
+            Self.setNow(tx, "pModificationDate")
+
+            let existing = Self.relatedSet(tx, "lineItems")
+            func lineItem(accountId: Int) -> NSManagedObject? {
+                existing.first { li in
+                    guard let account = Self.relatedObject(li, "pAccount") else { return false }
+                    return Self.extractPK(from: account.objectID) == accountId
+                }
+            }
+
+            let sourceLine = lineItem(accountId: sourceAccountId) ?? Self.createObject(entityName: "LineItem", in: ctx)
+            let targetLine = lineItem(accountId: targetAccountId) ?? Self.createObject(entityName: "LineItem", in: ctx)
+            let feeLine = lineItem(accountId: feeCategoryId) ?? Self.createObject(entityName: "LineItem", in: ctx)
+            let managedLines = Set([sourceLine, targetLine, feeLine])
+
+            let extras = existing.filter { !managedLines.contains($0) }
+            guard extras.isEmpty else {
+                let ids = extras.map { Self.extractPK(from: $0.objectID) }.sorted()
+                throw ToolError.invalidInput("Transaction has unmanaged extra line items: \(ids)")
+            }
+
+            func ensureUUID(_ line: NSManagedObject) -> String {
+                let existingUUID = Self.stringValue(line, "pUniqueID")
+                if !existingUUID.isEmpty { return existingUUID }
+                let uuid = Self.generateUUID()
+                line.setValue(uuid, forKey: "pUniqueID")
+                Self.setNow(line, "pCreationTime")
+                return uuid
+            }
+
+            func configure(
+                _ line: NSManagedObject,
+                account: NSManagedObject,
+                amount: Double,
+                rate: Double,
+                memo: String?,
+                sortIndex: Int16,
+                defaultCleared: Bool
+            ) -> String {
+                let uuid = ensureUUID(line)
+                line.setValue(account, forKey: "pAccount")
+                line.setValue(tx, forKey: "pTransaction")
+                line.setValue(amount as NSNumber, forKey: "pTransactionAmount")
+                line.setValue(rate as NSNumber, forKey: "pExchangeRate")
+                line.setValue(memo, forKey: "pMemo")
+                line.setValue(sortIndex, forKey: "pIntraDaySortIndex")
+                if line.value(forKey: "pCleared") == nil {
+                    line.setValue(defaultCleared, forKey: "pCleared")
+                }
+                return uuid
+            }
+
+            let sourceLineUUID = configure(
+                sourceLine, account: sourceAccount, amount: -grossSourceAmount,
+                rate: 1.0, memo: sourceMemo, sortIndex: 0, defaultCleared: false
+            )
+            let targetLineUUID = configure(
+                targetLine, account: targetAccount, amount: sourceAfterFee,
+                rate: exchangeRate, memo: targetMemo, sortIndex: 1, defaultCleared: false
+            )
+            let feeLineUUID = configure(
+                feeLine, account: feeCategory, amount: sourceFeeAmount,
+                rate: 1.0, memo: feeMemo, sortIndex: 2, defaultCleared: false
+            )
+
+            return RepairInfo(
+                txUUID: txUUID,
+                affectedAccountIds: [sourceAccountId, targetAccountId, feeCategoryId],
+                syncLineItems: [
+                    SyncBlobUpdater.SyncLineItem(
+                        accountUUID: sourceUUID, accountAmount: -grossSourceAmount,
+                        cleared: Self.boolValue(sourceLine, "pCleared"),
+                        identifier: sourceLineUUID, memo: sourceMemo,
+                        securityLineItem: nil, transactionAmount: -grossSourceAmount
+                    ),
+                    SyncBlobUpdater.SyncLineItem(
+                        accountUUID: targetUUID, accountAmount: targetAmount,
+                        cleared: Self.boolValue(targetLine, "pCleared"),
+                        identifier: targetLineUUID, memo: targetMemo,
+                        securityLineItem: nil, transactionAmount: sourceAfterFee
+                    ),
+                    SyncBlobUpdater.SyncLineItem(
+                        accountUUID: feeUUID, accountAmount: sourceFeeAmount,
+                        cleared: Self.boolValue(feeLine, "pCleared"),
+                        identifier: feeLineUUID, memo: feeMemo,
+                        securityLineItem: nil, transactionAmount: sourceFeeAmount
+                    ),
+                ]
+            )
+        }
+
+        if let updater = syncBlobUpdater {
+            updater.replaceTransactionLineItems(transactionUUID: syncInfo.txUUID, lineItems: syncInfo.syncLineItems)
+        }
+
+        for accountId in syncInfo.affectedAccountIds {
+            try lineItemRepo.recalculateRunningBalances(accountId: accountId)
+        }
+
+        context.refreshAllObjects()
+        return try get(transactionId: transactionId)
+    }
+
     /// Delete a transaction and its line items
     public func delete(transactionId: Int) throws -> Bool {
         // Get UUID and affected account IDs on the context's thread before deletion

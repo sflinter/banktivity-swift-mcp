@@ -15,7 +15,7 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
 
     // MARK: - Read Operations
 
-    public func list(accountId: Int) throws -> [StatementSummaryDTO] {
+    public func list(accountId: Int, includeInternal: Bool = false) throws -> [StatementSummaryDTO] {
         try performRead { [self] ctx in
             guard let account = try fetchByPK(entityName: "Account", pk: accountId, in: ctx) else {
                 throw ToolError.notFound("Account not found: \(accountId)")
@@ -26,7 +26,18 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
             request.sortDescriptors = [NSSortDescriptor(key: "pStartDate", ascending: true)]
 
             let statements = try ctx.fetch(request)
-            return statements.map { self.mapToSummaryDTO($0) }
+            return statements
+                .filter { includeInternal || !Self.isInternalInvestmentStatement($0) }
+                .map { self.mapToSummaryDTO($0) }
+        }
+    }
+
+    public func warningsForStatementReads(accountId: Int) throws -> [String] {
+        try performRead { [self] ctx in
+            guard let account = try fetchByPK(entityName: "Account", pk: accountId, in: ctx) else {
+                throw ToolError.notFound("Account not found: \(accountId)")
+            }
+            return Self.statementReadWarnings(accountClass: Self.intValue(account, "pAccountClass"))
         }
     }
 
@@ -36,6 +47,49 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
                 return nil
             }
             return self.mapToDTO(statement)
+        }
+    }
+
+    public func visibleRowCorrectionPlan(statementId: Int? = nil, uiStart: Double, uiEnd: Double, uiMissing: Double, correctedStart: Double? = nil) -> VisibleRowCorrectionPlanDTO {
+        VisibleRowCorrectionPlanDTO(
+            statementId: statementId,
+            uiStart: uiStart,
+            uiEnd: uiEnd,
+            uiMissing: uiMissing,
+            correctedStart: correctedStart
+        )
+    }
+
+    public func getAccountReconciliationStatus(accountId: Int) throws -> AccountReconciliationStatusDTO {
+        try performRead { [self] ctx in
+            guard let account = try fetchByPK(entityName: "Account", pk: accountId, in: ctx) else {
+                throw ToolError.notFound("Account not found: \(accountId)")
+            }
+
+            let request = NSFetchRequest<NSManagedObject>(entityName: "Statement")
+            request.predicate = NSPredicate(format: "pAccount == %@", account)
+            request.sortDescriptors = [
+                NSSortDescriptor(key: "pEndDate", ascending: false),
+                NSSortDescriptor(key: "pStartDate", ascending: false),
+            ]
+
+            let statements = try ctx.fetch(request)
+            let lastStatement = statements.first
+            let lastStatementId = lastStatement.map { Self.extractPK(from: $0.objectID) }
+            let lastEndDate: String?
+            if let lastStatement, let ts = Self.dateValue(lastStatement, "pEndDate") {
+                lastEndDate = DateConversion.toISO(ts)
+            } else {
+                lastEndDate = nil
+            }
+
+            return AccountReconciliationStatusDTO(
+                accountId: accountId,
+                hasReconciledStatements: !statements.isEmpty,
+                statementCount: statements.count,
+                lastStatementId: lastStatementId,
+                lastReconciledStatementEndDate: lastEndDate
+            )
         }
     }
 
@@ -99,6 +153,7 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
         }
         let preRead: PreReadData? = try performRead { [self] ctx in
             guard let statement = try fetchByPK(entityName: "Statement", pk: statementId, in: ctx) else { return nil }
+            try validateVisibleStatement(statement, statementId: statementId)
             let statementUUID = Self.stringValue(statement, "pUniqueID")
             var txLineItems: [String: [String]] = [:]
             let lineItems = Self.relatedSet(statement, "pLineItems")
@@ -124,7 +179,6 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
                 for objectID in ids {
                     let liInCtx = try ctx.existingObject(with: objectID)
                     liInCtx.setValue(nil, forKey: "pStatement")
-                    liInCtx.setValue(false, forKey: "pCleared")
                 }
             }
         }
@@ -145,7 +199,6 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
                 updater.updateTransactionBlob(transactionUUID: txUUID) { xml in
                     var result = xml
                     for liUUID in liUUIDs {
-                        result = updater.patchCleared(xml: result, lineItemUUID: liUUID, cleared: false)
                         result = updater.patchStatement(xml: result, lineItemUUID: liUUID, statementUUID: nil)
                     }
                     return result
@@ -156,32 +209,35 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
         return true
     }
 
-    public func reconcileLineItems(statementId: Int, lineItemIds: [Int]) throws -> StatementDTO {
+    public func reconcileLineItems(
+        statementId: Int,
+        lineItemIds: [Int],
+        operatorConfirmedVisible: Bool = false
+    ) throws -> StatementDTO {
         struct StatementInfo: Sendable {
             let accountId: Int
             let uuid: String
-            let startTs: Double?
-            let endTs: Double?
         }
         let info: StatementInfo = try performRead { [self] ctx in
             guard let statement = try fetchByPK(entityName: "Statement", pk: statementId, in: ctx) else {
                 throw ToolError.notFound("Statement not found: \(statementId)")
             }
+            try validateVisibleStatement(
+                statement,
+                statementId: statementId,
+                operatorConfirmedVisible: operatorConfirmedVisible
+            )
             guard let account = Self.relatedObject(statement, "pAccount") else {
                 throw ToolError.invalidInput("Statement has no associated account")
             }
             return StatementInfo(
                 accountId: Self.extractPK(from: account.objectID),
-                uuid: Self.stringValue(statement, "pUniqueID"),
-                startTs: Self.dateValue(statement, "pStartDate"),
-                endTs: Self.dateValue(statement, "pEndDate")
+                uuid: Self.stringValue(statement, "pUniqueID")
             )
         }
 
         let statementAccountId = info.accountId
         let statementUUID = info.uuid
-        let startTs = info.startTs
-        let endTs = info.endTs
 
         struct ReconcileLineInfo: Sendable {
             let liUUID: String
@@ -211,17 +267,6 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
                     throw ToolError.invalidInput("Line item \(liId) has no account")
                 }
 
-                // Validate date range (allow 2-day buffer before start for credit card timing)
-                if let startTs = startTs, let endTs = endTs,
-                   let tx = Self.relatedObject(li, "pTransaction"),
-                   let txDate = Self.dateValue(tx, "pDate") {
-                    let bufferSeconds: Double = 2 * 86400
-                    guard txDate >= (startTs - bufferSeconds) && txDate <= endTs else {
-                        let dateStr = DateConversion.toISO(txDate)
-                        throw ToolError.invalidInput("Line item \(liId) transaction date \(dateStr) is outside statement date range")
-                    }
-                }
-
                 // Validate no double-assignment to a different statement
                 if let existingStatement = Self.relatedObject(li, "pStatement") {
                     let existingId = Self.extractPK(from: existingStatement.objectID)
@@ -243,6 +288,10 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
                     }
                     result[txUUID, default: []].append(ReconcileLineInfo(liUUID: liUUID, liId: liId))
                 }
+            }
+
+            if !lineItemIds.isEmpty {
+                Self.setNow(stmtInCtx, "pModificationDate")
             }
 
             return result
@@ -268,9 +317,21 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
         return result
     }
 
-    public func unreconcileLineItems(statementId: Int, lineItemIds: [Int]) throws -> StatementDTO? {
+    public func unreconcileLineItems(
+        statementId: Int,
+        lineItemIds: [Int],
+        operatorConfirmedVisible: Bool = false
+    ) throws -> StatementDTO? {
         let exists: Bool = try performRead { [self] ctx in
-            try fetchByPK(entityName: "Statement", pk: statementId, in: ctx) != nil
+            guard let statement = try fetchByPK(entityName: "Statement", pk: statementId, in: ctx) else {
+                return false
+            }
+            try validateVisibleStatement(
+                statement,
+                statementId: statementId,
+                operatorConfirmedVisible: operatorConfirmedVisible
+            )
+            return true
         }
         guard exists else {
             throw ToolError.notFound("Statement not found: \(statementId)")
@@ -304,7 +365,6 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
                 }
 
                 li.setValue(nil, forKey: "pStatement")
-                li.setValue(false, forKey: "pCleared")
             }
 
             return result
@@ -316,7 +376,6 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
                 updater.updateTransactionBlob(transactionUUID: txUUID) { xml in
                     var result = xml
                     for liUUID in liUUIDs {
-                        result = updater.patchCleared(xml: result, lineItemUUID: liUUID, cleared: false)
                         result = updater.patchStatement(xml: result, lineItemUUID: liUUID, statementUUID: nil)
                     }
                     return result
@@ -325,6 +384,37 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
         }
 
         return try get(statementId: statementId)
+    }
+
+    public func update(
+        statementId: Int,
+        endingBalance: Double,
+        beginningBalance: Double? = nil,
+        allowInternal: Bool = false,
+        operatorConfirmedVisible: Bool = false
+    ) throws -> StatementDTO {
+        try performWrite { [self] ctx in
+            guard let statement = try fetchByPK(entityName: "Statement", pk: statementId, in: ctx) else {
+                throw ToolError.notFound("Statement not found: \(statementId)")
+            }
+            if !allowInternal {
+                try validateVisibleStatement(
+                    statement,
+                    statementId: statementId,
+                    operatorConfirmedVisible: operatorConfirmedVisible
+                )
+            }
+            if let beginningBalance {
+                statement.setValue(beginningBalance as NSNumber, forKey: "pBeginningBalance")
+            }
+            statement.setValue(endingBalance as NSNumber, forKey: "pEndingBalance")
+            Self.setNow(statement, "pModificationDate")
+        }
+
+        guard let result = try get(statementId: statementId) else {
+            throw ToolError.notFound("Statement not found after update: \(statementId)")
+        }
+        return result
     }
 
     public func getUnreconciledLineItems(accountId: Int, startDate: String? = nil, endDate: String? = nil) throws -> [LineItemDTO] {
@@ -398,6 +488,16 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
         }
     }
 
+    private func validateVisibleStatement(
+        _ statement: NSManagedObject,
+        statementId: Int,
+        operatorConfirmedVisible: Bool = false
+    ) throws {
+        if Self.isInternalInvestmentStatement(statement) && !operatorConfirmedVisible {
+            throw ToolError.invalidInput("Statement \(statementId) is an unnamed investment statement row. Write tools require read diagnostics and Banktivity UI confirmation before mutating this row; rerun with operator-confirmed-visible only after matching it to the intended visible statement.")
+        }
+    }
+
     // MARK: - DTO Mapping
 
     private func mapToDTO(_ object: NSManagedObject) -> StatementDTO {
@@ -405,12 +505,18 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
 
         let accountId: Int
         let accountName: String
+        let accountClass: Int
+        let accountType: String
         if let account = Self.relatedObject(object, "pAccount") {
             accountId = Self.extractPK(from: account.objectID)
             accountName = Self.stringValue(account, "pName")
+            accountClass = Self.intValue(account, "pAccountClass")
+            accountType = getAccountTypeName(accountClass)
         } else {
             accountId = 0
             accountName = "Unknown"
+            accountClass = 0
+            accountType = "Unknown"
         }
 
         let beginningBalance = Self.doubleValue(object, "pBeginningBalance")
@@ -418,11 +524,7 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
 
         let lineItems = Self.relatedSet(object, "pLineItems")
         let reconciledBalance = lineItems.reduce(0.0) { sum, li in
-            var amount = Self.doubleValue(li, "pTransactionAmount")
-            if let sli = Self.relatedObject(li, "pSecurityLineItem") {
-                amount += Self.doubleValue(sli, "pAmount")
-            }
-            return sum + amount
+            sum + Self.statementBalanceAmount(for: li)
         }
         let expectedChange = endingBalance - beginningBalance
         let difference = expectedChange - reconciledBalance
@@ -455,10 +557,34 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
             modifiedAt = nil
         }
 
+        let lineItemDTOs = lineItems
+            .sorted { lhs, rhs in
+                let lhsTransaction = Self.relatedObject(lhs, "pTransaction")
+                let rhsTransaction = Self.relatedObject(rhs, "pTransaction")
+                let lhsDate = lhsTransaction.flatMap { Self.dateValue($0, "pDate") } ?? 0
+                let rhsDate = rhsTransaction.flatMap { Self.dateValue($0, "pDate") } ?? 0
+                if lhsDate != rhsDate { return lhsDate < rhsDate }
+
+                let lhsTransactionId = lhsTransaction.map { Self.extractPK(from: $0.objectID) } ?? 0
+                let rhsTransactionId = rhsTransaction.map { Self.extractPK(from: $0.objectID) } ?? 0
+                if lhsTransactionId != rhsTransactionId { return lhsTransactionId < rhsTransactionId }
+
+                return Self.extractPK(from: lhs.objectID) < Self.extractPK(from: rhs.objectID)
+            }
+            .map { lineItemRepo.mapToDTO($0) }
+        let rowClassification = Self.statementRowClassification(object)
+
         return StatementDTO(
             id: pk,
             accountId: accountId,
             accountName: accountName,
+            accountClass: accountClass,
+            accountType: accountType,
+            rowKind: rowClassification.kind,
+            isVisibleNamedRow: rowClassification.isVisibleNamedRow,
+            isUnnamedInvestmentRow: rowClassification.isUnnamedInvestmentRow,
+            isInternalRowCandidate: rowClassification.isInternalRowCandidate,
+            operatorConfirmedVisibleRequired: rowClassification.operatorConfirmedVisibleRequired,
             name: Self.string(object, "pName"),
             note: Self.string(object, "pNote"),
             startDate: startDate,
@@ -468,7 +594,11 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
             reconciledLineItemCount: lineItems.count,
             reconciledBalance: reconciledBalance,
             difference: difference,
-            isBalanced: abs(difference) < 0.005,
+            cashLineBalanced: abs(difference) < 0.005,
+            isBalancedAdvisory: abs(difference) < 0.005,
+            uiVerificationRequired: Self.isInvestmentAccountClass(accountClass),
+            warnings: Self.statementReadWarnings(accountClass: accountClass),
+            lineItems: lineItemDTOs,
             createdAt: createdAt,
             modifiedAt: modifiedAt
         )
@@ -476,16 +606,18 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
 
     private func mapToSummaryDTO(_ object: NSManagedObject) -> StatementSummaryDTO {
         let pk = Self.extractPK(from: object.objectID)
+        let accountClass: Int
+        if let account = Self.relatedObject(object, "pAccount") {
+            accountClass = Self.intValue(account, "pAccountClass")
+        } else {
+            accountClass = 0
+        }
         let beginningBalance = Self.doubleValue(object, "pBeginningBalance")
         let endingBalance = Self.doubleValue(object, "pEndingBalance")
 
         let lineItems = Self.relatedSet(object, "pLineItems")
         let reconciledBalance = lineItems.reduce(0.0) { sum, li in
-            var amount = Self.doubleValue(li, "pTransactionAmount")
-            if let sli = Self.relatedObject(li, "pSecurityLineItem") {
-                amount += Self.doubleValue(sli, "pAmount")
-            }
-            return sum + amount
+            sum + Self.statementBalanceAmount(for: li)
         }
         let expectedChange = endingBalance - beginningBalance
         let difference = expectedChange - reconciledBalance
@@ -504,15 +636,96 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
             endDate = ""
         }
 
+        let rowClassification = Self.statementRowClassification(object)
+
         return StatementSummaryDTO(
             id: pk,
             name: Self.string(object, "pName"),
+            rowKind: rowClassification.kind,
+            isVisibleNamedRow: rowClassification.isVisibleNamedRow,
+            isUnnamedInvestmentRow: rowClassification.isUnnamedInvestmentRow,
+            isInternalRowCandidate: rowClassification.isInternalRowCandidate,
+            operatorConfirmedVisibleRequired: rowClassification.operatorConfirmedVisibleRequired,
             startDate: startDate,
             endDate: endDate,
             beginningBalance: beginningBalance,
             endingBalance: endingBalance,
             reconciledLineItemCount: lineItems.count,
-            isBalanced: abs(difference) < 0.005
+            cashLineBalanced: abs(difference) < 0.005,
+            isBalancedAdvisory: abs(difference) < 0.005,
+            uiVerificationRequired: Self.isInvestmentAccountClass(accountClass),
+            warnings: Self.statementReadWarnings(accountClass: accountClass)
         )
+    }
+
+    private static func statementBalanceAmount(for lineItem: NSManagedObject) -> Double {
+        let cashAmount = doubleValue(lineItem, "pTransactionAmount") * doubleValue(lineItem, "pExchangeRate")
+        if let securityLineItem = relatedObject(lineItem, "pSecurityLineItem") {
+            if abs(cashAmount) < 0.005,
+               let transaction = relatedObject(lineItem, "pTransaction"),
+               stringValue(transaction, "pNote").localizedCaseInsensitiveContains("SECURITY ADJUSTMENT") {
+                return cashAmount
+            }
+            return cashAmount + doubleValue(securityLineItem, "pAmount")
+        }
+        return cashAmount
+    }
+
+    private static func isInvestmentAccountClass(_ accountClass: Int) -> Bool {
+        (2000...2010).contains(accountClass)
+    }
+
+    private static func statementReadWarnings(accountClass: Int) -> [String] {
+        guard isInvestmentAccountClass(accountClass) else { return [] }
+        return [
+            "Investment statement balance fields are advisory cash-line checks only; Banktivity Statements UI verification is required before marking the statement complete."
+        ]
+    }
+
+    private struct StatementRowClassification {
+        let kind: String
+        let isVisibleNamedRow: Bool
+        let isUnnamedInvestmentRow: Bool
+        let isInternalRowCandidate: Bool
+        let operatorConfirmedVisibleRequired: Bool
+    }
+
+    private static func statementRowClassification(_ statement: NSManagedObject) -> StatementRowClassification {
+        let isInvestment = relatedObject(statement, "pAccount")
+            .map { isInvestmentAccountClass(intValue($0, "pAccountClass")) } ?? false
+        let hasDisplayName = !(string(statement, "pName")?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "").isEmpty
+            || !(string(statement, "pNote")?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "").isEmpty
+
+        guard isInvestment else {
+            return StatementRowClassification(
+                kind: hasDisplayName ? "visible_named" : "visible_unnamed",
+                isVisibleNamedRow: hasDisplayName,
+                isUnnamedInvestmentRow: false,
+                isInternalRowCandidate: false,
+                operatorConfirmedVisibleRequired: false
+            )
+        }
+
+        guard !hasDisplayName else {
+            return StatementRowClassification(
+                kind: "visible_named_investment",
+                isVisibleNamedRow: true,
+                isUnnamedInvestmentRow: false,
+                isInternalRowCandidate: false,
+                operatorConfirmedVisibleRequired: false
+            )
+        }
+
+        return StatementRowClassification(
+            kind: "unnamed_investment_requires_operator_confirmation",
+            isVisibleNamedRow: false,
+            isUnnamedInvestmentRow: true,
+            isInternalRowCandidate: true,
+            operatorConfirmedVisibleRequired: true
+        )
+    }
+
+    private static func isInternalInvestmentStatement(_ statement: NSManagedObject) -> Bool {
+        statementRowClassification(statement).isInternalRowCandidate
     }
 }

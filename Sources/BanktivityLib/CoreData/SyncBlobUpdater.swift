@@ -144,6 +144,13 @@ public final class SyncBlobUpdater: @unchecked Sendable {
         }
     }
 
+    public func replaceTransactionLineItems(transactionUUID: String, lineItems: [SyncLineItem]) {
+        updateTransactionBlob(transactionUUID: transactionUUID) { [self] xml in
+            guard let collectionRange = lineItemsCollectionRange(in: xml) else { return xml }
+            return xml.replacingCharacters(in: collectionRange, with: buildLineItemsXML(lineItems))
+        }
+    }
+
     private func buildTransactionXML(
         transactionUUID: String, currencyUUID: String, date: String,
         title: String, note: String?, adjustment: Bool,
@@ -155,8 +162,23 @@ public final class SyncBlobUpdater: @unchecked Sendable {
         xml += "<field type=\"int\" name=\"checkNumber\" null=\"null\"/>"
         xml += "<field type=\"reference\" name=\"currency\">Currency:\(currencyUUID)</field>"
         xml += "<field type=\"date\" name=\"date\">\(date)T00:00:00+0000</field>"
-        xml += "<collection type=\"array\" name=\"lineItems\">"
+        xml += buildLineItemsXML(lineItems)
+        if let note = note {
+            xml += "<field type=\"string\" name=\"note\">\(escapeXML(note))</field>"
+        } else {
+            xml += "<field type=\"string\" name=\"note\" null=\"null\"/>"
+        }
+        xml += "<field type=\"string\" name=\"title\">\(escapeXML(title))</field>"
+        xml += "<record type=\"TransactionType\" name=\"transactionType\">"
+        xml += "<field enum=\"IGGCSyncAccountingTransactionBaseType\" name=\"baseType\">\(transactionTypeBaseType)</field>"
+        xml += "<field type=\"reference\" name=\"transactionType\">TransactionTypeV2:\(transactionTypeUUID)</field>"
+        xml += "</record>"
+        xml += "</entity>"
+        return xml
+    }
 
+    private func buildLineItemsXML(_ lineItems: [SyncLineItem]) -> String {
+        var xml = "<collection type=\"array\" name=\"lineItems\">"
         for li in lineItems {
             xml += "<record type=\"LineItem\" name=\"element\">"
             if let acctUUID = li.accountUUID {
@@ -206,17 +228,6 @@ public final class SyncBlobUpdater: @unchecked Sendable {
         }
 
         xml += "</collection>"
-        if let note = note {
-            xml += "<field type=\"string\" name=\"note\">\(escapeXML(note))</field>"
-        } else {
-            xml += "<field type=\"string\" name=\"note\" null=\"null\"/>"
-        }
-        xml += "<field type=\"string\" name=\"title\">\(escapeXML(title))</field>"
-        xml += "<record type=\"TransactionType\" name=\"transactionType\">"
-        xml += "<field enum=\"IGGCSyncAccountingTransactionBaseType\" name=\"baseType\">\(transactionTypeBaseType)</field>"
-        xml += "<field type=\"reference\" name=\"transactionType\">TransactionTypeV2:\(transactionTypeUUID)</field>"
-        xml += "</record>"
-        xml += "</entity>"
         return xml
     }
 
@@ -714,6 +725,33 @@ public final class SyncBlobUpdater: @unchecked Sendable {
             cursor = close.upperBound
             if depth == 0 {
                 return recordStart.lowerBound..<close.upperBound
+            }
+        }
+
+        return nil
+    }
+
+    private func lineItemsCollectionRange(in xml: String) -> Range<String.Index>? {
+        let openPattern = "<collection type=\"array\" name=\"lineItems\">"
+        guard let openRange = xml.range(of: openPattern) else { return nil }
+
+        var searchStart = openRange.upperBound
+        var depth = 1
+        while searchStart < xml.endIndex {
+            let nextOpen = xml.range(of: "<collection ", range: searchStart..<xml.endIndex)
+            let nextClose = xml.range(of: "</collection>", range: searchStart..<xml.endIndex)
+
+            guard let closeRange = nextClose else { return nil }
+
+            if let open = nextOpen, open.lowerBound < closeRange.lowerBound {
+                depth += 1
+                searchStart = open.upperBound
+            } else {
+                depth -= 1
+                if depth == 0 {
+                    return openRange.lowerBound..<closeRange.upperBound
+                }
+                searchStart = closeRange.upperBound
             }
         }
 
