@@ -76,6 +76,19 @@ open class BaseRepository: @unchecked Sendable {
         save: Bool,
         _ block: @escaping @Sendable (NSManagedObjectContext) throws -> T
     ) throws -> T {
+        if save {
+            return try CoreDataWriteCoordinator.perform {
+                try performOnContext(on: ctx, save: save, block)
+            }
+        }
+        return try performOnContext(on: ctx, save: save, block)
+    }
+
+    private func performOnContext<T: Sendable>(
+        on ctx: NSManagedObjectContext,
+        save: Bool,
+        _ block: @escaping @Sendable (NSManagedObjectContext) throws -> T
+    ) throws -> T {
         nonisolated(unsafe) var outcome: Result<T, Error>!
         ctx.performAndWait {
             outcome = Result {

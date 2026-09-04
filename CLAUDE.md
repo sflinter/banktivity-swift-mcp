@@ -100,6 +100,8 @@ Property names are prefixed with `p` (e.g., `pName`, `pDate`, `pAccountClass`, `
 
 **WriteGuard before mutations.** All write tools check `WriteGuard.guardWriteAccess()` first. If Banktivity.app has the SQLite file open (detected via `lsof`), writes are blocked to prevent corruption.
 
+**Agent write safety.** AI assistants issue parallel tool calls and can start more than one MCP server, so the harness needs its own layer: one MCP/CLI process per vault, serialized writes, and read-before-write checks where practical so a write only applies while the target row still holds the expected value. Close every MCP/CLI process before opening the same vault in Banktivity.app, and back up before a write run. Local numeric IDs change across a Banktivity 10 restore, import, or migration, so re-resolve account, transaction, statement, and category IDs afterwards.
+
 ### Sync Blob Updates (SyncBlobUpdater)
 
 Banktivity's CloudKit sync uses `ZSYNCEDENTITY` records with gzipped XML blobs (`pRemoteEntityData`) representing each entity's last-synced state. When CLI/MCP tools modify transactions, the `SyncBlobUpdater` patches these blobs so Banktivity recognizes the changes and pushes them to CloudKit.

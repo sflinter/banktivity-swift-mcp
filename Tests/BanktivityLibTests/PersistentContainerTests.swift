@@ -5,7 +5,7 @@ import Foundation
 import Testing
 @testable import BanktivityLib
 
-@Suite("PersistentContainer")
+@Suite("PersistentContainer", .serialized)
 struct PersistentContainerTests {
 
     /// Copy the test vault to a temp location and return the path. Returns nil if vault not found.

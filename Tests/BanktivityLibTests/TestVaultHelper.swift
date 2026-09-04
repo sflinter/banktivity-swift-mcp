@@ -10,6 +10,15 @@ enum TestVaultHelper {
         let container: NSPersistentContainer
     }
 
+    /// A fresh vault at a path nothing else uses.
+    ///
+    /// Every vault gets a UUID path, so this helper guards no shared state and
+    /// takes no lock. What needs serializing is the Core Data work the suites do
+    /// against these vaults, and swift-testing expresses that directly: the
+    /// vault-using suites declare `.serialized`. Do not move that in here -- a
+    /// lock taken in this function and released in `cleanup` would split
+    /// acquisition from release across two functions with arbitrary caller code
+    /// in between, and a helper that threw in between would leak the permit.
     static func createFreshVault() throws -> TestVault {
         let tmpDir = NSTemporaryDirectory()
         let vaultPath = (tmpDir as NSString).appendingPathComponent("test-\(UUID().uuidString).bank8")

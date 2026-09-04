@@ -5,7 +5,7 @@ import Foundation
 import Testing
 @testable import BanktivityLib
 
-@Suite("SyncRecord")
+@Suite("SyncRecord", .serialized)
 struct SyncRecordTests {
 
     @Test("gzip round-trip preserves data")
