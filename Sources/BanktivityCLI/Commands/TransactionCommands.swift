@@ -8,7 +8,7 @@ import Foundation
 struct Transactions: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Transaction operations",
-        subcommands: [List.self, Search.self, Get.self, Create.self, Update.self, Delete.self, SyncInfo.self]
+        subcommands: [List.self, Search.self, Get.self, Create.self, RepairForex.self, Update.self, Delete.self, SyncInfo.self]
     )
 
     struct List: AsyncParsableCommand {
@@ -191,6 +191,89 @@ struct Transactions: AsyncParsableCommand {
                 lineItems: resolvedLineItems
             )
             try outputJSON(result, format: parent.format)
+        }
+    }
+
+    struct RepairForex: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "repair-forex",
+            abstract: "Repair an existing cross-currency transfer"
+        )
+
+        @OptionGroup var parent: GlobalOptions
+
+        @Option(name: .long, help: "Existing transaction ID to repair")
+        var transactionId: Int
+
+        @Option(name: .long, help: "Source account ID, in the source currency")
+        var sourceAccountId: Int
+
+        @Option(name: .long, help: "Target account ID, in the target currency")
+        var targetAccountId: Int
+
+        @Option(name: .long, help: "Expense category/account ID for the source-currency fee")
+        var feeCategoryId: Int
+
+        @Option(name: .long, help: "Gross source amount debited from the source account")
+        var grossSourceAmount: Double
+
+        @Option(name: .long, help: "Fee in the source currency")
+        var sourceFeeAmount: Double
+
+        @Option(name: .long, help: "Amount received in the target account currency")
+        var targetAmount: Double
+
+        @Option(name: .long, help: "Exchange rate from source-after-fee to target currency")
+        var exchangeRate: Double
+
+        @Option(name: .long, help: "Optional replacement title")
+        var title: String?
+
+        @Option(name: .long, help: "Optional replacement note")
+        var note: String?
+
+        @Option(name: .long, help: "Optional replacement date (YYYY-MM-DD)")
+        var date: String?
+
+        @Option(name: .long, help: "Optional source line memo")
+        var sourceMemo: String?
+
+        @Option(name: .long, help: "Optional target line memo")
+        var targetMemo: String?
+
+        @Option(name: .long, help: "Optional fee line memo")
+        var feeMemo: String?
+
+        func run() async throws {
+            let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
+            let container = try BanktivityCLI.createContainer(vaultPath: path)
+            let writeGuard = BanktivityCLI.createWriteGuard(vaultPath: path)
+            try await guardWrite(writeGuard)
+
+            let syncBlobUpdater = SyncBlobUpdater(container: container)
+            let lineItemRepo = LineItemRepository(container: container)
+            let transactions = TransactionRepository(container: container, lineItemRepo: lineItemRepo, syncBlobUpdater: syncBlobUpdater)
+
+            guard let repaired = try transactions.repairForexTransfer(
+                transactionId: transactionId,
+                sourceAccountId: sourceAccountId,
+                targetAccountId: targetAccountId,
+                feeCategoryId: feeCategoryId,
+                grossSourceAmount: grossSourceAmount,
+                sourceFeeAmount: sourceFeeAmount,
+                targetAmount: targetAmount,
+                exchangeRate: exchangeRate,
+                title: title,
+                note: note,
+                date: date,
+                sourceMemo: sourceMemo,
+                targetMemo: targetMemo,
+                feeMemo: feeMemo
+            ) else {
+                throw ToolError.notFound("Transaction not found after repair: \(transactionId)")
+            }
+
+            try outputJSON(repaired, format: parent.format)
         }
     }
 

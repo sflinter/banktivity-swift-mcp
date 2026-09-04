@@ -101,7 +101,11 @@ open class BaseRepository: @unchecked Sendable {
 
     /// Set a date value (as Foundation Date) on a managed object
     public static func setDate(_ object: NSManagedObject, _ key: String, isoString: String?) {
-        guard let iso = isoString, let ts = DateConversion.fromISO(iso) else { return }
+        // Date-only labels are anchored, never host-local: see DateConversion.dateOnlyTimeZone.
+        // Full ISO timestamps (creation/modification audit stamps) are unaffected --
+        // fromISO only applies the zone to the 10-character date-only branch.
+        guard let iso = isoString,
+              let ts = DateConversion.fromISO(iso, timeZone: DateConversion.dateOnlyTimeZone) else { return }
         object.setValue(DateConversion.toDate(ts), forKey: key)
     }
 

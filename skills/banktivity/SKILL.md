@@ -59,12 +59,15 @@ Always redirect stderr with `2>/dev/null` — CoreData prints harmless warnings 
 | Tool | Key Arguments | Notes |
 |---|---|---|
 | `list_statements` | `--account_id N` or `--account_name "name"` | List statements for an account |
+| `get_account_reconciliation_status` / `statements status` | `--account_id N` or `--account_name "name"` | Read-only statement count and latest statement end date |
 | `get_statement` | `--statement_id N` | Full details with reconciliation progress |
 | `create_statement` | `--account_id N --start_date --end_date --beginning_balance --ending_balance` | Validates balance continuity |
 | `delete_statement` | `--statement_id N` | Cascade-unreconciles line items |
-| `reconcile_line_items` | `--statement_id N --line_item_ids 1,2,3` | Sets pCleared=true; validates account/date |
+| `reconcile_line_items` | `--statement_id N --line_item_ids 1,2,3` | Assigns selected line items to a statement; rejects wrong-account or already-assigned rows |
 | `unreconcile_line_items` | `--statement_id N --line_item_ids 1,2,3` | Sets pCleared=false |
 | `get_unreconciled_line_items` | `--account_id N --start_date --end_date` | Unreconciled line items for date range |
+
+Use `get_account_reconciliation_status` through MCP or `banktivity-cli statements status` before planning statement creation. Statement dates are local-day boundaries; filter candidate line items on the caller side before `reconcile_line_items`, and preserve existing cleared-state semantics unless the user explicitly asks for a different repair.
 
 ### Securities
 
@@ -92,6 +95,25 @@ Always redirect stderr with `2>/dev/null` — CoreData prints harmless warnings 
 | `bulk_tag_transactions` | `--transaction_ids [1,2,3] --tag_name "name" --action add\|remove` | Bulk tag/untag |
 | `create_tag` | `--name "name"` | Create a new tag |
 | `create_category` | `--name "name" --type expense\|income --parent_path "Parent"` | Create category or subcategory |
+
+### Forex Repair
+
+Cross-currency transfer repair is available through MCP as `repair_forex_transfer` and through the CLI as `transactions repair-forex`. Prefer the MCP tool when operating as an assistant, and use the CLI for scripting or manual reproduction. Do not emulate forex repair with `create_transaction`, `update_transaction`, `add_line_item`, or generic line-item edits.
+
+Use forex repair only after the source account, target account, fee category, gross source amount, source-currency fee, target amount, and exchange rate are known from source evidence. The tool repairs an existing transaction. It does not create a new forex transfer. For real vault writes, make a backup first and visually inspect Banktivity after the MCP or CLI write.
+
+The Banktivity model is:
+
+- transaction currency is the source account currency
+- source line is the gross source-currency debit
+- target line keeps the source amount after fees as the transaction amount, with `pExchangeRate` set to the forex rate and `accountAmount` equal to the target-currency receipt
+- fee line is a separate source-currency category split
+
+CLI example:
+
+```sh
+banktivity-cli transactions repair-forex --transaction-id 1001 --source-account-id 2001 --target-account-id 2002 --fee-category-id 3001 --gross-source-amount 100 --source-fee-amount 1 --target-amount 74.25 --exchange-rate 0.75
+```
 
 ### Export
 

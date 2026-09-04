@@ -100,9 +100,9 @@ public final class AccountRepository: BaseRepository, @unchecked Sendable {
                         format: "pTransaction.pDate >= %@", DateConversion.toDate(ts) as NSDate
                     ))
                 }
-                if let endDate = endDate, let ts = DateConversion.fromISO(endDate) {
+                if let endDate = endDate, let ts = DateConversion.endOfDayExclusive(endDate) {
                     predicates.append(NSPredicate(
-                        format: "pTransaction.pDate <= %@", DateConversion.toDate(ts) as NSDate
+                        format: "pTransaction.pDate < %@", DateConversion.toDate(ts) as NSDate
                     ))
                 }
 

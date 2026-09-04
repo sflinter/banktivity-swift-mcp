@@ -44,15 +44,21 @@ public struct LineItemDTO: Codable, Sendable {
     public let accountId: Int
     public let accountName: String
     public let amount: Double
+    public let accountAmount: Double
+    public let statementBalanceAmount: Double?
+    public let exchangeRate: Double
     public let memo: String?
     public let runningBalance: Double?
     public let cleared: Bool
     public let statementId: Int?
     public let tags: [TagDTO]?
 
-    public init(id: Int, accountId: Int, accountName: String, amount: Double, memo: String?, runningBalance: Double?, cleared: Bool = false, statementId: Int? = nil, tags: [TagDTO]? = nil) {
+    public init(id: Int, accountId: Int, accountName: String, amount: Double, accountAmount: Double? = nil, statementBalanceAmount: Double? = nil, exchangeRate: Double = 1.0, memo: String?, runningBalance: Double?, cleared: Bool = false, statementId: Int? = nil, tags: [TagDTO]? = nil) {
         self.id = id; self.accountId = accountId; self.accountName = accountName
-        self.amount = amount; self.memo = memo; self.runningBalance = runningBalance
+        self.amount = amount; self.accountAmount = accountAmount ?? (amount * exchangeRate)
+        self.statementBalanceAmount = statementBalanceAmount
+        self.exchangeRate = exchangeRate
+        self.memo = memo; self.runningBalance = runningBalance
         self.cleared = cleared; self.statementId = statementId; self.tags = tags
     }
 }
@@ -327,8 +333,17 @@ public struct ReviewedTransactionDTO: Codable, Sendable {
 
 public struct StatementDTO: Codable, Sendable {
     public let id: Int
+    public let statementId: Int
     public let accountId: Int
     public let accountName: String
+    public let accountClass: Int
+    public let accountType: String
+    public let uniqueId: String?
+    public let rowKind: String
+    public let isVisibleNamedRow: Bool
+    public let isUnnamedInvestmentRow: Bool
+    public let isInternalRowCandidate: Bool
+    public let operatorConfirmedVisibleRequired: Bool
     public let name: String?
     public let note: String?
     public let startDate: String
@@ -338,17 +353,99 @@ public struct StatementDTO: Codable, Sendable {
     public let reconciledLineItemCount: Int
     public let reconciledBalance: Double
     public let difference: Double
-    public let isBalanced: Bool
+    public let cashLineBalanced: Bool
+    public let isBalancedAdvisory: Bool
+    public let uiVerificationRequired: Bool
+    public let warnings: [String]
+    public let lineItems: [LineItemDTO]
     public let createdAt: String?
     public let modifiedAt: String?
 
-    public init(id: Int, accountId: Int, accountName: String, name: String?, note: String?, startDate: String, endDate: String, beginningBalance: Double, endingBalance: Double, reconciledLineItemCount: Int, reconciledBalance: Double, difference: Double, isBalanced: Bool, createdAt: String?, modifiedAt: String?) {
+    public var isBalanced: Bool { isBalancedAdvisory }
+
+    public init(id: Int, accountId: Int, accountName: String, accountClass: Int, accountType: String, uniqueId: String? = nil, rowKind: String = "visible_named", isVisibleNamedRow: Bool = true, isUnnamedInvestmentRow: Bool = false, isInternalRowCandidate: Bool = false, operatorConfirmedVisibleRequired: Bool = false, name: String?, note: String?, startDate: String, endDate: String, beginningBalance: Double, endingBalance: Double, reconciledLineItemCount: Int, reconciledBalance: Double, difference: Double, cashLineBalanced: Bool, isBalancedAdvisory: Bool, uiVerificationRequired: Bool, warnings: [String], lineItems: [LineItemDTO], createdAt: String?, modifiedAt: String?) {
         self.id = id; self.accountId = accountId; self.accountName = accountName
+        self.statementId = id
+        self.accountClass = accountClass; self.accountType = accountType; self.uniqueId = uniqueId
+        self.rowKind = rowKind
+        self.isVisibleNamedRow = isVisibleNamedRow
+        self.isUnnamedInvestmentRow = isUnnamedInvestmentRow
+        self.isInternalRowCandidate = isInternalRowCandidate
+        self.operatorConfirmedVisibleRequired = operatorConfirmedVisibleRequired
         self.name = name; self.note = note; self.startDate = startDate; self.endDate = endDate
         self.beginningBalance = beginningBalance; self.endingBalance = endingBalance
         self.reconciledLineItemCount = reconciledLineItemCount; self.reconciledBalance = reconciledBalance
-        self.difference = difference; self.isBalanced = isBalanced
+        self.difference = difference
+        self.cashLineBalanced = cashLineBalanced
+        self.isBalancedAdvisory = isBalancedAdvisory
+        self.uiVerificationRequired = uiVerificationRequired
+        self.warnings = warnings
+        self.lineItems = lineItems
         self.createdAt = createdAt; self.modifiedAt = modifiedAt
+    }
+}
+
+/// Read-only proof that a line item's statement reference can be addressed by
+/// the runtime and, for an internal row, recreated by the typed restore path.
+/// This deliberately contains no write authority.
+public struct StatementMembershipInspectionDTO: Codable, Sendable {
+    public let lineItemId: Int
+    public let referencedStatementId: Int?
+    public let stableIdentity: String?
+    public let accountId: Int?
+    public let accountName: String?
+    public let startDate: String?
+    public let endDate: String?
+    public let beginningBalance: Double?
+    public let endingBalance: Double?
+    public let membershipLineItemIds: [Int]
+    public let membershipCount: Int
+    public let visibilityClassification: String
+    public let positionAnchors: [String: Int?]
+    /// Exact Codable preimage consumed by the typed restore primitive.  It is
+    /// read-only evidence, not a generic mutation payload.
+    public let statementPreimage: StatementDTO?
+    public let lineItemMemberships: [StatementLineItemMembershipPreimageDTO]
+    public let preimageSha256: String?
+    public let membershipPreimageSha256: String?
+    public let capabilityFlags: [String: Bool]
+
+    public init(lineItemId: Int, referencedStatementId: Int?, stableIdentity: String?, accountId: Int?, accountName: String?, startDate: String?, endDate: String?, beginningBalance: Double?, endingBalance: Double?, membershipLineItemIds: [Int], membershipCount: Int, visibilityClassification: String, positionAnchors: [String: Int?], statementPreimage: StatementDTO?, lineItemMemberships: [StatementLineItemMembershipPreimageDTO], preimageSha256: String?, membershipPreimageSha256: String?, capabilityFlags: [String: Bool]) {
+        self.lineItemId = lineItemId; self.referencedStatementId = referencedStatementId
+        self.stableIdentity = stableIdentity; self.accountId = accountId; self.accountName = accountName
+        self.startDate = startDate; self.endDate = endDate
+        self.beginningBalance = beginningBalance; self.endingBalance = endingBalance
+        self.membershipLineItemIds = membershipLineItemIds; self.membershipCount = membershipCount
+        self.visibilityClassification = visibilityClassification; self.positionAnchors = positionAnchors
+        self.statementPreimage = statementPreimage; self.lineItemMemberships = lineItemMemberships
+        self.preimageSha256 = preimageSha256; self.membershipPreimageSha256 = membershipPreimageSha256
+        self.capabilityFlags = capabilityFlags
+    }
+}
+
+public struct StatementLineItemMembershipPreimageDTO: Codable, Sendable {
+    public let lineItemId: Int
+    public let statementId: Int
+    public let cleared: Bool
+
+    public init(lineItemId: Int, statementId: Int, cleared: Bool) {
+        self.lineItemId = lineItemId; self.statementId = statementId; self.cleared = cleared
+    }
+}
+
+public struct AccountReconciliationStatusDTO: Codable, Sendable {
+    public let accountId: Int
+    public let hasReconciledStatements: Bool
+    public let statementCount: Int
+    public let lastStatementId: Int?
+    public let lastReconciledStatementEndDate: String?
+
+    public init(accountId: Int, hasReconciledStatements: Bool, statementCount: Int, lastStatementId: Int?, lastReconciledStatementEndDate: String?) {
+        self.accountId = accountId
+        self.hasReconciledStatements = hasReconciledStatements
+        self.statementCount = statementCount
+        self.lastStatementId = lastStatementId
+        self.lastReconciledStatementEndDate = lastReconciledStatementEndDate
     }
 }
 
@@ -465,16 +562,124 @@ public struct PriceImportResultDTO: Codable, Sendable {
 public struct StatementSummaryDTO: Codable, Sendable {
     public let id: Int
     public let name: String?
+    public let rowKind: String
+    public let isVisibleNamedRow: Bool
+    public let isUnnamedInvestmentRow: Bool
+    public let isInternalRowCandidate: Bool
+    public let operatorConfirmedVisibleRequired: Bool
     public let startDate: String
     public let endDate: String
     public let beginningBalance: Double
     public let endingBalance: Double
     public let reconciledLineItemCount: Int
-    public let isBalanced: Bool
+    public let cashLineBalanced: Bool
+    public let isBalancedAdvisory: Bool
+    public let uiVerificationRequired: Bool
+    public let warnings: [String]
+
+    public var isBalanced: Bool { isBalancedAdvisory }
+
+    public init(id: Int, name: String?, rowKind: String = "visible_named", isVisibleNamedRow: Bool = true, isUnnamedInvestmentRow: Bool = false, isInternalRowCandidate: Bool = false, operatorConfirmedVisibleRequired: Bool = false, startDate: String, endDate: String, beginningBalance: Double, endingBalance: Double, reconciledLineItemCount: Int, cashLineBalanced: Bool, isBalancedAdvisory: Bool, uiVerificationRequired: Bool, warnings: [String]) {
+        self.id = id; self.name = name
+        self.rowKind = rowKind
+        self.isVisibleNamedRow = isVisibleNamedRow
+        self.isUnnamedInvestmentRow = isUnnamedInvestmentRow
+        self.isInternalRowCandidate = isInternalRowCandidate
+        self.operatorConfirmedVisibleRequired = operatorConfirmedVisibleRequired
+        self.startDate = startDate; self.endDate = endDate
+        self.beginningBalance = beginningBalance; self.endingBalance = endingBalance
+        self.reconciledLineItemCount = reconciledLineItemCount
+        self.cashLineBalanced = cashLineBalanced
+        self.isBalancedAdvisory = isBalancedAdvisory
+        self.uiVerificationRequired = uiVerificationRequired
+        self.warnings = warnings
+    }
 
     public init(id: Int, name: String?, startDate: String, endDate: String, beginningBalance: Double, endingBalance: Double, reconciledLineItemCount: Int, isBalanced: Bool) {
-        self.id = id; self.name = name; self.startDate = startDate; self.endDate = endDate
-        self.beginningBalance = beginningBalance; self.endingBalance = endingBalance
-        self.reconciledLineItemCount = reconciledLineItemCount; self.isBalanced = isBalanced
+        self.init(
+            id: id,
+            name: name,
+            startDate: startDate,
+            endDate: endDate,
+            beginningBalance: beginningBalance,
+            endingBalance: endingBalance,
+            reconciledLineItemCount: reconciledLineItemCount,
+            cashLineBalanced: isBalanced,
+            isBalancedAdvisory: isBalanced,
+            uiVerificationRequired: false,
+            warnings: []
+        )
+    }
+}
+
+/// A line-item reference which exists in the account graph but cannot safely
+/// be addressed as a statement in the requested account.  `--include-internal`
+/// reports these explicitly so hidden references can never vanish from a
+/// diagnostic listing.
+public struct StatementUnaddressableReferenceDTO: Codable, Sendable {
+    public let lineItemId: Int
+    public let referencedStatementId: Int
+    public let requestedAccountId: Int
+    public let reason: String
+    public let capabilityFlags: [String: Bool]
+
+    public init(lineItemId: Int, referencedStatementId: Int, requestedAccountId: Int, reason: String) {
+        self.lineItemId = lineItemId
+        self.referencedStatementId = referencedStatementId
+        self.requestedAccountId = requestedAccountId
+        self.reason = reason
+        self.capabilityFlags = ["addressable": false, "reconcilable": false, "restorable": false]
+    }
+}
+
+/// Complete internal-statement diagnostic listing.  This envelope is emitted
+/// only for `--include-internal`; the default statement-list shape remains
+/// stable for existing consumers.
+public struct StatementInternalListingDTO: Codable, Sendable {
+    public let statements: [StatementSummaryDTO]
+    public let unaddressableReferences: [StatementUnaddressableReferenceDTO]
+
+    public init(statements: [StatementSummaryDTO], unaddressableReferences: [StatementUnaddressableReferenceDTO]) {
+        self.statements = statements
+        self.unaddressableReferences = unaddressableReferences
+    }
+}
+
+public struct VisibleRowCorrectionPlanDTO: Codable, Sendable {
+    public let statementId: Int?
+    public let inputSource: String
+    public let uiStart: Double
+    public let uiEnd: Double
+    public let uiMissing: Double
+    public let correctedStart: Double
+    public let uiCompatibleRowDelta: Double
+    public let correctedEndingBalance: Double
+    public let formula: String
+    public let writeTarget: String
+    public let backupRequiredBeforeWrite: Bool
+    public let postUIVerificationRequired: Bool
+    public let uiVerificationRequired: Bool
+    public let warnings: [String]
+
+    public init(statementId: Int?, uiStart: Double, uiEnd: Double, uiMissing: Double, correctedStart: Double? = nil) {
+        let effectiveStart = correctedStart ?? uiStart
+        let rowDelta = uiEnd - uiStart - uiMissing
+        self.statementId = statementId
+        self.inputSource = "operator_entered_ui_values"
+        self.uiStart = uiStart
+        self.uiEnd = uiEnd
+        self.uiMissing = uiMissing
+        self.correctedStart = effectiveStart
+        self.uiCompatibleRowDelta = rowDelta
+        self.correctedEndingBalance = effectiveStart + rowDelta
+        self.formula = "correctedEndingBalance = correctedStart + (uiEnd - uiStart - uiMissing)"
+        self.writeTarget = statementId.map { "visible statement id \($0)" } ?? "operator-selected visible statement id"
+        self.backupRequiredBeforeWrite = true
+        self.postUIVerificationRequired = true
+        self.uiVerificationRequired = true
+        self.warnings = [
+            "This plan uses only operator-entered Banktivity UI START/END/MISSING values; it did not discover or verify UI state.",
+            "Apply only to the intended visible statement row after a fresh backup, then reopen Banktivity and verify the Statements tab."
+        ]
     }
 }

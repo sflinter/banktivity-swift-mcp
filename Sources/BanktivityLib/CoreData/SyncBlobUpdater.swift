@@ -91,6 +91,163 @@ public final class SyncBlobUpdater: @unchecked Sendable {
         }
     }
 
+    /// Restore the exact deleted statement sync record in a caller-owned
+    /// transaction.  Typed statement restore uses this overload so a sync
+    /// failure aborts the Core Data statement/membership mutation instead of
+    /// leaving a partially restored row behind.
+    public func restoreDeletedSyncRecord(entityUUID: String, in context: NSManagedObjectContext) throws {
+        guard let record = try fetchSyncRecord(entityUUID: entityUUID, in: context) else {
+            throw ToolError.notFound("No sync record exists for hash-bound statement restore")
+        }
+        guard (record.value(forKey: "pSyncedState") as? NSNumber)?.intValue == 3 else {
+            throw ToolError.invalidInput("Statement sync record was not deleted by the forward operation")
+        }
+        record.setValue(Int16(0), forKey: "pSyncedState")
+        record.setValue(nil, forKey: "pSyncedModificationDate")
+        log("Restored deleted sync record for UUID \(entityUUID)")
+    }
+
+    /// Mark the exact source statement sync record as deleted inside a
+    /// caller-owned transaction. Typed internal-statement replacement uses
+    /// this path so a missing or non-canonical sync preimage aborts the
+    /// statement and membership mutation before the context is saved.
+    public func markRequiredSyncRecordDeleted(
+        entityUUID: String,
+        in context: NSManagedObjectContext
+    ) throws {
+        guard let record = try fetchSyncRecord(entityUUID: entityUUID, in: context) else {
+            throw ToolError.notFound("No sync record exists for hash-bound statement replacement")
+        }
+        guard (record.value(forKey: "pSyncedState") as? NSNumber)?.intValue == 0,
+              record.value(forKey: "pSyncedModificationDate") == nil else {
+            throw ToolError.invalidInput("Statement sync record is not in the canonical active preimage state")
+        }
+        record.setValue(Int16(3), forKey: "pSyncedState")
+        record.setValue(Date(), forKey: "pSyncedModificationDate")
+        log("Marked required sync record as deleted for UUID \(entityUUID)")
+    }
+
+    /// Restore a Statement sync record only when the inspected preimage had
+    /// one. Statement membership itself is synchronised through every
+    /// affected transaction blob; historical vaults can legitimately have no
+    /// separate Statement `SyncedHostedEntity`. When a record is present, its
+    /// state remains a strict part of the atomic inverse contract.
+    public func restoreDeletedStatementSyncRecordIfPresent(
+        entityUUID: String,
+        in context: NSManagedObjectContext
+    ) throws -> Bool {
+        guard let record = try fetchSyncRecord(entityUUID: entityUUID, in: context) else {
+            return false
+        }
+        guard (record.value(forKey: "pSyncedState") as? NSNumber)?.intValue == 3 else {
+            throw ToolError.invalidInput("Statement sync record was not deleted by the forward operation")
+        }
+        record.setValue(Int16(0), forKey: "pSyncedState")
+        record.setValue(nil, forKey: "pSyncedModificationDate")
+        log("Restored deleted sync record for UUID \(entityUUID)")
+        return true
+    }
+
+    /// Mark the source Statement sync record as deleted only if it exists.
+    /// See `restoreDeletedStatementSyncRecordIfPresent`: an absent individual
+    /// Statement record is not synthesized because transaction blob patches
+    /// are the authoritative membership-sync preimage.
+    public func markStatementSyncRecordDeletedIfPresent(
+        entityUUID: String,
+        in context: NSManagedObjectContext
+    ) throws -> Bool {
+        guard let record = try fetchSyncRecord(entityUUID: entityUUID, in: context) else {
+            return false
+        }
+        guard (record.value(forKey: "pSyncedState") as? NSNumber)?.intValue == 0,
+              record.value(forKey: "pSyncedModificationDate") == nil else {
+            throw ToolError.invalidInput("Statement sync record is not in the canonical active preimage state")
+        }
+        record.setValue(Int16(3), forKey: "pSyncedState")
+        record.setValue(Date(), forKey: "pSyncedModificationDate")
+        log("Marked required sync record as deleted for UUID \(entityUUID)")
+        return true
+    }
+
+    /// Patch a required transaction sync blob in a caller-owned transaction.
+    /// Unlike the legacy best-effort updater, this is deliberately strict:
+    /// absence, malformed data, or a no-op patch rejects the enclosing typed
+    /// statement mutation before its context can be saved.
+    public func patchRequiredTransactionBlob(
+        transactionUUID: String,
+        in context: NSManagedObjectContext,
+        using transform: @Sendable (String) -> String
+    ) throws {
+        guard let record = try fetchSyncRecord(entityUUID: transactionUUID, in: context) else {
+            throw ToolError.notFound("No sync record exists for hash-bound statement mutation transaction")
+        }
+        guard (record.value(forKey: "pSyncedState") as? NSNumber)?.intValue == 0,
+              record.value(forKey: "pSyncedModificationDate") == nil else {
+            throw ToolError.invalidInput("Transaction sync record is not in the canonical active preimage state")
+        }
+        guard let blobData = record.value(forKey: "pRemoteEntityData") as? Data,
+              let decompressed = Self.decompressGzip(blobData),
+              let xml = String(data: decompressed, encoding: .utf8) else {
+            throw ToolError.invalidInput("Transaction sync metadata is unreadable for hash-bound statement mutation")
+        }
+        let patched = transform(xml)
+        guard patched != xml,
+              patched.hasPrefix("<entity") || patched.hasPrefix("<?xml"),
+              patched.hasSuffix("</entity>") || patched.hasSuffix("</entity>\n") else {
+            throw ToolError.invalidInput("Transaction sync metadata patch is incomplete for hash-bound statement mutation")
+        }
+        let ratio = Double(patched.utf8.count) / Double(xml.utf8.count)
+        guard ratio > 0.5 && ratio < 1.5,
+              let patchedData = patched.data(using: .utf8),
+              let compressed = Self.compressGzip(patchedData) else {
+            throw ToolError.invalidInput("Transaction sync metadata patch is invalid for hash-bound statement mutation")
+        }
+        record.setValue(compressed, forKey: "pRemoteEntityData")
+        record.setValue(nil, forKey: "pSyncedModificationDate")
+    }
+
+    // MARK: - Sync Record Creation
+
+    /// Patch a transaction sync blob in a caller-owned transaction when it
+    /// exists. An absent record is a valid preimage for a local-only
+    /// transaction: there is no remote blob to change. A present record is
+    /// still validated strictly, so malformed or non-canonical metadata rolls
+    /// back the enclosing typed statement mutation before its context saves.
+    @discardableResult
+    public func patchTransactionBlobIfPresent(
+        transactionUUID: String,
+        in context: NSManagedObjectContext,
+        using transform: @Sendable (String) -> String
+    ) throws -> Bool {
+        guard let record = try fetchSyncRecord(entityUUID: transactionUUID, in: context) else {
+            return false
+        }
+        guard (record.value(forKey: "pSyncedState") as? NSNumber)?.intValue == 0,
+              record.value(forKey: "pSyncedModificationDate") == nil else {
+            throw ToolError.invalidInput("Transaction sync record is not in the canonical active preimage state")
+        }
+        guard let blobData = record.value(forKey: "pRemoteEntityData") as? Data,
+              let decompressed = Self.decompressGzip(blobData),
+              let xml = String(data: decompressed, encoding: .utf8) else {
+            throw ToolError.invalidInput("Transaction sync metadata is unreadable for hash-bound statement mutation")
+        }
+        let patched = transform(xml)
+        guard patched != xml,
+              patched.hasPrefix("<entity") || patched.hasPrefix("<?xml"),
+              patched.hasSuffix("</entity>") || patched.hasSuffix("</entity>\n") else {
+            throw ToolError.invalidInput("Transaction sync metadata patch is incomplete for hash-bound statement mutation")
+        }
+        let ratio = Double(patched.utf8.count) / Double(xml.utf8.count)
+        guard ratio > 0.5 && ratio < 1.5,
+              let patchedData = patched.data(using: .utf8),
+              let compressed = Self.compressGzip(patchedData) else {
+            throw ToolError.invalidInput("Transaction sync metadata patch is invalid for hash-bound statement mutation")
+        }
+        record.setValue(compressed, forKey: "pRemoteEntityData")
+        record.setValue(nil, forKey: "pSyncedModificationDate")
+        return true
+    }
+
     // MARK: - Sync Record Creation
 
     public func createTransactionSyncRecord(
@@ -144,6 +301,13 @@ public final class SyncBlobUpdater: @unchecked Sendable {
         }
     }
 
+    public func replaceTransactionLineItems(transactionUUID: String, lineItems: [SyncLineItem]) {
+        updateTransactionBlob(transactionUUID: transactionUUID) { [self] xml in
+            guard let collectionRange = lineItemsCollectionRange(in: xml) else { return xml }
+            return xml.replacingCharacters(in: collectionRange, with: buildLineItemsXML(lineItems))
+        }
+    }
+
     private func buildTransactionXML(
         transactionUUID: String, currencyUUID: String, date: String,
         title: String, note: String?, adjustment: Bool,
@@ -154,9 +318,24 @@ public final class SyncBlobUpdater: @unchecked Sendable {
         xml += "<field type=\"bool\" name=\"adjustment\">\(adjustment ? "yes" : "no")</field>"
         xml += "<field type=\"int\" name=\"checkNumber\" null=\"null\"/>"
         xml += "<field type=\"reference\" name=\"currency\">Currency:\(currencyUUID)</field>"
-        xml += "<field type=\"date\" name=\"date\">\(date)T00:00:00+0000</field>"
-        xml += "<collection type=\"array\" name=\"lineItems\">"
+        xml += "<field type=\"date\" name=\"date\">\(DateConversion.syncBlobTimestamp(dateOnly: date))</field>"
+        xml += buildLineItemsXML(lineItems)
+        if let note = note {
+            xml += "<field type=\"string\" name=\"note\">\(escapeXML(note))</field>"
+        } else {
+            xml += "<field type=\"string\" name=\"note\" null=\"null\"/>"
+        }
+        xml += "<field type=\"string\" name=\"title\">\(escapeXML(title))</field>"
+        xml += "<record type=\"TransactionType\" name=\"transactionType\">"
+        xml += "<field enum=\"IGGCSyncAccountingTransactionBaseType\" name=\"baseType\">\(transactionTypeBaseType)</field>"
+        xml += "<field type=\"reference\" name=\"transactionType\">TransactionTypeV2:\(transactionTypeUUID)</field>"
+        xml += "</record>"
+        xml += "</entity>"
+        return xml
+    }
 
+    private func buildLineItemsXML(_ lineItems: [SyncLineItem]) -> String {
+        var xml = "<collection type=\"array\" name=\"lineItems\">"
         for li in lineItems {
             xml += "<record type=\"LineItem\" name=\"element\">"
             if let acctUUID = li.accountUUID {
@@ -206,17 +385,6 @@ public final class SyncBlobUpdater: @unchecked Sendable {
         }
 
         xml += "</collection>"
-        if let note = note {
-            xml += "<field type=\"string\" name=\"note\">\(escapeXML(note))</field>"
-        } else {
-            xml += "<field type=\"string\" name=\"note\" null=\"null\"/>"
-        }
-        xml += "<field type=\"string\" name=\"title\">\(escapeXML(title))</field>"
-        xml += "<record type=\"TransactionType\" name=\"transactionType\">"
-        xml += "<field enum=\"IGGCSyncAccountingTransactionBaseType\" name=\"baseType\">\(transactionTypeBaseType)</field>"
-        xml += "<field type=\"reference\" name=\"transactionType\">TransactionTypeV2:\(transactionTypeUUID)</field>"
-        xml += "</record>"
-        xml += "</entity>"
         return xml
     }
 
@@ -714,6 +882,33 @@ public final class SyncBlobUpdater: @unchecked Sendable {
             cursor = close.upperBound
             if depth == 0 {
                 return recordStart.lowerBound..<close.upperBound
+            }
+        }
+
+        return nil
+    }
+
+    private func lineItemsCollectionRange(in xml: String) -> Range<String.Index>? {
+        let openPattern = "<collection type=\"array\" name=\"lineItems\">"
+        guard let openRange = xml.range(of: openPattern) else { return nil }
+
+        var searchStart = openRange.upperBound
+        var depth = 1
+        while searchStart < xml.endIndex {
+            let nextOpen = xml.range(of: "<collection ", range: searchStart..<xml.endIndex)
+            let nextClose = xml.range(of: "</collection>", range: searchStart..<xml.endIndex)
+
+            guard let closeRange = nextClose else { return nil }
+
+            if let open = nextOpen, open.lowerBound < closeRange.lowerBound {
+                depth += 1
+                searchStart = open.upperBound
+            } else {
+                depth -= 1
+                if depth == 0 {
+                    return openRange.lowerBound..<closeRange.upperBound
+                }
+                searchStart = closeRange.upperBound
             }
         }
 
