@@ -9,7 +9,22 @@ import Foundation
 struct BanktivityCLI: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "banktivity-cli",
-        abstract: "CLI for Banktivity personal finance vaults",
+        abstract: "Read and manage a Banktivity personal-finance vault",
+        discussion: """
+        Use a command group to inspect accounts, transactions, statements, securities,
+        and other parts of a Banktivity vault. Read commands return JSON on standard
+        output. Commands that change financial data are writes; back up the vault and
+        review the command-specific safeguards before using them.
+
+        Supply a vault with --vault /path/to/Ledger.bank8 or set
+        BANKTIVITY_FILE_PATH. Run banktivity-cli <group> --help for focused options
+        and examples.
+
+        Examples:
+          banktivity-cli accounts list
+          banktivity-cli transactions list --account-name "Checking" --limit 20
+          banktivity-cli statements get --statement-id 42
+        """,
         version: version,
         subcommands: [
             Accounts.self,
@@ -41,7 +56,10 @@ struct BanktivityCLI: AsyncParsableCommand {
 
     /// Create a Core Data container for the given vault path
     static func createContainer(vaultPath: String) throws -> NSPersistentContainer {
-        try PersistentContainerFactory.create(bankFilePath: vaultPath)
+        try PersistentContainerFactory.create(
+            bankFilePath: vaultPath,
+            readOnly: PersistentContainerFactory.readOnlyFromEnvironment
+        )
     }
 
     /// Create a WriteGuard for the given vault path

@@ -37,6 +37,19 @@ struct PersistentContainerTests {
         #expect(!container.persistentStoreDescriptions.isEmpty)
     }
 
+    @Test("Read-only creation marks the SQLite store read-only")
+    func createContainerReadOnlyMarksStoreReadOnly() throws {
+        guard let vaultPath = try makeTestVault() else { return }
+        defer { cleanup(vaultPath) }
+
+        let container = try PersistentContainerFactory.create(
+            bankFilePath: vaultPath,
+            readOnly: true
+        )
+        let description = try #require(container.persistentStoreDescriptions.first)
+        #expect(description.isReadOnly)
+    }
+
     @Test("Container creation throws for missing file")
     func createContainerThrowsForMissingFile() {
         #expect(throws: (any Error).self) {
