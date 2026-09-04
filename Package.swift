@@ -44,7 +44,11 @@ let package = Package(
         ),
         .testTarget(
             name: "BanktivityLibTests",
-            dependencies: ["BanktivityLib"],
+            // BanktivityMCPLib is here so the registry can be diffed against the
+            // capability report. A separate MCP test target would be tidier but
+            // is a needless target to carry upstream; promoting it later is
+            // mechanical.
+            dependencies: ["BanktivityLib", "BanktivityMCPLib"],
             path: "Tests/BanktivityLibTests"
         ),
     ]

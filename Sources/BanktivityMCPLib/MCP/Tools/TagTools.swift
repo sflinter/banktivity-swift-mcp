@@ -14,6 +14,7 @@ func registerTagTools(
     // get_tags
     registry.register(
         name: "get_tags",
+        access: .read,
         description: "List all tags used for transactions",
         inputSchema: ToolHelpers.schema(properties: [:])
     ) { _ in
@@ -24,6 +25,7 @@ func registerTagTools(
     // create_tag
     registry.register(
         name: "create_tag",
+        access: .write,
         description: "Create a new tag for categorizing transactions",
         inputSchema: ToolHelpers.schema(
             properties: [
@@ -46,6 +48,7 @@ func registerTagTools(
     // tag_transaction
     registry.register(
         name: "tag_transaction",
+        access: .write,
         description: "Add or remove a tag from a transaction",
         inputSchema: ToolHelpers.schema(
             properties: [
@@ -81,6 +84,7 @@ func registerTagTools(
     // get_transactions_by_tag
     registry.register(
         name: "get_transactions_by_tag",
+        access: .read,
         description: "Find transactions that have a specific tag",
         inputSchema: ToolHelpers.schema(properties: [
             "tag_name": ToolHelpers.property(type: "string", description: "The tag name to search for"),
@@ -104,6 +108,7 @@ func registerTagTools(
     // bulk_tag_transactions
     registry.register(
         name: "bulk_tag_transactions",
+        access: .write,
         description: "Add or remove a tag from multiple transactions at once",
         inputSchema: ToolHelpers.schema(
             properties: [

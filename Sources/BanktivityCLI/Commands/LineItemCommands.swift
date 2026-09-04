@@ -51,16 +51,39 @@ struct LineItems: AsyncParsableCommand {
         @Option(name: .long, help: "Optional memo")
         var memo: String?
 
+        @Flag(name: .long, help: "Validate and return the planned mutation without writing")
+        var dryRun: Bool = false
+
+        @Flag(name: .long, help: "Confirm the operator reviewed the target transaction and account")
+        var operatorReviewedTarget: Bool = false
+
+        @Flag(name: .long, help: "Confirm Banktivity UI inspection will be performed after this write")
+        var postUIVerificationRequired: Bool = false
+
         func run() async throws {
             let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
             let container = try BanktivityCLI.createContainer(vaultPath: path)
-            let writeGuard = BanktivityCLI.createWriteGuard(vaultPath: path)
-            try await guardWrite(writeGuard)
 
             let accounts = AccountRepository(container: container)
             let resolvedId = try accounts.resolveAccountId(id: accountId, name: accountName)
 
             let lineItems = LineItemRepository(container: container)
+            if dryRun {
+                try outputJSON(try lineItems.validateAddToTransaction(
+                    transactionId: transactionId,
+                    accountId: resolvedId
+                ), format: parent.format)
+                return
+            }
+
+            let writeGuard = BanktivityCLI.createWriteGuard(vaultPath: path)
+            try await guardWrite(writeGuard)
+            try requireReviewedWriteConfirmations(
+                subject: "Line-item writes",
+                target: "transaction/account",
+                operatorReviewedTarget: operatorReviewedTarget,
+                postUIVerificationRequired: postUIVerificationRequired
+            )
             let updatedItems = try lineItems.addToTransaction(
                 transactionId: transactionId,
                 accountId: resolvedId,
@@ -91,11 +114,18 @@ struct LineItems: AsyncParsableCommand {
         @Option(name: .long, help: "New memo")
         var memo: String?
 
+        @Flag(name: .long, help: "Validate and return the planned mutation without writing")
+        var dryRun: Bool = false
+
+        @Flag(name: .long, help: "Confirm the operator reviewed the target line item")
+        var operatorReviewedTarget: Bool = false
+
+        @Flag(name: .long, help: "Confirm Banktivity UI inspection will be performed after this write")
+        var postUIVerificationRequired: Bool = false
+
         func run() async throws {
             let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
             let container = try BanktivityCLI.createContainer(vaultPath: path)
-            let writeGuard = BanktivityCLI.createWriteGuard(vaultPath: path)
-            try await guardWrite(writeGuard)
 
             let accounts = AccountRepository(container: container)
             let resolvedAccountId: Int?
@@ -106,6 +136,22 @@ struct LineItems: AsyncParsableCommand {
             }
 
             let lineItems = LineItemRepository(container: container)
+            if dryRun {
+                try outputJSON(try lineItems.validateUpdate(
+                    lineItemId: id,
+                    accountId: resolvedAccountId
+                ), format: parent.format)
+                return
+            }
+
+            let writeGuard = BanktivityCLI.createWriteGuard(vaultPath: path)
+            try await guardWrite(writeGuard)
+            try requireReviewedWriteConfirmations(
+                subject: "Line-item writes",
+                target: "transaction/account",
+                operatorReviewedTarget: operatorReviewedTarget,
+                postUIVerificationRequired: postUIVerificationRequired
+            )
             guard let updated = try lineItems.updateWithRecalculation(
                 lineItemId: id,
                 accountId: resolvedAccountId,
@@ -126,13 +172,33 @@ struct LineItems: AsyncParsableCommand {
         @Argument(help: "Line item ID")
         var id: Int
 
+        @Flag(name: .long, help: "Validate and return the planned mutation without writing")
+        var dryRun: Bool = false
+
+        @Flag(name: .long, help: "Confirm the operator reviewed the target line item")
+        var operatorReviewedTarget: Bool = false
+
+        @Flag(name: .long, help: "Confirm Banktivity UI inspection will be performed after this write")
+        var postUIVerificationRequired: Bool = false
+
         func run() async throws {
             let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
             let container = try BanktivityCLI.createContainer(vaultPath: path)
+            let lineItems = LineItemRepository(container: container)
+            if dryRun {
+                try outputJSON(try lineItems.validateDelete(lineItemId: id), format: parent.format)
+                return
+            }
+
             let writeGuard = BanktivityCLI.createWriteGuard(vaultPath: path)
             try await guardWrite(writeGuard)
+            try requireReviewedWriteConfirmations(
+                subject: "Line-item writes",
+                target: "transaction/account",
+                operatorReviewedTarget: operatorReviewedTarget,
+                postUIVerificationRequired: postUIVerificationRequired
+            )
 
-            let lineItems = LineItemRepository(container: container)
             guard try lineItems.deleteWithRecalculation(lineItemId: id) else {
                 throw ToolError.notFound("Line item not found: \(id)")
             }
@@ -140,3 +206,4 @@ struct LineItems: AsyncParsableCommand {
         }
     }
 }
+

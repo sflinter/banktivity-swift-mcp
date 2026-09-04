@@ -5,6 +5,10 @@ import Foundation
 
 /// Repository for line item operations using Core Data
 public final class LineItemRepository: BaseRepository, @unchecked Sendable {
+    public static let writeConfirmations = [
+        "operator_reviewed_target",
+        "post_ui_verification_required",
+    ]
 
     /// Get line items for a transaction (by managed object).
     /// Must be called from within a performRead or performWrite block.
@@ -33,6 +37,49 @@ public final class LineItemRepository: BaseRepository, @unchecked Sendable {
                 return nil
             }
             return self.mapToDTO(object)
+        }
+    }
+
+    public func validateAddToTransaction(transactionId: Int, accountId: Int) throws -> WriteValidationDTO {
+        try performRead { [self] ctx in
+            guard try fetchByPK(entityName: "Transaction", pk: transactionId, in: ctx) != nil else {
+                throw ToolError.notFound("Transaction not found: \(transactionId)")
+            }
+            guard try fetchByPK(entityName: "Account", pk: accountId, in: ctx) != nil else {
+                throw ToolError.notFound("Account not found: \(accountId)")
+            }
+            return Self.lineItemWritePlan(
+                operation: "line_items.add",
+                targetIds: ["transactionId": transactionId, "accountId": accountId]
+            )
+        }
+    }
+
+    public func validateUpdate(lineItemId: Int, accountId: Int? = nil) throws -> WriteValidationDTO {
+        try performRead { [self] ctx in
+            guard try fetchByPK(entityName: "LineItem", pk: lineItemId, in: ctx) != nil else {
+                throw ToolError.notFound("Line item not found: \(lineItemId)")
+            }
+            var targetIds = ["lineItemId": lineItemId]
+            if let accountId {
+                guard try fetchByPK(entityName: "Account", pk: accountId, in: ctx) != nil else {
+                    throw ToolError.notFound("Account not found: \(accountId)")
+                }
+                targetIds["accountId"] = accountId
+            }
+            return Self.lineItemWritePlan(operation: "line_items.update", targetIds: targetIds)
+        }
+    }
+
+    public func validateDelete(lineItemId: Int) throws -> WriteValidationDTO {
+        try performRead { [self] ctx in
+            guard try fetchByPK(entityName: "LineItem", pk: lineItemId, in: ctx) != nil else {
+                throw ToolError.notFound("Line item not found: \(lineItemId)")
+            }
+            return Self.lineItemWritePlan(
+                operation: "line_items.delete",
+                targetIds: ["lineItemId": lineItemId]
+            )
         }
     }
 
@@ -167,6 +214,20 @@ public final class LineItemRepository: BaseRepository, @unchecked Sendable {
         }
         try recalculateRunningBalances(accountId: info.accountId)
         return true
+    }
+
+    private static func lineItemWritePlan(operation: String, targetIds: [String: Int]) -> WriteValidationDTO {
+        WriteValidationDTO(
+            operation: operation,
+            wouldWrite: false,
+            requiredConfirmations: writeConfirmations,
+            uiVerificationRequired: true,
+            targetIds: targetIds,
+            warnings: [
+                "Dry-run validation only; no Core Data write was performed.",
+                "Live line-item writes affect running balances and may affect statement reconciliation; inspect Banktivity UI after write."
+            ]
+        )
     }
 
     // MARK: - DTO Mapping

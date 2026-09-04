@@ -9,6 +9,7 @@ func registerCategoryTools(registry: ToolRegistry, categories: CategoryRepositor
     // list_categories
     registry.register(
         name: "list_categories",
+        access: .read,
         description: "List income/expense categories with optional type filter",
         inputSchema: ToolHelpers.schema(properties: [
             "type": ToolHelpers.property(type: "string", description: "Filter by category type: 'income' or 'expense'"),
@@ -32,6 +33,7 @@ func registerCategoryTools(registry: ToolRegistry, categories: CategoryRepositor
     // get_category
     registry.register(
         name: "get_category",
+        access: .read,
         description: "Get a category by ID or name/path (e.g., 'Insurance:Life')",
         inputSchema: ToolHelpers.schema(properties: [
             "category_id": ToolHelpers.property(type: "number", description: "The category ID"),
@@ -65,6 +67,7 @@ func registerCategoryTools(registry: ToolRegistry, categories: CategoryRepositor
     // get_category_tree
     registry.register(
         name: "get_category_tree",
+        access: .read,
         description: "Get the full category hierarchy as a tree structure",
         inputSchema: ToolHelpers.schema(properties: [
             "type": ToolHelpers.property(type: "string", description: "Filter by category type: 'income' or 'expense'"),
@@ -78,6 +81,7 @@ func registerCategoryTools(registry: ToolRegistry, categories: CategoryRepositor
     // create_category
     registry.register(
         name: "create_category",
+        access: .write,
         description: "Create a new income or expense category",
         inputSchema: ToolHelpers.schema(
             properties: [
