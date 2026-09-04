@@ -14,6 +14,7 @@ func registerStatementTools(
     // list_statements
     registry.register(
         name: "list_statements",
+        access: .read,
         description: "List statements for an account, sorted by start date",
         inputSchema: ToolHelpers.schema(properties: [
             "account_id": ToolHelpers.property(type: "number", description: "The account ID"),
@@ -28,6 +29,7 @@ func registerStatementTools(
     // get_statement
     registry.register(
         name: "get_statement",
+        access: .read,
         description: "Get a statement with reconciliation progress (reconciled balance, difference, isBalanced)",
         inputSchema: ToolHelpers.schema(
             properties: [
@@ -50,6 +52,7 @@ func registerStatementTools(
     // create_statement
     registry.register(
         name: "create_statement",
+        access: .write,
         description: "Create a new statement for an account with beginning/ending balance validation",
         inputSchema: ToolHelpers.schema(
             properties: [
@@ -102,6 +105,7 @@ func registerStatementTools(
     // delete_statement
     registry.register(
         name: "delete_statement",
+        access: .write,
         description: "Delete a statement and unreconcile all its line items",
         inputSchema: ToolHelpers.schema(
             properties: [
@@ -127,6 +131,7 @@ func registerStatementTools(
     // reconcile_line_items
     registry.register(
         name: "reconcile_line_items",
+        access: .write,
         description: "Assign line items to a statement (sets pCleared=true). Validates account ownership, date range, and no double-assignment.",
         inputSchema: ToolHelpers.schema(
             properties: [
@@ -158,6 +163,7 @@ func registerStatementTools(
     // unreconcile_line_items
     registry.register(
         name: "unreconcile_line_items",
+        access: .write,
         description: "Remove line items from a statement (sets pCleared=false)",
         inputSchema: ToolHelpers.schema(
             properties: [
@@ -191,6 +197,7 @@ func registerStatementTools(
     // get_unreconciled_line_items
     registry.register(
         name: "get_unreconciled_line_items",
+        access: .read,
         description: "List unreconciled line items for an account, optionally filtered by date range",
         inputSchema: ToolHelpers.schema(properties: [
             "account_id": ToolHelpers.property(type: "number", description: "The account ID"),

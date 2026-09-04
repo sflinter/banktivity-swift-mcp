@@ -13,6 +13,7 @@ func registerScheduledTransactionTools(
     // list_scheduled_transactions
     registry.register(
         name: "list_scheduled_transactions",
+        access: .read,
         description: "List all scheduled/recurring transactions",
         inputSchema: ToolHelpers.schema(properties: [:])
     ) { _ in
@@ -23,6 +24,7 @@ func registerScheduledTransactionTools(
     // get_scheduled_transaction
     registry.register(
         name: "get_scheduled_transaction",
+        access: .read,
         description: "Get a specific scheduled transaction by ID",
         inputSchema: ToolHelpers.schema(
             properties: [
@@ -45,6 +47,7 @@ func registerScheduledTransactionTools(
     // create_scheduled_transaction
     registry.register(
         name: "create_scheduled_transaction",
+        access: .write,
         description: "Create a new scheduled/recurring transaction",
         inputSchema: ToolHelpers.schema(
             properties: [
@@ -88,6 +91,7 @@ func registerScheduledTransactionTools(
     // update_scheduled_transaction
     registry.register(
         name: "update_scheduled_transaction",
+        access: .write,
         description: "Update an existing scheduled transaction",
         inputSchema: ToolHelpers.schema(
             properties: [
@@ -130,6 +134,7 @@ func registerScheduledTransactionTools(
     // delete_scheduled_transaction
     registry.register(
         name: "delete_scheduled_transaction",
+        access: .write,
         description: "Delete a scheduled transaction",
         inputSchema: ToolHelpers.schema(
             properties: [

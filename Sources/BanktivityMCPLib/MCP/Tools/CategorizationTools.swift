@@ -14,6 +14,7 @@ func registerCategorizationTools(
     // get_uncategorized_transactions
     registry.register(
         name: "get_uncategorized_transactions",
+        access: .read,
         description: "Find transactions without any category assigned. Useful for finding transactions that need categorization.",
         inputSchema: ToolHelpers.schema(properties: [
             "account_id": ToolHelpers.property(type: "number", description: "Filter by account ID"),
@@ -43,6 +44,7 @@ func registerCategorizationTools(
     // suggest_category_for_merchant
     registry.register(
         name: "suggest_category_for_merchant",
+        access: .read,
         description: "Given a merchant name, suggest categories based on import rules and historical transaction patterns.",
         inputSchema: ToolHelpers.schema(
             properties: [
@@ -62,6 +64,7 @@ func registerCategorizationTools(
     // review_categorizations
     registry.register(
         name: "review_categorizations",
+        access: .read,
         description: "List transactions with their current category for review. Useful for spotting miscategorized transactions.",
         inputSchema: ToolHelpers.schema(properties: [
             "account_id": ToolHelpers.property(type: "number", description: "Filter by account ID"),
@@ -99,6 +102,7 @@ func registerCategorizationTools(
     // get_payee_category_summary
     registry.register(
         name: "get_payee_category_summary",
+        access: .read,
         description: "Aggregate view: for each distinct payee, show which categories were used and how often. Surfaces inconsistencies and uncategorized counts.",
         inputSchema: ToolHelpers.schema(properties: [
             "account_id": ToolHelpers.property(type: "number", description: "Filter by account ID"),
@@ -125,6 +129,7 @@ func registerCategorizationTools(
     // recategorize_transaction
     registry.register(
         name: "recategorize_transaction",
+        access: .write,
         description: "Change or assign a category on a single transaction",
         inputSchema: ToolHelpers.schema(
             properties: [
@@ -159,6 +164,7 @@ func registerCategorizationTools(
     // bulk_recategorize_by_payee
     registry.register(
         name: "bulk_recategorize_by_payee",
+        access: .write,
         description: "Recategorize all transactions matching a payee pattern. Supports dry_run mode to preview changes.",
         inputSchema: ToolHelpers.schema(
             properties: [

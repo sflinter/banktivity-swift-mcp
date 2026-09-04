@@ -94,6 +94,21 @@ public struct CategoryTreeNodeDTO: Codable, Sendable {
     }
 }
 
+public struct CategoryEntityAuditDTO: Codable, Sendable {
+    public let id: Int
+    public let name: String
+    public let fullName: String
+    public let type: String
+    public let accountClass: Int
+    public let actualEntity: String
+    public let expectedEntity: String
+
+    public init(id: Int, name: String, fullName: String, type: String, accountClass: Int, actualEntity: String, expectedEntity: String) {
+        self.id = id; self.name = name; self.fullName = fullName; self.type = type
+        self.accountClass = accountClass; self.actualEntity = actualEntity; self.expectedEntity = expectedEntity
+    }
+}
+
 public struct CategorySpendingDTO: Codable, Sendable {
     public let category: String
     public let total: Double

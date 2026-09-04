@@ -212,6 +212,11 @@ banktivity-cli export turtle --output vault.ttl
 - `securities list`, `securities create`, `securities prices`, `securities holdings`, `securities trades`, `securities income`, `securities adjust`, `securities import-prices`, `securities delete-prices`
 - `export turtle`
 - `schema`
+- `capabilities`
+
+`banktivity-cli capabilities` lists every command, marks it read or write, and reports what each write expects — whether it supports a dry run, and whether it needs a backup or a check in Banktivity afterwards. Use `--format compact` when a script or agent is reading it. The MCP equivalent is `get_capabilities`.
+
+The report is meant to be trusted by a caller deciding what is safe to run unattended, so it is checked against reality rather than maintained by hand: a test fails the build if a tool is registered without appearing in the report, if it appears with the wrong read/write classification, or if it advertises a dry run it does not accept.
 
 Most commands that accept `--account-id` also accept `--account-name` as an alternative. The `transactions create` command supports `--line-items` with a JSON array for multi-line-item (split) transactions.
 

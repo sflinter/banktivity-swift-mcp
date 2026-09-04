@@ -7,7 +7,7 @@ import Foundation
 struct Categories: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Category operations",
-        subcommands: [List.self, Get.self, Tree.self, Create.self]
+        subcommands: [List.self, Get.self, Tree.self, AuditEntities.self, Create.self]
     )
 
     struct List: AsyncParsableCommand {
@@ -89,6 +89,24 @@ struct Categories: AsyncParsableCommand {
 
             let tree = try categories.getTree(type: type)
             try outputJSON(tree, format: parent.format)
+        }
+    }
+
+    struct AuditEntities: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "audit-entities",
+            abstract: "Find income/expense rows stored under the wrong Core Data entity"
+        )
+
+        @OptionGroup var parent: GlobalOptions
+
+        func run() async throws {
+            let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
+            let container = try BanktivityCLI.createContainer(vaultPath: path)
+            let categories = CategoryRepository(container: container)
+
+            let results = try categories.auditCategoryEntities()
+            try outputJSON(results, format: parent.format)
         }
     }
 
