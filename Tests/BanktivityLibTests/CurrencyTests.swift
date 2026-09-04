@@ -5,7 +5,7 @@ import Foundation
 import Testing
 @testable import BanktivityLib
 
-@Suite("Currency")
+@Suite("Currency", .serialized)
 struct CurrencyTests {
 
     @Test("createShareAdjustment uses account currency not first in DB")

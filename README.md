@@ -10,6 +10,12 @@ Inspired by [banktivity-mcp](https://github.com/mhriemers/banktivity-mcp) (TypeS
 
 > **WARNING: This server can modify your Banktivity data.** Write tools (create, update, delete) make real changes to your `.bank8` vault. While the server uses Core Data for proper change tracking and includes a write guard that blocks mutations when Banktivity is open, AI assistants can and will make mistakes. **Back up your vault regularly** and consider working on a copy until you're confident in your workflow. The authors are not responsible for any data loss or corruption.
 
+Writes are serialized within each running process, which covers concurrent MCP tool calls handled by one `banktivity-mcp` server and overlapping writes inside a single CLI command. It is not a cross-process file lock: run one `banktivity-cli` or `banktivity-mcp` process per vault at a time, and shut them down before opening the same vault in Banktivity.app.
+
+**The numeric IDs this tool returns are local to one store, not to the vault.** They are Core Data row ids assigned by whichever SQLite file you opened. The same logical record — the same transaction, account, statement or category — carries a *different* number on a second Mac syncing the same vault through Banktivity's own sync, and can change again after restoring from backup, importing, or migrating a Banktivity 10 vault. The stable identifier is the record's `pUniqueID`.
+
+The consequence is worth stating plainly, because it is the failure this tool cannot detect for you: an id captured on one machine and replayed on another does not point at nothing, it points at **a different real record**. A delete or an amount correction aimed that way succeeds, reports success, and hits the wrong row. So resolve ids on the machine you are about to write on, in the same session, and read the row back to confirm it is the one you meant before mutating it.
+
 ## Requirements
 
 - macOS 14+

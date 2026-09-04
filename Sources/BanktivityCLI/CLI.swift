@@ -50,7 +50,11 @@ struct BanktivityCLI: AsyncParsableCommand {
             .appendingPathComponent("StoreContent")
             .appendingPathComponent("core.sql")
             .path
-        return WriteGuard(dbPath: dbPath)
+        let guardInstance = WriteGuard(dbPath: dbPath)
+        // Arm the choke point as a side effect of building the guard, so a verb
+        // that forgets to call `guardWrite` is still refused at the write.
+        VaultWriteGate.install(guardInstance.monitor.writeRefusal)
+        return guardInstance
     }
 }
 

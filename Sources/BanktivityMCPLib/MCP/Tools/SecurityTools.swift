@@ -199,6 +199,52 @@ func registerSecurityTools(
         return try ToolHelpers.jsonResponse(results)
     }
 
+    // update_security_trade
+    registry.register(
+        name: "update_security_trade",
+        description: "Update security trade fields on an existing transaction, including shares, price per share, security cost/principal amount, commission, and security.",
+        inputSchema: ToolHelpers.schema(
+            properties: [
+                "transaction_id": ToolHelpers.property(type: "number", description: "Transaction ID"),
+                "shares": ToolHelpers.property(type: "number", description: "Number of shares"),
+                "price_per_share": ToolHelpers.property(type: "number", description: "Price per share"),
+                "amount": ToolHelpers.property(type: "number", description: "Security cost/principal amount. This does not change investment-account cash line items."),
+                "commission": ToolHelpers.property(type: "number", description: "Commission or fee amount"),
+                "symbol": ToolHelpers.property(type: "string", description: "Security ticker symbol"),
+                "security_id": ToolHelpers.property(type: "number", description: "Security ID (alternative to symbol)"),
+                "basis_only_transfer": ToolHelpers.property(type: "boolean", description: "Validate a zero-cash transfer-in row and update security basis fields without changing cash line items"),
+            ],
+            required: ["transaction_id"]
+        )
+    ) { arguments in
+        if let msg = await writeGuard.guardWriteAccess() {
+            return ToolHelpers.errorResponse(msg)
+        }
+
+        guard let transactionId = ToolHelpers.getInt(arguments, key: "transaction_id") else {
+            return ToolHelpers.errorResponse("transaction_id is required")
+        }
+        let shares = ToolHelpers.getDouble(arguments, key: "shares")
+        let pricePerShare = ToolHelpers.getDouble(arguments, key: "price_per_share")
+        let amount = ToolHelpers.getDouble(arguments, key: "amount")
+        let commission = ToolHelpers.getDouble(arguments, key: "commission")
+        let symbol = ToolHelpers.getString(arguments, key: "symbol")
+        let securityId = ToolHelpers.getInt(arguments, key: "security_id")
+        let basisOnlyTransfer = ToolHelpers.getBool(arguments, key: "basis_only_transfer")
+
+        let result = try securities.updateSecurityLineItem(
+            transactionId: transactionId,
+            shares: shares,
+            pricePerShare: pricePerShare,
+            amount: amount,
+            commission: commission,
+            securitySymbol: symbol,
+            securityId: securityId,
+            basisOnlyTransfer: basisOnlyTransfer
+        )
+        return try ToolHelpers.jsonResponse(result)
+    }
+
     // get_security_income
     registry.register(
         name: "get_security_income",

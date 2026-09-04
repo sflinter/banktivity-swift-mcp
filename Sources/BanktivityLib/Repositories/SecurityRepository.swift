@@ -317,10 +317,21 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
         shares: Double? = nil,
         pricePerShare: Double? = nil,
         amount: Double? = nil,
+        commission: Double? = nil,
         securitySymbol: String? = nil,
         securityId: Int? = nil,
-        cashLineItemAmount: Double? = nil
+        cashLineItemAmount: Double? = nil,
+        basisOnlyTransfer: Bool = false
     ) throws -> SecurityTradeDTO {
+        if basisOnlyTransfer {
+            guard cashLineItemAmount == nil else {
+                throw ToolError.invalidInput("basis-only transfer repair cannot also set a cash line amount")
+            }
+            guard amount != nil || pricePerShare != nil else {
+                throw ToolError.invalidInput("basis-only transfer repair requires amount and/or price_per_share")
+            }
+        }
+
         // Resolve new security if specified
         struct NewSecInfo: Sendable {
             let objectID: NSManagedObjectID
@@ -398,6 +409,17 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
                 throw ToolError.notFound("No line items found for transaction \(transactionId)")
             }
 
+            if basisOnlyTransfer {
+                let cashAmount = Self.doubleValue(li, "pTransactionAmount") * Self.doubleValue(li, "pExchangeRate")
+                guard abs(cashAmount) < 0.005 else {
+                    throw ToolError.invalidInput("basis-only transfer repair requires the investment account cash line amount to be zero")
+                }
+                let note = Self.stringValue(tx, "pNote")
+                guard note.localizedCaseInsensitiveContains("SECURITY ADJUSTMENT") else {
+                    throw ToolError.invalidInput("basis-only transfer repair requires a SECURITY ADJUSTMENT transaction")
+                }
+            }
+
             let sli: NSManagedObject
             if let existing = existingSLI {
                 sli = existing
@@ -422,6 +444,9 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
             if let amount = amount {
                 sli.setValue(amount as NSNumber, forKey: "pAmount")
             }
+            if let commission = commission {
+                sli.setValue(commission as NSNumber, forKey: "pCommission")
+            }
             if let secObjID = newSecurityObjectID,
                let secInCtx = try? ctx.existingObject(with: secObjID) {
                 sli.setValue(secInCtx, forKey: "pSecurity")
@@ -433,10 +458,13 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
                     throw ToolError.invalidInput("Cash line repair requires the security line item to belong to an account")
                 }
                 let offsetCandidates = lineItems.filter { candidate in
-                    candidate.objectID != li.objectID && Self.relatedObject(candidate, "pAccount") == nil
+                    guard candidate.objectID != li.objectID else { return false }
+                    guard let offsetAccount = Self.relatedObject(candidate, "pAccount") else { return true }
+                    let accountClass = Self.intValue(offsetAccount, "pAccountClass")
+                    return accountClass == AccountClass.income || accountClass == AccountClass.expense
                 }
                 guard offsetCandidates.count == 1 else {
-                    throw ToolError.invalidInput("Cash line repair requires exactly one balancing line item without an account")
+                    throw ToolError.invalidInput("Cash line repair requires exactly one unknown/category balancing line item")
                 }
                 let offsetLI = offsetCandidates.first!
                 let offsetAmount = -cashLineItemAmount
@@ -504,6 +532,7 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
             let sharesStr = shares.map { updater.formatDecimalPublic($0) }
             let ppsStr = pricePerShare.map { updater.formatDecimalPublic($0) }
             let amountStr = amount.map { updater.formatDecimalPublic($0) }
+            let commissionStr = commission.map { updater.formatDecimalPublic($0) }
             let secRef = newSecurityUUID.map { "Security:\($0)" }
             let cashSync = result.cashSync
 
@@ -520,6 +549,10 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
                 if let v = amountStr {
                     patched = SyncBlobUpdater.patchSecurityLineItemFieldStatic(
                         xml: patched, lineItemUUID: liUUID, fieldName: "cost", fieldType: "decimal", value: v)
+                }
+                if let v = commissionStr {
+                    patched = SyncBlobUpdater.patchSecurityLineItemFieldStatic(
+                        xml: patched, lineItemUUID: liUUID, fieldName: "commission", fieldType: "decimal", value: v)
                 }
                 if let v = secRef {
                     patched = SyncBlobUpdater.patchSecurityLineItemFieldStatic(

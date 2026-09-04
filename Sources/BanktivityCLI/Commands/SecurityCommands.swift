@@ -309,7 +309,7 @@ struct Securities: AsyncParsableCommand {
         @Option(name: .long, help: "Transaction title")
         var title: String?
 
-        @Option(name: .long, parsing: .unconditional, help: "Cash amount (negative for buy outflow)")
+        @Option(name: .long, parsing: .unconditional, help: "Security cost/principal amount. This does not change investment-account cash line items unless --cash-line-amount is also supplied")
         var amount: Double?
 
         func run() async throws {
@@ -331,7 +331,7 @@ struct Securities: AsyncParsableCommand {
     struct UpdateTrade: AsyncParsableCommand {
         static let configuration = CommandConfiguration(
             commandName: "update-trade",
-            abstract: "Update security line item fields (shares, price, amount, security, cash line) on an existing transaction"
+            abstract: "Update security line item fields (shares, price, amount, commission, security, cash line) on an existing transaction"
         )
 
         @OptionGroup var parent: GlobalOptions
@@ -345,8 +345,11 @@ struct Securities: AsyncParsableCommand {
         @Option(name: .long, help: "Price per share")
         var pricePerShare: Double?
 
-        @Option(name: .long, parsing: .unconditional, help: "Cash amount (negative for buy outflow)")
+        @Option(name: .long, parsing: .unconditional, help: "Security cost/principal amount. This does not change investment-account cash line items unless --cash-line-amount is also supplied")
         var amount: Double?
+
+        @Option(name: .long, help: "Commission or fee amount")
+        var commission: Double?
 
         @Option(name: .long, help: "Security ticker symbol")
         var symbol: String?
@@ -356,6 +359,9 @@ struct Securities: AsyncParsableCommand {
 
         @Option(name: .long, parsing: .unconditional, help: "Also set the investment account cash line item to this amount and the balancing line item to the opposite amount")
         var cashLineAmount: Double?
+
+        @Flag(name: .long, help: "Validate a zero-cash transfer-in row and update security basis fields without changing cash line items")
+        var basisOnlyTransfer: Bool = false
 
         func run() async throws {
             let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
@@ -368,8 +374,10 @@ struct Securities: AsyncParsableCommand {
             let result = try securities.updateSecurityLineItem(
                 transactionId: transactionId,
                 shares: shares, pricePerShare: pricePerShare, amount: amount,
+                commission: commission,
                 securitySymbol: symbol, securityId: securityId,
-                cashLineItemAmount: cashLineAmount
+                cashLineItemAmount: cashLineAmount,
+                basisOnlyTransfer: basisOnlyTransfer
             )
             try outputJSON(result, format: parent.format)
         }

@@ -69,23 +69,25 @@ public final class SyncBlobUpdater: @unchecked Sendable {
     /// The blob is preserved so Banktivity knows what to delete.
     public func deleteSyncRecord(entityUUID: String) {
         do {
-            let bgContext = container.newBackgroundContext()
-            nonisolated(unsafe) var writeError: Error?
-            bgContext.performAndWait {
-                do {
-                    guard let record = try self.fetchSyncRecord(entityUUID: entityUUID, in: bgContext) else {
-                        self.log("No SyncedHostedEntity found for UUID \(entityUUID) — deletion will not propagate to CloudKit")
-                        return
+            try CoreDataWriteCoordinator.perform {
+                let bgContext = container.newBackgroundContext()
+                nonisolated(unsafe) var writeError: Error?
+                bgContext.performAndWait {
+                    do {
+                        guard let record = try self.fetchSyncRecord(entityUUID: entityUUID, in: bgContext) else {
+                            self.log("No SyncedHostedEntity found for UUID \(entityUUID) — deletion will not propagate to CloudKit")
+                            return
+                        }
+                        record.setValue(Int16(3), forKey: "pSyncedState")
+                        record.setValue(Date(), forKey: "pSyncedModificationDate")
+                        try bgContext.save()
+                        self.log("Marked sync record as deleted (state=3) for UUID \(entityUUID)")
+                    } catch {
+                        writeError = error
                     }
-                    record.setValue(Int16(3), forKey: "pSyncedState")
-                    record.setValue(Date(), forKey: "pSyncedModificationDate")
-                    try bgContext.save()
-                    self.log("Marked sync record as deleted (state=3) for UUID \(entityUUID)")
-                } catch {
-                    writeError = error
                 }
+                if let error = writeError { throw error }
             }
-            if let error = writeError { throw error }
         } catch {
             log("Failed to mark sync record as deleted for \(entityUUID): \(error)")
         }
@@ -114,31 +116,33 @@ public final class SyncBlobUpdater: @unchecked Sendable {
                 return
             }
 
-            let bgContext = container.newBackgroundContext()
-            nonisolated(unsafe) var writeError: Error?
-            bgContext.performAndWait {
-                do {
-                    let record = NSEntityDescription.insertNewObject(forEntityName: "SyncedHostedEntity", into: bgContext)
-                    record.setValue(transactionUUID, forKey: "pLocalID")
-                    record.setValue(transactionUUID, forKey: "pRemoteID")
-                    record.setValue("Transaction", forKey: "pHostedEntityType")
-                    record.setValue(Int16(0), forKey: "pSyncedState")
-                    record.setValue(nil, forKey: "pSyncedModificationDate")
-                    record.setValue(compressed, forKey: "pRemoteEntityData")
+            try CoreDataWriteCoordinator.perform {
+                let bgContext = container.newBackgroundContext()
+                nonisolated(unsafe) var writeError: Error?
+                bgContext.performAndWait {
+                    do {
+                        let record = NSEntityDescription.insertNewObject(forEntityName: "SyncedHostedEntity", into: bgContext)
+                        record.setValue(transactionUUID, forKey: "pLocalID")
+                        record.setValue(transactionUUID, forKey: "pRemoteID")
+                        record.setValue("Transaction", forKey: "pHostedEntityType")
+                        record.setValue(Int16(0), forKey: "pSyncedState")
+                        record.setValue(nil, forKey: "pSyncedModificationDate")
+                        record.setValue(compressed, forKey: "pRemoteEntityData")
 
-                    // Link to SyncedDocument if one exists
-                    let docRequest = NSFetchRequest<NSManagedObject>(entityName: "SyncedDocument")
-                    docRequest.fetchLimit = 1
-                    if let doc = try bgContext.fetch(docRequest).first {
-                        record.setValue(doc, forKey: "pDocument")
+                        // Link to SyncedDocument if one exists
+                        let docRequest = NSFetchRequest<NSManagedObject>(entityName: "SyncedDocument")
+                        docRequest.fetchLimit = 1
+                        if let doc = try bgContext.fetch(docRequest).first {
+                            record.setValue(doc, forKey: "pDocument")
+                        }
+
+                        try bgContext.save()
+                    } catch {
+                        writeError = error
                     }
-
-                    try bgContext.save()
-                } catch {
-                    writeError = error
                 }
+                if let error = writeError { throw error }
             }
-            if let error = writeError { throw error }
         } catch {
             log("Failed to create sync record for transaction \(transactionUUID): \(error)")
         }
@@ -447,22 +451,24 @@ public final class SyncBlobUpdater: @unchecked Sendable {
         // Also touch the Security entity's pModificationDate so Banktivity
         // recognises the change and re-pushes to CloudKit
         do {
-            let bgContext = container.newBackgroundContext()
-            nonisolated(unsafe) var writeError: Error?
-            bgContext.performAndWait {
-                do {
-                    let request = NSFetchRequest<NSManagedObject>(entityName: "Security")
-                    request.predicate = NSPredicate(format: "pUniqueID == %@", securityUUID)
-                    request.fetchLimit = 1
-                    if let security = try bgContext.fetch(request).first {
-                        security.setValue(Date(), forKey: "pModificationDate")
-                        try bgContext.save()
+            try CoreDataWriteCoordinator.perform {
+                let bgContext = container.newBackgroundContext()
+                nonisolated(unsafe) var writeError: Error?
+                bgContext.performAndWait {
+                    do {
+                        let request = NSFetchRequest<NSManagedObject>(entityName: "Security")
+                        request.predicate = NSPredicate(format: "pUniqueID == %@", securityUUID)
+                        request.fetchLimit = 1
+                        if let security = try bgContext.fetch(request).first {
+                            security.setValue(Date(), forKey: "pModificationDate")
+                            try bgContext.save()
+                        }
+                    } catch {
+                        writeError = error
                     }
-                } catch {
-                    writeError = error
                 }
+                if let error = writeError { throw error }
             }
-            if let error = writeError { throw error }
         } catch {
             log("Failed to update Security modification date for \(securityUUID): \(error)")
         }
@@ -562,65 +568,67 @@ public final class SyncBlobUpdater: @unchecked Sendable {
     // MARK: - Private Implementation
 
     private func performBlobUpdate(entityUUID: String, transform: @Sendable (String) -> String) throws {
-        let bgContext = container.newBackgroundContext()
-        nonisolated(unsafe) var writeError: Error?
-        bgContext.performAndWait {
-            do {
-                guard let record = try self.fetchSyncRecord(entityUUID: entityUUID, in: bgContext) else {
-                    return // No sync record — skip silently
-                }
+        try CoreDataWriteCoordinator.perform {
+            let bgContext = container.newBackgroundContext()
+            nonisolated(unsafe) var writeError: Error?
+            bgContext.performAndWait {
+                do {
+                    guard let record = try self.fetchSyncRecord(entityUUID: entityUUID, in: bgContext) else {
+                        return // No sync record — skip silently
+                    }
 
-                guard let blobData = record.value(forKey: "pRemoteEntityData") as? Data else {
-                    return // No blob data — skip silently
-                }
+                    guard let blobData = record.value(forKey: "pRemoteEntityData") as? Data else {
+                        return // No blob data — skip silently
+                    }
 
-                guard let decompressed = Self.decompressGzip(blobData) else {
-                    self.log("Failed to decompress blob for \(entityUUID)")
-                    return
-                }
+                    guard let decompressed = Self.decompressGzip(blobData) else {
+                        self.log("Failed to decompress blob for \(entityUUID)")
+                        return
+                    }
 
-                guard let xml = String(data: decompressed, encoding: .utf8) else {
-                    self.log("Failed to decode blob XML for \(entityUUID)")
-                    return
-                }
+                    guard let xml = String(data: decompressed, encoding: .utf8) else {
+                        self.log("Failed to decode blob XML for \(entityUUID)")
+                        return
+                    }
 
-                let patched = transform(xml)
+                    let patched = transform(xml)
 
-                // Validate patch
-                guard patched.hasPrefix("<entity") || patched.hasPrefix("<?xml") else {
-                    self.log("Patched XML has invalid start for \(entityUUID)")
-                    return
-                }
-                guard patched.hasSuffix("</entity>") || patched.hasSuffix("</entity>\n") else {
-                    self.log("Patched XML has invalid end for \(entityUUID)")
-                    return
-                }
+                    // Validate patch
+                    guard patched.hasPrefix("<entity") || patched.hasPrefix("<?xml") else {
+                        self.log("Patched XML has invalid start for \(entityUUID)")
+                        return
+                    }
+                    guard patched.hasSuffix("</entity>") || patched.hasSuffix("</entity>\n") else {
+                        self.log("Patched XML has invalid end for \(entityUUID)")
+                        return
+                    }
 
-                // Size sanity check (±50% of original)
-                let ratio = Double(patched.utf8.count) / Double(xml.utf8.count)
-                guard ratio > 0.5 && ratio < 1.5 else {
-                    self.log("Patched XML size changed too much (\(Int(ratio * 100))%) for \(entityUUID)")
-                    return
-                }
+                    // Size sanity check (±50% of original)
+                    let ratio = Double(patched.utf8.count) / Double(xml.utf8.count)
+                    guard ratio > 0.5 && ratio < 1.5 else {
+                        self.log("Patched XML size changed too much (\(Int(ratio * 100))%) for \(entityUUID)")
+                        return
+                    }
 
-                guard let patchedData = patched.data(using: .utf8) else {
-                    self.log("Failed to encode patched XML for \(entityUUID)")
-                    return
-                }
+                    guard let patchedData = patched.data(using: .utf8) else {
+                        self.log("Failed to encode patched XML for \(entityUUID)")
+                        return
+                    }
 
-                guard let compressed = Self.compressGzip(patchedData) else {
-                    self.log("Failed to compress patched blob for \(entityUUID)")
-                    return
-                }
+                    guard let compressed = Self.compressGzip(patchedData) else {
+                        self.log("Failed to compress patched blob for \(entityUUID)")
+                        return
+                    }
 
-                record.setValue(compressed, forKey: "pRemoteEntityData")
-                record.setValue(nil, forKey: "pSyncedModificationDate")
-                try bgContext.save()
-            } catch {
-                writeError = error
+                    record.setValue(compressed, forKey: "pRemoteEntityData")
+                    record.setValue(nil, forKey: "pSyncedModificationDate")
+                    try bgContext.save()
+                } catch {
+                    writeError = error
+                }
             }
+            if let error = writeError { throw error }
         }
-        if let error = writeError { throw error }
     }
 
     /// Inspect a sync record for diagnostic purposes.

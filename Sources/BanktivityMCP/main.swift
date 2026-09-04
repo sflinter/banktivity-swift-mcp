@@ -48,6 +48,8 @@ let dbPath =
     .appendingPathComponent("core.sql")
     .path
 let writeGuard = WriteGuard(dbPath: dbPath)
+// Arm the choke point once, at the only place this process opens the vault.
+VaultWriteGate.install(writeGuard.monitor.writeRefusal)
 
 // MARK: - Tool Registry
 
