@@ -147,6 +147,534 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
         }
     }
 
+    public func createSecurityTrade(
+        accountId: Int,
+        symbol: String? = nil,
+        id: Int? = nil,
+        shares: Double,
+        pricePerShare: Double,
+        amount: Double,
+        commission: Double = 0,
+        cashLineItemAmount: Double,
+        date: String,
+        title: String? = nil,
+        memo: String? = nil,
+        offsetCategoryId: Int? = nil
+    ) throws -> SecurityTradeDTO {
+        guard shares != 0 else {
+            throw ToolError.invalidInput("shares must be non-zero")
+        }
+        guard DateConversion.fromISO(date) != nil else {
+            throw ToolError.invalidInput("date must be YYYY-MM-DD")
+        }
+
+        struct SecurityInfo: Sendable {
+            let objectID: NSManagedObjectID
+            let symbol: String
+            let name: String
+            let uuid: String
+        }
+
+        let secInfo: SecurityInfo = try performRead { [self] ctx in
+            let sec: NSManagedObject
+            if let id = id {
+                guard let s = try fetchByPK(entityName: "Security", pk: id, in: ctx) else {
+                    throw ToolError.notFound("Security not found with ID: \(id)")
+                }
+                sec = s
+            } else {
+                guard let sym = symbol else {
+                    throw ToolError.missingParameter("Either symbol or id is required")
+                }
+                let req = NSFetchRequest<NSManagedObject>(entityName: "Security")
+                req.predicate = NSPredicate(format: "pSymbol ==[c] %@", sym)
+                req.fetchLimit = 1
+                guard let s = try ctx.fetch(req).first else {
+                    throw ToolError.notFound("Security not found: \(sym)")
+                }
+                sec = s
+            }
+            return SecurityInfo(
+                objectID: sec.objectID,
+                symbol: Self.stringValue(sec, "pSymbol"),
+                name: Self.stringValue(sec, "pName"),
+                uuid: Self.stringValue(sec, "pUniqueID")
+            )
+        }
+
+        struct SyncInfo: Sendable {
+            let txPK: Int
+            let txUUID: String
+            let txTitle: String
+            let cashLineItemUUID: String
+            let offsetLineItemUUID: String
+            let accountUUID: String
+            let accountName: String
+            let offsetAccountUUID: String?
+            let currencyUUID: String
+            let transactionTypeBaseType: String
+            let transactionTypeUUID: String
+        }
+
+        let tradeTypeName = shares < 0 ? "Sell" : "Buy"
+        let transactionTypeBaseType = shares < 0 ? "sell" : "buy"
+        let transactionTypeCode: Int16 = shares < 0 ? 101 : 100
+        let securityObjectID = secInfo.objectID
+
+        let info: SyncInfo = try performWriteReturning { [self] ctx in
+            guard let securityInCtx = try? ctx.existingObject(with: securityObjectID) else {
+                throw ToolError.notFound("Security not found in write context")
+            }
+            guard let account = try fetchByPK(entityName: "Account", pk: accountId, in: ctx) else {
+                throw ToolError.notFound("Account not found: \(accountId)")
+            }
+
+            let offsetAccount: NSManagedObject?
+            if let offsetCategoryId {
+                guard let category = try fetchByPK(entityName: "Account", pk: offsetCategoryId, in: ctx) else {
+                    throw ToolError.notFound("Offset category not found: \(offsetCategoryId)")
+                }
+                let categoryClass = Self.intValue(category, "pAccountClass")
+                guard categoryClass == AccountClass.income || categoryClass == AccountClass.expense else {
+                    throw ToolError.invalidInput("Offset category must be an income or expense category")
+                }
+                offsetAccount = category
+            } else {
+                offsetAccount = nil
+            }
+
+            let typeRequest = NSFetchRequest<NSManagedObject>(entityName: "TransactionType")
+            typeRequest.predicate = NSPredicate(format: "pBaseType == %d", transactionTypeCode)
+            typeRequest.fetchLimit = 1
+            guard let txType = try ctx.fetch(typeRequest).first else {
+                throw ToolError.notFound("Transaction type not found for \(tradeTypeName)")
+            }
+
+            guard let currency = Self.relatedObject(account, "currency") else {
+                throw ToolError.invalidInput("Account has no currency")
+            }
+            let accountUUID = Self.stringValue(account, "pUniqueID")
+            let accountName = Self.stringValue(account, "pName")
+            let currencyUUID = Self.stringValue(currency, "pUniqueID")
+            let txTypeUUID = Self.stringValue(txType, "pUniqueID")
+            let offsetAccountUUID = offsetAccount.map { Self.stringValue($0, "pUniqueID") }
+
+            let tx = Self.createObject(entityName: "Transaction", in: ctx)
+            let txTitle = title ?? "\(tradeTypeName) \(secInfo.symbol)"
+            let txUUID = Self.generateUUID()
+            tx.setValue(txTitle, forKey: "pTitle")
+            tx.setValue(txUUID, forKey: "pUniqueID")
+            tx.setValue(false, forKey: "pCleared")
+            tx.setValue(false, forKey: "pVoid")
+            tx.setValue(false, forKey: "pAdjustment")
+            Self.setDate(tx, "pDate", isoString: date)
+            Self.setNow(tx, "pCreationTime")
+            Self.setNow(tx, "pModificationDate")
+            tx.setValue(currency, forKey: "pCurrency")
+            tx.setValue(txType, forKey: "pTransactionType")
+
+            let cashLI = Self.createObject(entityName: "LineItem", in: ctx)
+            let cashLIUUID = Self.generateUUID()
+            cashLI.setValue(cashLineItemAmount as NSNumber, forKey: "pTransactionAmount")
+            cashLI.setValue(cashLIUUID, forKey: "pUniqueID")
+            cashLI.setValue(1.0 as NSNumber, forKey: "pExchangeRate")
+            cashLI.setValue(0.0 as NSNumber, forKey: "pRunningBalance")
+            cashLI.setValue(false, forKey: "pCleared")
+            if let memo { cashLI.setValue(memo, forKey: "pMemo") }
+            Self.setNow(cashLI, "pCreationTime")
+            cashLI.setValue(account, forKey: "pAccount")
+            cashLI.setValue(tx, forKey: "pTransaction")
+
+            let offsetLI = Self.createObject(entityName: "LineItem", in: ctx)
+            let offsetLIUUID = Self.generateUUID()
+            offsetLI.setValue((-cashLineItemAmount) as NSNumber, forKey: "pTransactionAmount")
+            offsetLI.setValue(offsetLIUUID, forKey: "pUniqueID")
+            offsetLI.setValue(1.0 as NSNumber, forKey: "pExchangeRate")
+            offsetLI.setValue(0.0 as NSNumber, forKey: "pRunningBalance")
+            offsetLI.setValue(false, forKey: "pCleared")
+            Self.setNow(offsetLI, "pCreationTime")
+            if let offsetAccount { offsetLI.setValue(offsetAccount, forKey: "pAccount") }
+            offsetLI.setValue(tx, forKey: "pTransaction")
+
+            let sli = Self.createObject(entityName: "SecurityLineItem", in: ctx)
+            sli.setValue(shares as NSNumber, forKey: "pShares")
+            sli.setValue(amount as NSNumber, forKey: "pAmount")
+            sli.setValue(pricePerShare as NSNumber, forKey: "pPricePerShare")
+            sli.setValue(commission as NSNumber, forKey: "pCommission")
+            sli.setValue(0.0 as NSNumber, forKey: "pIncome")
+            sli.setValue(1.0 as NSNumber, forKey: "pPriceMultiplier")
+            sli.setValue(securityInCtx, forKey: "pSecurity")
+            sli.setValue(cashLI, forKey: "pLineItem")
+
+            try ctx.obtainPermanentIDs(for: [tx, cashLI, offsetLI, sli])
+            return SyncInfo(
+                txPK: Self.extractPK(from: tx.objectID),
+                txUUID: txUUID,
+                txTitle: txTitle,
+                cashLineItemUUID: cashLIUUID,
+                offsetLineItemUUID: offsetLIUUID,
+                accountUUID: accountUUID,
+                accountName: accountName,
+                offsetAccountUUID: offsetAccountUUID,
+                currencyUUID: currencyUUID,
+                transactionTypeBaseType: transactionTypeBaseType,
+                transactionTypeUUID: txTypeUUID
+            )
+        }
+
+        let lineItems = LineItemRepository(container: container)
+        try lineItems.recalculateRunningBalances(accountId: accountId)
+        if let offsetCategoryId {
+            try lineItems.recalculateRunningBalances(accountId: offsetCategoryId)
+        }
+
+        if let updater = syncBlobUpdater {
+            let syncSLI = SyncBlobUpdater.SyncSecurityLineItem(
+                amount: amount,
+                commission: commission,
+                pricePerShare: pricePerShare,
+                priceMultiplier: 1,
+                securityUUID: secInfo.uuid,
+                shares: shares,
+                hasDistributionType: false
+            )
+            let cashSyncLI = SyncBlobUpdater.SyncLineItem(
+                accountUUID: info.accountUUID,
+                accountAmount: cashLineItemAmount,
+                cleared: false,
+                identifier: info.cashLineItemUUID,
+                memo: memo,
+                securityLineItem: syncSLI,
+                transactionAmount: cashLineItemAmount
+            )
+            let offsetSyncLI = SyncBlobUpdater.SyncLineItem(
+                accountUUID: info.offsetAccountUUID,
+                accountAmount: -cashLineItemAmount,
+                cleared: false,
+                identifier: info.offsetLineItemUUID,
+                memo: nil,
+                securityLineItem: nil,
+                transactionAmount: -cashLineItemAmount
+            )
+            updater.createTransactionSyncRecord(
+                transactionUUID: info.txUUID,
+                currencyUUID: info.currencyUUID,
+                date: date,
+                title: info.txTitle,
+                note: nil,
+                adjustment: false,
+                lineItems: [cashSyncLI, offsetSyncLI],
+                transactionTypeBaseType: info.transactionTypeBaseType,
+                transactionTypeUUID: info.transactionTypeUUID
+            )
+        }
+
+        return SecurityTradeDTO(
+            id: info.txPK,
+            date: date,
+            type: tradeTypeName,
+            symbol: secInfo.symbol,
+            securityName: secInfo.name,
+            shares: shares,
+            pricePerShare: pricePerShare,
+            amount: amount,
+            commission: commission,
+            accountName: info.accountName,
+            accountId: accountId
+        )
+    }
+
+    public func createSecurityIncome(
+        accountId: Int,
+        symbol: String? = nil,
+        id: Int? = nil,
+        amount: Double,
+        date: String,
+        title: String? = nil,
+        memo: String? = nil,
+        offsetCategoryId: Int? = nil,
+        incomeType: String = "dividend",
+        withheldAmount: Double? = nil,
+        withholdingCategoryId: Int? = nil
+    ) throws -> SecurityIncomeDTO {
+        guard amount > 0 else {
+            throw ToolError.invalidInput("amount must be positive")
+        }
+        // A dividend with tax withheld at source is ONE transaction with three
+        // line items: the account receives the net, the income category is
+        // credited the gross, and the withholding sits on its own line.
+        // `amount` stays the GROSS throughout, because that is what the security
+        // income view and the 1099 report. Taking the net here is precisely the
+        // defect that dropped the foreign tax credit on imported dividends.
+        if let withheldAmount {
+            guard withheldAmount > 0 else {
+                throw ToolError.invalidInput("withheld amount must be positive")
+            }
+            guard withheldAmount < amount else {
+                throw ToolError.invalidInput("withheld amount must be less than the gross amount")
+            }
+            guard withholdingCategoryId != nil else {
+                throw ToolError.missingParameter(
+                    "withholding category is required when a withheld amount is given")
+            }
+        } else if withholdingCategoryId != nil {
+            throw ToolError.missingParameter(
+                "withheld amount is required when a withholding category is given")
+        }
+        guard DateConversion.fromISO(date) != nil else {
+            throw ToolError.invalidInput("date must be YYYY-MM-DD")
+        }
+        guard incomeType.lowercased() == "dividend" else {
+            throw ToolError.invalidInput("Only dividend income is supported")
+        }
+
+        struct SecurityInfo: Sendable {
+            let objectID: NSManagedObjectID
+            let symbol: String
+            let name: String
+            let uuid: String
+        }
+
+        let secInfo: SecurityInfo = try performRead { [self] ctx in
+            let sec: NSManagedObject
+            if let id = id {
+                guard let s = try fetchByPK(entityName: "Security", pk: id, in: ctx) else {
+                    throw ToolError.notFound("Security not found with ID: \(id)")
+                }
+                sec = s
+            } else {
+                guard let sym = symbol else {
+                    throw ToolError.missingParameter("Either symbol or id is required")
+                }
+                let req = NSFetchRequest<NSManagedObject>(entityName: "Security")
+                req.predicate = NSPredicate(format: "pSymbol ==[c] %@", sym)
+                req.fetchLimit = 1
+                guard let s = try ctx.fetch(req).first else {
+                    throw ToolError.notFound("Security not found: \(sym)")
+                }
+                sec = s
+            }
+            return SecurityInfo(
+                objectID: sec.objectID,
+                symbol: Self.stringValue(sec, "pSymbol"),
+                name: Self.stringValue(sec, "pName"),
+                uuid: Self.stringValue(sec, "pUniqueID")
+            )
+        }
+
+        struct SyncInfo: Sendable {
+            let txPK: Int
+            let txUUID: String
+            let txTitle: String
+            let cashLineItemUUID: String
+            let offsetLineItemUUID: String
+            let withholdingLineItemUUID: String?
+            let withholdingAccountUUID: String?
+            let accountUUID: String
+            let accountName: String
+            let offsetAccountUUID: String?
+            let currencyUUID: String
+            let transactionTypeUUID: String
+        }
+
+        let securityObjectID = secInfo.objectID
+        let info: SyncInfo = try performWriteReturning { [self] ctx in
+            guard let securityInCtx = try? ctx.existingObject(with: securityObjectID) else {
+                throw ToolError.notFound("Security not found in write context")
+            }
+            guard let account = try fetchByPK(entityName: "Account", pk: accountId, in: ctx) else {
+                throw ToolError.notFound("Account not found: \(accountId)")
+            }
+
+            let offsetAccount: NSManagedObject?
+            if let offsetCategoryId {
+                guard let category = try fetchByPK(entityName: "Account", pk: offsetCategoryId, in: ctx) else {
+                    throw ToolError.notFound("Offset category not found: \(offsetCategoryId)")
+                }
+                let categoryClass = Self.intValue(category, "pAccountClass")
+                guard categoryClass == AccountClass.income || categoryClass == AccountClass.expense else {
+                    throw ToolError.invalidInput("Offset category must be an income or expense category")
+                }
+                offsetAccount = category
+            } else {
+                offsetAccount = nil
+            }
+
+            var withholdingAccount: NSManagedObject?
+            if let withholdingCategoryId {
+                guard let category = try fetchByPK(entityName: "Account", pk: withholdingCategoryId, in: ctx) else {
+                    throw ToolError.notFound("Withholding category not found: \(withholdingCategoryId)")
+                }
+                let categoryClass = Self.intValue(category, "pAccountClass")
+                guard categoryClass == AccountClass.income || categoryClass == AccountClass.expense else {
+                    throw ToolError.invalidInput("Withholding category must be an income or expense category")
+                }
+                withholdingAccount = category
+            }
+
+            let typeRequest = NSFetchRequest<NSManagedObject>(entityName: "TransactionType")
+            typeRequest.predicate = NSPredicate(format: "pBaseType == %d", 301)
+            typeRequest.fetchLimit = 1
+            guard let txType = try ctx.fetch(typeRequest).first else {
+                throw ToolError.notFound("Transaction type not found for Dividend")
+            }
+
+            guard let currency = Self.relatedObject(account, "currency") else {
+                throw ToolError.invalidInput("Account has no currency")
+            }
+            let accountUUID = Self.stringValue(account, "pUniqueID")
+            let accountName = Self.stringValue(account, "pName")
+            let currencyUUID = Self.stringValue(currency, "pUniqueID")
+            let txTypeUUID = Self.stringValue(txType, "pUniqueID")
+            let offsetAccountUUID = offsetAccount.map { Self.stringValue($0, "pUniqueID") }
+
+            let tx = Self.createObject(entityName: "Transaction", in: ctx)
+            let txTitle = title ?? "Dividend \(secInfo.symbol)"
+            let txUUID = Self.generateUUID()
+            tx.setValue(txTitle, forKey: "pTitle")
+            tx.setValue(txUUID, forKey: "pUniqueID")
+            tx.setValue(false, forKey: "pCleared")
+            tx.setValue(false, forKey: "pVoid")
+            tx.setValue(false, forKey: "pAdjustment")
+            Self.setDate(tx, "pDate", isoString: date)
+            Self.setNow(tx, "pCreationTime")
+            Self.setNow(tx, "pModificationDate")
+            tx.setValue(currency, forKey: "pCurrency")
+            tx.setValue(txType, forKey: "pTransactionType")
+
+            let cashLI = Self.createObject(entityName: "LineItem", in: ctx)
+            let cashLIUUID = Self.generateUUID()
+            cashLI.setValue((amount - (withheldAmount ?? 0)) as NSNumber, forKey: "pTransactionAmount")
+            cashLI.setValue(cashLIUUID, forKey: "pUniqueID")
+            cashLI.setValue(1.0 as NSNumber, forKey: "pExchangeRate")
+            cashLI.setValue(0.0 as NSNumber, forKey: "pRunningBalance")
+            cashLI.setValue(false, forKey: "pCleared")
+            if let memo { cashLI.setValue(memo, forKey: "pMemo") }
+            Self.setNow(cashLI, "pCreationTime")
+            cashLI.setValue(account, forKey: "pAccount")
+            cashLI.setValue(tx, forKey: "pTransaction")
+
+            let offsetLI = Self.createObject(entityName: "LineItem", in: ctx)
+            let offsetLIUUID = Self.generateUUID()
+            offsetLI.setValue((-amount) as NSNumber, forKey: "pTransactionAmount")
+            offsetLI.setValue(offsetLIUUID, forKey: "pUniqueID")
+            offsetLI.setValue(1.0 as NSNumber, forKey: "pExchangeRate")
+            offsetLI.setValue(0.0 as NSNumber, forKey: "pRunningBalance")
+            offsetLI.setValue(false, forKey: "pCleared")
+            Self.setNow(offsetLI, "pCreationTime")
+            if let offsetAccount { offsetLI.setValue(offsetAccount, forKey: "pAccount") }
+            offsetLI.setValue(tx, forKey: "pTransaction")
+
+            var withholdingLIUUID: String?
+            if let withheldAmount, let withholdingAccount {
+                let taxLI = Self.createObject(entityName: "LineItem", in: ctx)
+                let taxLIUUID = Self.generateUUID()
+                taxLI.setValue(withheldAmount as NSNumber, forKey: "pTransactionAmount")
+                taxLI.setValue(taxLIUUID, forKey: "pUniqueID")
+                taxLI.setValue(1.0 as NSNumber, forKey: "pExchangeRate")
+                taxLI.setValue(0.0 as NSNumber, forKey: "pRunningBalance")
+                taxLI.setValue(false, forKey: "pCleared")
+                Self.setNow(taxLI, "pCreationTime")
+                taxLI.setValue(withholdingAccount, forKey: "pAccount")
+                taxLI.setValue(tx, forKey: "pTransaction")
+                withholdingLIUUID = taxLIUUID
+            }
+
+            let sli = Self.createObject(entityName: "SecurityLineItem", in: ctx)
+            sli.setValue(0.0 as NSNumber, forKey: "pShares")
+            sli.setValue(0.0 as NSNumber, forKey: "pAmount")
+            sli.setValue(0.0 as NSNumber, forKey: "pPricePerShare")
+            sli.setValue(0.0 as NSNumber, forKey: "pCommission")
+            sli.setValue(amount as NSNumber, forKey: "pIncome")
+            sli.setValue(1.0 as NSNumber, forKey: "pPriceMultiplier")
+            sli.setValue(securityInCtx, forKey: "pSecurity")
+            sli.setValue(cashLI, forKey: "pLineItem")
+
+            try ctx.obtainPermanentIDs(for: [tx, cashLI, offsetLI, sli])
+            return SyncInfo(
+                txPK: Self.extractPK(from: tx.objectID),
+                txUUID: txUUID,
+                txTitle: txTitle,
+                cashLineItemUUID: cashLIUUID,
+                offsetLineItemUUID: offsetLIUUID,
+                withholdingLineItemUUID: withholdingLIUUID,
+                withholdingAccountUUID: withholdingAccount.map { Self.stringValue($0, "pUniqueID") },
+                accountUUID: accountUUID,
+                accountName: accountName,
+                offsetAccountUUID: offsetAccountUUID,
+                currencyUUID: currencyUUID,
+                transactionTypeUUID: txTypeUUID
+            )
+        }
+
+        try LineItemRepository(container: container).recalculateRunningBalances(accountId: accountId)
+
+        if let updater = syncBlobUpdater {
+            let syncSLI = SyncBlobUpdater.SyncSecurityLineItem(
+                amount: 0,
+                commission: 0,
+                pricePerShare: 0,
+                priceMultiplier: 1,
+                securityUUID: secInfo.uuid,
+                shares: 0,
+                hasDistributionType: true,
+                income: amount
+            )
+            let cashSyncLI = SyncBlobUpdater.SyncLineItem(
+                accountUUID: info.accountUUID,
+                accountAmount: amount - (withheldAmount ?? 0),
+                cleared: false,
+                identifier: info.cashLineItemUUID,
+                memo: memo,
+                securityLineItem: syncSLI,
+                transactionAmount: amount - (withheldAmount ?? 0)
+            )
+            let offsetSyncLI = SyncBlobUpdater.SyncLineItem(
+                accountUUID: info.offsetAccountUUID,
+                accountAmount: -amount,
+                cleared: false,
+                identifier: info.offsetLineItemUUID,
+                memo: nil,
+                securityLineItem: nil,
+                transactionAmount: -amount
+            )
+            var syncLineItems = [cashSyncLI, offsetSyncLI]
+            if let withheldAmount, let taxUUID = info.withholdingLineItemUUID {
+                syncLineItems.append(SyncBlobUpdater.SyncLineItem(
+                    accountUUID: info.withholdingAccountUUID,
+                    accountAmount: withheldAmount,
+                    cleared: false,
+                    identifier: taxUUID,
+                    memo: nil,
+                    securityLineItem: nil,
+                    transactionAmount: withheldAmount
+                ))
+            }
+            updater.createTransactionSyncRecord(
+                transactionUUID: info.txUUID,
+                currencyUUID: info.currencyUUID,
+                date: date,
+                title: info.txTitle,
+                note: nil,
+                adjustment: false,
+                lineItems: syncLineItems,
+                transactionTypeBaseType: "dividend",
+                transactionTypeUUID: info.transactionTypeUUID
+            )
+        }
+
+        return SecurityIncomeDTO(
+            id: info.txPK,
+            date: date,
+            type: "Dividend",
+            symbol: secInfo.symbol,
+            securityName: secInfo.name,
+            amount: amount,
+            accountName: info.accountName,
+            accountId: accountId
+        )
+    }
+
     public func createShareAdjustment(
         accountId: Int,
         symbol: String? = nil,
@@ -463,11 +991,13 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
                 txDate = ""
             }
 
-            let baseType: Int = {
+            // ZTRANSACTIONTYPE maps the base type to its name and is Banktivity's
+            // own authority for it; read the label rather than re-deriving it.
+            let typeName: String = {
                 if let txType = Self.relatedObject(tx, "pTransactionType") {
-                    return Self.intValue(txType, "pBaseType")
+                    return Self.stringValue(txType, "pName")
                 }
-                return 0
+                return ""
             }()
 
             let security = Self.relatedObject(sli, "pSecurity")
@@ -476,7 +1006,7 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
             let trade = SecurityTradeDTO(
                 id: transactionId,
                 date: txDate,
-                type: Self.transactionTypeName(baseType),
+                type: typeName,
                 symbol: security.map { Self.stringValue($0, "pSymbol") } ?? "",
                 securityName: security.map { Self.stringValue($0, "pName") } ?? "",
                 shares: Self.doubleValue(sli, "pShares"),
@@ -759,6 +1289,141 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
         }
 
         return count
+    }
+
+    /// Inspect a security before deleting it: resolve it and count everything that
+    /// depends on it. Returns nil when the security does not exist.
+    ///
+    /// `tradeCount` counts the `SecurityLineItem` rows referencing the security.
+    /// Deletion is refused while that count is non-zero, because removing the
+    /// security would orphan the trades carrying its cost basis and realized gain.
+    public func inspectForDeletion(symbol: String? = nil, id: Int? = nil) throws
+        -> (securityId: Int, uniqueID: String, symbol: String, name: String, tradeCount: Int, priceCount: Int)?
+    {
+        try performRead { [self] ctx in
+            guard let security = try resolveSecurity(symbol: symbol, id: id, in: ctx) else { return nil }
+
+            let sliRequest = NSFetchRequest<NSManagedObject>(entityName: "SecurityLineItem")
+            sliRequest.predicate = NSPredicate(format: "pSecurity == %@", security)
+            let tradeCount = try ctx.count(for: sliRequest)
+
+            let uniqueId = Self.stringValue(security, "pUniqueID")
+            var priceCount = 0
+            if let priceItem = try Self.priceItem(forSecurityUniqueID: uniqueId, in: ctx) {
+                let priceRequest = NSFetchRequest<NSManagedObject>(entityName: "SecurityPrice")
+                priceRequest.predicate = NSPredicate(format: "pSecurityPriceItem == %@", priceItem)
+                priceCount = try ctx.count(for: priceRequest)
+            }
+
+            return (
+                securityId: Self.extractPK(from: security.objectID),
+                uniqueID: uniqueId,
+                symbol: Self.stringValue(security, "pSymbol"),
+                name: Self.stringValue(security, "pName"),
+                tradeCount: tradeCount,
+                priceCount: priceCount
+            )
+        }
+    }
+
+    /// Delete a security record that nothing references. Returns 1 when the security
+    /// was deleted and 0 when it was not.
+    ///
+    /// Fails closed: throws if the security still has any `SecurityLineItem`. That
+    /// invariant is not overridable — a security still carrying trades has to be
+    /// merged onto its surviving identity with `update-trade --security-id` first,
+    /// never deleted. Price history is removed only when `withPrices` is true;
+    /// otherwise a security carrying prices is refused so the caller chooses
+    /// explicitly.
+    ///
+    /// The prices, their parent `SecurityPriceItem`, and the security itself are
+    /// deleted in one write, so a security that turns out to be referenced after all
+    /// cannot leave its price history destroyed behind it.
+    public func deleteSecurity(symbol: String? = nil, id: Int? = nil, withPrices: Bool = false) throws -> Int {
+        guard let info = try inspectForDeletion(symbol: symbol, id: id) else {
+            throw NSError(domain: "BanktivitySecurity", code: 404, userInfo: [
+                NSLocalizedDescriptionKey: "Security not found",
+            ])
+        }
+        if info.tradeCount > 0 {
+            throw NSError(domain: "BanktivitySecurity", code: 409, userInfo: [
+                NSLocalizedDescriptionKey:
+                    "Refusing to delete security \(info.securityId) (\(info.symbol)): it still has \(info.tradeCount) trade line item(s). Re-point them with 'securities update-trade --security-id' first.",
+            ])
+        }
+        if info.priceCount > 0 && !withPrices {
+            throw NSError(domain: "BanktivitySecurity", code: 409, userInfo: [
+                NSLocalizedDescriptionKey:
+                    "Refusing to delete security \(info.securityId) (\(info.symbol)): it has \(info.priceCount) price record(s). Pass --with-prices to remove them along with the security.",
+            ])
+        }
+
+        struct DeletionTargets: Sendable {
+            let security: NSManagedObjectID
+            let priceItem: NSManagedObjectID?
+        }
+
+        let targets: DeletionTargets? = try performRead { [self] ctx in
+            guard let security = try resolveSecurity(symbol: symbol, id: id, in: ctx) else { return nil }
+            let uniqueId = Self.stringValue(security, "pUniqueID")
+            let priceItem = try Self.priceItem(forSecurityUniqueID: uniqueId, in: ctx)
+            return DeletionTargets(security: security.objectID, priceItem: priceItem?.objectID)
+        }
+        guard let targets = targets else { return 0 }
+
+        let deleted: Int = try performWriteReturning { ctx in
+            guard let secInCtx = try? ctx.existingObject(with: targets.security) else { return 0 }
+
+            // Re-check inside the write context: nothing may have attached in between.
+            let sliRequest = NSFetchRequest<NSManagedObject>(entityName: "SecurityLineItem")
+            sliRequest.predicate = NSPredicate(format: "pSecurity == %@", secInCtx)
+            if try ctx.count(for: sliRequest) > 0 { return 0 }
+
+            if let priceItemID = targets.priceItem,
+               let piInCtx = try? ctx.existingObject(with: priceItemID)
+            {
+                let priceRequest = NSFetchRequest<NSManagedObject>(entityName: "SecurityPrice")
+                priceRequest.predicate = NSPredicate(format: "pSecurityPriceItem == %@", piInCtx)
+                for price in try ctx.fetch(priceRequest) {
+                    ctx.delete(price)
+                }
+                // The price item is keyed by pSecurityID, so it is unreachable once the
+                // security is gone. It goes too, rather than being left orphaned.
+                ctx.delete(piInCtx)
+            }
+
+            ctx.delete(secInCtx)
+            return 1
+        }
+
+        // Mark the sync record deleted (non-fatal), as transaction deletion does.
+        // Without this the removed security's sync blob survives and can resurrect it
+        // on a vault using Cloud Sync.
+        if deleted > 0, let updater = syncBlobUpdater, !info.uniqueID.isEmpty {
+            updater.deleteSyncRecord(entityUUID: info.uniqueID)
+        }
+
+        return deleted
+    }
+
+    /// Resolve a security by primary key or symbol within an existing context.
+    private func resolveSecurity(symbol: String?, id: Int?, in ctx: NSManagedObjectContext) throws -> NSManagedObject? {
+        if let id = id {
+            return try fetchByPK(entityName: "Security", pk: id, in: ctx)
+        }
+        guard let sym = symbol else { return nil }
+        let req = NSFetchRequest<NSManagedObject>(entityName: "Security")
+        req.predicate = NSPredicate(format: "pSymbol ==[c] %@", sym)
+        req.fetchLimit = 1
+        return try ctx.fetch(req).first
+    }
+
+    /// The `SecurityPriceItem` holding a security's price history, if it has one.
+    private static func priceItem(forSecurityUniqueID uniqueID: String, in ctx: NSManagedObjectContext) throws -> NSManagedObject? {
+        let request = NSFetchRequest<NSManagedObject>(entityName: "SecurityPriceItem")
+        request.predicate = NSPredicate(format: "pSecurityID == %@", uniqueID)
+        request.fetchLimit = 1
+        return try ctx.fetch(request).first
     }
 
     /// Fix price records where closePrice=0 but adjustedClosePrice has the actual value.
@@ -1050,17 +1715,19 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
                 if let start = startDate, dateStr < start { continue }
                 if let end = endDate, dateStr > end { continue }
 
-                let baseType: Int = {
+                // ZTRANSACTIONTYPE maps the base type to its name and is Banktivity's
+                // own authority for it; read the label rather than re-deriving it.
+                let typeName: String = {
                     if let txType = Self.relatedObject(transaction, "pTransactionType") {
-                        return Self.intValue(txType, "pBaseType")
+                        return Self.stringValue(txType, "pName")
                     }
-                    return 0
+                    return ""
                 }()
 
                 trades.append(SecurityTradeDTO(
                     id: Self.extractPK(from: transaction.objectID),
                     date: dateStr,
-                    type: Self.transactionTypeName(baseType),
+                    type: typeName,
                     symbol: Self.stringValue(security, "pSymbol"),
                     securityName: Self.stringValue(security, "pName"),
                     shares: Self.doubleValue(sli, "pShares"),
@@ -1122,17 +1789,19 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
                 if let start = startDate, dateStr < start { continue }
                 if let end = endDate, dateStr > end { continue }
 
-                let baseType: Int = {
+                // ZTRANSACTIONTYPE maps the base type to its name and is Banktivity's
+                // own authority for it; read the label rather than re-deriving it.
+                let typeName: String = {
                     if let txType = Self.relatedObject(transaction, "pTransactionType") {
-                        return Self.intValue(txType, "pBaseType")
+                        return Self.stringValue(txType, "pName")
                     }
-                    return 0
+                    return ""
                 }()
 
                 incomes.append(SecurityIncomeDTO(
                     id: Self.extractPK(from: transaction.objectID),
                     date: dateStr,
-                    type: Self.transactionTypeName(baseType),
+                    type: typeName,
                     symbol: Self.stringValue(security, "pSymbol"),
                     securityName: Self.stringValue(security, "pName"),
                     amount: Self.doubleValue(sli, "pIncome"),
@@ -1145,28 +1814,6 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
         }
     }
 
-    // MARK: - Transaction Type Mapping
-
-    static func transactionTypeName(_ baseType: Int) -> String {
-        switch baseType {
-        case 100: return "Buy"
-        case 101: return "Sell"
-        case 102: return "Short Sell"
-        case 103: return "Cover Short"
-        case 200: return "Buy to Open"
-        case 201: return "Sell to Close"
-        case 210: return "Move Shares In"
-        case 211: return "Move Shares Out"
-        case 300: return "Income"
-        case 301: return "Dividend"
-        case 302: return "Interest"
-        case 303: return "Capital Gains"
-        case 304: return "Interest Charge"
-        case 400: return "Return of Capital"
-        case 500: return "Stock Split"
-        default: return "Unknown (\(baseType))"
-        }
-    }
 
     // MARK: - CSV Parsing
 

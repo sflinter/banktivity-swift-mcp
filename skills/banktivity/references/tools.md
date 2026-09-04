@@ -846,6 +846,53 @@ Get investment income history (dividends, interest, capital gains distributions)
 }
 ```
 
+### create_security_trade
+Create a security buy or sell with its investment-account cash line and a
+balancing unknown/category line. Positive shares create a buy; negative shares
+create a sell.
+
+```json
+{
+  "properties": {
+    "account_id": { "type": "number", "description": "Investment account ID" },
+    "symbol": { "type": "string", "description": "Security ticker symbol" },
+    "id": { "type": "number", "description": "Security ID (alternative to symbol)" },
+    "shares": { "type": "number", "description": "Number of shares. Negative creates a sell; positive creates a buy" },
+    "price_per_share": { "type": "number", "description": "Price per share" },
+    "amount": { "type": "number", "description": "Security trade amount/cost" },
+    "commission": { "type": "number", "description": "Commission or fee amount" },
+    "cash_line_amount": { "type": "number", "description": "Investment account cash line amount. Positive for sell inflow, negative for buy outflow" },
+    "date": { "type": "string", "description": "Trade date in YYYY-MM-DD format" },
+    "title": { "type": "string", "description": "Transaction title" },
+    "memo": { "type": "string", "description": "Cash line memo" },
+    "offset_category_id": { "type": "number", "description": "Income/expense category ID for the balancing line. Omit to create an unknown balancing line" }
+  },
+  "required": ["account_id", "shares", "price_per_share", "amount", "cash_line_amount", "date"]
+}
+```
+
+### create_security_income
+Create native investment income for a security. Currently supports dividend
+income and writes the security-income line item that `get_security_income`
+reads.
+
+```json
+{
+  "properties": {
+    "account_id": { "type": "number", "description": "Investment account ID" },
+    "symbol": { "type": "string", "description": "Security ticker symbol" },
+    "id": { "type": "number", "description": "Security ID (alternative to symbol)" },
+    "amount": { "type": "number", "description": "Positive income amount" },
+    "date": { "type": "string", "description": "Income date in YYYY-MM-DD format" },
+    "title": { "type": "string", "description": "Transaction title" },
+    "memo": { "type": "string", "description": "Cash line memo" },
+    "offset_category_id": { "type": "number", "description": "Income/expense category ID for the balancing line" },
+    "income_type": { "type": "string", "description": "Income type. Currently only dividend is supported" }
+  },
+  "required": ["account_id", "amount", "date"]
+}
+```
+
 ### create_share_adjustment
 Create a share adjustment transaction (e.g. for charges that cancel units, stock splits, or manual position corrections). Use negative shares to reduce a position.
 
@@ -907,6 +954,25 @@ Delete price history for a security, optionally filtered by date range.
     "id": { "type": "number", "description": "Security ID (alternative to symbol)" },
     "start_date": { "type": "string", "description": "Start date in YYYY-MM-DD format (optional)" },
     "end_date": { "type": "string", "description": "End date in YYYY-MM-DD format (optional)" }
+  }
+}
+```
+
+### delete_security
+Delete a security record that no trade references. Refuses while any
+`SecurityLineItem` still points at the security, because deleting it would
+orphan the line items carrying its cost basis and realized gain — re-point
+those with `update_security_trade` first. Price history is kept unless
+`with_prices` is set, and the security's sync record is marked deleted so the
+removal propagates.
+
+```json
+{
+  "properties": {
+    "symbol": { "type": "string", "description": "Security ticker symbol (e.g. AAPL)" },
+    "id": { "type": "number", "description": "Security ID (alternative to symbol)" },
+    "with_prices": { "type": "boolean", "description": "Also delete the security's price history (default false)" },
+    "dry_run": { "type": "boolean", "description": "Report the trade and price counts without writing" }
   }
 }
 ```

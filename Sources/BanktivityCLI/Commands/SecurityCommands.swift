@@ -7,7 +7,7 @@ import Foundation
 struct Securities: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Security and price history operations",
-        subcommands: [List.self, Create.self, Prices.self, ImportPrices.self, DeletePrices.self, FixPrices.self, Holdings.self, Trades.self, Income.self, Adjust.self, UpdateTrade.self]
+        subcommands: [List.self, Create.self, Delete.self, Prices.self, ImportPrices.self, DeletePrices.self, FixPrices.self, Holdings.self, Trades.self, Income.self, CreateTrade.self, CreateIncome.self, Adjust.self, UpdateTrade.self]
     )
 
     struct List: AsyncParsableCommand {
@@ -161,6 +161,90 @@ struct Securities: AsyncParsableCommand {
         }
     }
 
+    struct Delete: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Delete a security record that no trade references",
+            discussion: """
+            Removes a security identity from the vault. A security that any trade
+            still points at is refused: deleting it would orphan the line items
+            carrying its cost basis and realized gain. Merge those trades onto the
+            surviving security with 'securities update-trade --security-id' first.
+
+            Price history is kept unless --with-prices is given, so a security that
+            still has prices is refused rather than silently losing them.
+
+            Use --dry-run to see what would be removed before writing.
+            """
+        )
+
+        @OptionGroup var parent: GlobalOptions
+
+        @Option(name: .long, help: "Security ticker symbol")
+        var symbol: String?
+
+        @Option(name: .long, help: "Security ID (alternative to --symbol)")
+        var id: Int?
+
+        @Flag(name: .long, help: "Also delete the security's price history")
+        var withPrices: Bool = false
+
+        @Flag(name: .long, help: "Report what would be deleted without writing")
+        var dryRun: Bool = false
+
+        func run() async throws {
+            guard symbol != nil || id != nil else {
+                throw ValidationError("Provide --symbol or --id")
+            }
+            let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
+            let container = try BanktivityCLI.createContainer(vaultPath: path)
+            let syncBlobUpdater = SyncBlobUpdater(container: container)
+            let securities = SecurityRepository(container: container, syncBlobUpdater: syncBlobUpdater)
+
+            guard let info = try securities.inspectForDeletion(symbol: symbol, id: id) else {
+                throw ToolError.notFound("Security not found: \(symbol ?? String(id ?? 0))")
+            }
+
+            if dryRun {
+                let refusal: String?
+                if info.tradeCount > 0 {
+                    refusal = "\(info.tradeCount) trade line item(s) reference this security. Re-point them with 'securities update-trade --security-id' first."
+                } else if info.priceCount > 0 && !withPrices {
+                    refusal = "\(info.priceCount) price record(s) would be left behind. Pass --with-prices to remove them along with the security."
+                } else {
+                    refusal = nil
+                }
+                try outputJSON([
+                    "operation": "securities.delete",
+                    "securityId": info.securityId,
+                    "symbol": info.symbol,
+                    "name": info.name,
+                    "tradeCount": info.tradeCount,
+                    "priceCount": info.priceCount,
+                    "withPrices": withPrices,
+                    "wouldWrite": refusal == nil,
+                    "warnings": refusal.map { ["Deletion refused: \($0)"] }
+                        ?? ["Dry-run only; no Core Data write was performed."],
+                ] as [String: Any], format: parent.format)
+                return
+            }
+
+            let writeGuard = BanktivityCLI.createWriteGuard(vaultPath: path)
+            try await guardWrite(writeGuard)
+
+            let deleted = try securities.deleteSecurity(symbol: symbol, id: id, withPrices: withPrices)
+            guard deleted > 0 else {
+                throw ToolError.notFound("Security \(info.securityId) was not deleted")
+            }
+            try outputJSON([
+                "securityId": info.securityId,
+                "symbol": info.symbol,
+                "deleted": true,
+                "pricesDeleted": withPrices ? info.priceCount : 0,
+                "message": "Security \(info.securityId) (\(info.symbol)) deleted",
+            ] as [String: Any], format: parent.format)
+        }
+    }
+
     struct FixPrices: AsyncParsableCommand {
         static let configuration = CommandConfiguration(
             commandName: "fix-prices",
@@ -283,6 +367,142 @@ struct Securities: AsyncParsableCommand {
                 startDate: startDate, endDate: endDate
             )
             try outputJSON(results, format: parent.format)
+        }
+    }
+
+    struct CreateTrade: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "create-trade",
+            abstract: "Create a security buy/sell transaction with cash and balancing line items"
+        )
+
+        @OptionGroup var parent: GlobalOptions
+
+        @Option(name: .long, help: "Investment account ID")
+        var accountId: Int
+
+        @Option(name: .long, help: "Security ticker symbol")
+        var symbol: String?
+
+        @Option(name: .long, help: "Security ID (alternative to --symbol)")
+        var id: Int?
+
+        @Option(name: .long, parsing: .unconditional, help: "Number of shares. Negative creates a sell; positive creates a buy")
+        var shares: Double
+
+        @Option(name: .long, help: "Price per share")
+        var pricePerShare: Double
+
+        @Option(name: .long, parsing: .unconditional, help: "Security trade amount/cost")
+        var amount: Double
+
+        @Option(name: .long, help: "Commission or fee amount")
+        var commission: Double = 0
+
+        @Option(name: .long, parsing: .unconditional, help: "Investment account cash line amount. Positive for sell inflow, negative for buy outflow")
+        var cashLineAmount: Double
+
+        @Option(name: .long, help: "Date of trade (YYYY-MM-DD)")
+        var date: String
+
+        @Option(name: .long, help: "Transaction title")
+        var title: String?
+
+        @Option(name: .long, help: "Cash line memo")
+        var memo: String?
+
+        @Option(name: .long, help: "Income/expense category ID for the balancing line. Defaults to an unknown balancing line")
+        var offsetCategoryId: Int?
+
+        func run() async throws {
+            let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
+            let container = try BanktivityCLI.createContainer(vaultPath: path)
+            let writeGuard = BanktivityCLI.createWriteGuard(vaultPath: path)
+            try await guardWrite(writeGuard)
+
+            let syncBlobUpdater = SyncBlobUpdater(container: container)
+            let securities = SecurityRepository(container: container, syncBlobUpdater: syncBlobUpdater)
+            let result = try securities.createSecurityTrade(
+                accountId: accountId,
+                symbol: symbol,
+                id: id,
+                shares: shares,
+                pricePerShare: pricePerShare,
+                amount: amount,
+                commission: commission,
+                cashLineItemAmount: cashLineAmount,
+                date: date,
+                title: title,
+                memo: memo,
+                offsetCategoryId: offsetCategoryId
+            )
+            try outputJSON(result, format: parent.format)
+        }
+    }
+
+    struct CreateIncome: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "create-income",
+            abstract: "Create a native investment income transaction for a security"
+        )
+
+        @OptionGroup var parent: GlobalOptions
+
+        @Option(name: .long, help: "Investment account ID")
+        var accountId: Int
+
+        @Option(name: .long, help: "Security ticker symbol")
+        var symbol: String?
+
+        @Option(name: .long, help: "Security ID (alternative to --symbol)")
+        var id: Int?
+
+        @Option(name: .long, parsing: .unconditional, help: "Positive income amount")
+        var amount: Double
+
+        @Option(name: .long, help: "Income date (YYYY-MM-DD)")
+        var date: String
+
+        @Option(name: .long, help: "Transaction title")
+        var title: String?
+
+        @Option(name: .long, help: "Cash line memo")
+        var memo: String?
+
+        @Option(name: .long, help: "Income/expense category ID for the balancing line. Defaults to an unknown balancing line")
+        var offsetCategoryId: Int?
+
+        @Option(name: .long, help: "Income type. Currently only dividend is supported")
+        var incomeType: String = "dividend"
+
+        @Option(name: .long, help: "Tax withheld at source. --amount stays the GROSS: the account receives the net, the income category is credited the gross, and this sits on its own line")
+        var withheldAmount: Double?
+
+        @Option(name: .long, help: "Category ID for the withheld tax line (required with --withheld-amount)")
+        var withholdingCategoryId: Int?
+
+        func run() async throws {
+            let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
+            let container = try BanktivityCLI.createContainer(vaultPath: path)
+            let writeGuard = BanktivityCLI.createWriteGuard(vaultPath: path)
+            try await guardWrite(writeGuard)
+
+            let syncBlobUpdater = SyncBlobUpdater(container: container)
+            let securities = SecurityRepository(container: container, syncBlobUpdater: syncBlobUpdater)
+            let result = try securities.createSecurityIncome(
+                accountId: accountId,
+                symbol: symbol,
+                id: id,
+                amount: amount,
+                date: date,
+                title: title,
+                memo: memo,
+                offsetCategoryId: offsetCategoryId,
+                incomeType: incomeType,
+                withheldAmount: withheldAmount,
+                withholdingCategoryId: withholdingCategoryId
+            )
+            try outputJSON(result, format: parent.format)
         }
     }
 

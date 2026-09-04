@@ -199,6 +199,115 @@ func registerSecurityTools(
         return try ToolHelpers.jsonResponse(results)
     }
 
+    // create_security_trade
+    registry.register(
+        name: "create_security_trade",
+        description: "Create a security buy/sell transaction with an investment-account cash line and a balancing unknown/category line. Positive shares create a buy; negative shares create a sell.",
+        inputSchema: ToolHelpers.schema(
+            properties: [
+                "account_id": ToolHelpers.property(type: "number", description: "Investment account ID"),
+                "symbol": ToolHelpers.property(type: "string", description: "Security ticker symbol"),
+                "id": ToolHelpers.property(type: "number", description: "Security ID (alternative to symbol)"),
+                "shares": ToolHelpers.property(type: "number", description: "Number of shares. Negative creates a sell; positive creates a buy"),
+                "price_per_share": ToolHelpers.property(type: "number", description: "Price per share"),
+                "amount": ToolHelpers.property(type: "number", description: "Security trade amount/cost"),
+                "commission": ToolHelpers.property(type: "number", description: "Commission or fee amount"),
+                "cash_line_amount": ToolHelpers.property(type: "number", description: "Investment account cash line amount. Positive for sell inflow, negative for buy outflow"),
+                "date": ToolHelpers.property(type: "string", description: "Trade date in YYYY-MM-DD format"),
+                "title": ToolHelpers.property(type: "string", description: "Transaction title"),
+                "memo": ToolHelpers.property(type: "string", description: "Cash line memo"),
+                "offset_category_id": ToolHelpers.property(type: "number", description: "Income/expense category ID for the balancing line. Omit to create an unknown balancing line"),
+            ],
+            required: ["account_id", "shares", "price_per_share", "amount", "cash_line_amount", "date"]
+        )
+    ) { arguments in
+        if let msg = await writeGuard.guardWriteAccess() {
+            return ToolHelpers.errorResponse(msg)
+        }
+
+        guard let accountId = ToolHelpers.getInt(arguments, key: "account_id") else {
+            return ToolHelpers.errorResponse("account_id is required")
+        }
+        guard let shares = ToolHelpers.getDouble(arguments, key: "shares") else {
+            return ToolHelpers.errorResponse("shares is required")
+        }
+        guard let pricePerShare = ToolHelpers.getDouble(arguments, key: "price_per_share") else {
+            return ToolHelpers.errorResponse("price_per_share is required")
+        }
+        guard let amount = ToolHelpers.getDouble(arguments, key: "amount") else {
+            return ToolHelpers.errorResponse("amount is required")
+        }
+        guard let cashLineAmount = ToolHelpers.getDouble(arguments, key: "cash_line_amount") else {
+            return ToolHelpers.errorResponse("cash_line_amount is required")
+        }
+        guard let date = ToolHelpers.getString(arguments, key: "date") else {
+            return ToolHelpers.errorResponse("date is required")
+        }
+
+        let result = try securities.createSecurityTrade(
+            accountId: accountId,
+            symbol: ToolHelpers.getString(arguments, key: "symbol"),
+            id: ToolHelpers.getInt(arguments, key: "id"),
+            shares: shares,
+            pricePerShare: pricePerShare,
+            amount: amount,
+            commission: ToolHelpers.getDouble(arguments, key: "commission") ?? 0,
+            cashLineItemAmount: cashLineAmount,
+            date: date,
+            title: ToolHelpers.getString(arguments, key: "title"),
+            memo: ToolHelpers.getString(arguments, key: "memo"),
+            offsetCategoryId: ToolHelpers.getInt(arguments, key: "offset_category_id")
+        )
+        return try ToolHelpers.jsonResponse(result)
+    }
+
+    // create_security_income
+    registry.register(
+        name: "create_security_income",
+        description: "Create a native investment income transaction for a security. Currently supports dividend income.",
+        inputSchema: ToolHelpers.schema(
+            properties: [
+                "account_id": ToolHelpers.property(type: "number", description: "Investment account ID"),
+                "symbol": ToolHelpers.property(type: "string", description: "Security ticker symbol"),
+                "id": ToolHelpers.property(type: "number", description: "Security ID (alternative to symbol)"),
+                "amount": ToolHelpers.property(type: "number", description: "Positive income amount"),
+                "date": ToolHelpers.property(type: "string", description: "Income date in YYYY-MM-DD format"),
+                "title": ToolHelpers.property(type: "string", description: "Transaction title"),
+                "memo": ToolHelpers.property(type: "string", description: "Cash line memo"),
+                "offset_category_id": ToolHelpers.property(type: "number", description: "Income/expense category ID for the balancing line. Omit to create an unknown balancing line"),
+                "income_type": ToolHelpers.property(type: "string", description: "Income type. Currently only dividend is supported"),
+            ],
+            required: ["account_id", "amount", "date"]
+        )
+    ) { arguments in
+        if let msg = await writeGuard.guardWriteAccess() {
+            return ToolHelpers.errorResponse(msg)
+        }
+
+        guard let accountId = ToolHelpers.getInt(arguments, key: "account_id") else {
+            return ToolHelpers.errorResponse("account_id is required")
+        }
+        guard let amount = ToolHelpers.getDouble(arguments, key: "amount") else {
+            return ToolHelpers.errorResponse("amount is required")
+        }
+        guard let date = ToolHelpers.getString(arguments, key: "date") else {
+            return ToolHelpers.errorResponse("date is required")
+        }
+
+        let result = try securities.createSecurityIncome(
+            accountId: accountId,
+            symbol: ToolHelpers.getString(arguments, key: "symbol"),
+            id: ToolHelpers.getInt(arguments, key: "id"),
+            amount: amount,
+            date: date,
+            title: ToolHelpers.getString(arguments, key: "title"),
+            memo: ToolHelpers.getString(arguments, key: "memo"),
+            offsetCategoryId: ToolHelpers.getInt(arguments, key: "offset_category_id"),
+            incomeType: ToolHelpers.getString(arguments, key: "income_type") ?? "dividend"
+        )
+        return try ToolHelpers.jsonResponse(result)
+    }
+
     // get_security_income
     registry.register(
         name: "get_security_income",
@@ -249,5 +358,45 @@ func registerSecurityTools(
             startDate: startDate, endDate: endDate
         )
         return ToolHelpers.successResponse("Deleted \(count) price(s)")
+    }
+
+    // delete_security
+    registry.register(
+        name: "delete_security",
+        description: "Delete a security record that no trade references. Refuses while any trade still points at it: re-point those with update_security_trade first.",
+        inputSchema: ToolHelpers.schema(properties: [
+            "symbol": ToolHelpers.property(type: "string", description: "Ticker symbol (e.g. AAPL)"),
+            "id": ToolHelpers.property(type: "number", description: "Security ID (alternative to symbol)"),
+            "with_prices": ToolHelpers.property(type: "boolean", description: "Also delete the security's price history (default false)"),
+            "dry_run": ToolHelpers.property(type: "boolean", description: "Report the trade and price counts without writing"),
+        ])
+    ) { arguments in
+        let symbol = ToolHelpers.getString(arguments, key: "symbol")
+        let id = ToolHelpers.getInt(arguments, key: "id")
+        let withPrices = ToolHelpers.getBool(arguments, key: "with_prices")
+        let dryRun = ToolHelpers.getBool(arguments, key: "dry_run")
+
+        guard symbol != nil || id != nil else {
+            return ToolHelpers.errorResponse("Provide symbol or id")
+        }
+        guard let info = try securities.inspectForDeletion(symbol: symbol, id: id) else {
+            return ToolHelpers.errorResponse("Security not found")
+        }
+
+        if dryRun {
+            let blocked = info.tradeCount > 0 || (info.priceCount > 0 && !withPrices)
+            return ToolHelpers.successResponse(
+                "security \(info.securityId) (\(info.symbol)) — trades \(info.tradeCount), prices \(info.priceCount), wouldDelete \(!blocked)"
+            )
+        }
+
+        if let msg = await writeGuard.guardWriteAccess() {
+            return ToolHelpers.errorResponse(msg)
+        }
+        let deleted = try securities.deleteSecurity(symbol: symbol, id: id, withPrices: withPrices)
+        guard deleted > 0 else {
+            return ToolHelpers.errorResponse("Security \(info.securityId) was not deleted")
+        }
+        return ToolHelpers.successResponse("Security \(info.securityId) (\(info.symbol)) deleted")
     }
 }
