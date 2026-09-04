@@ -9,6 +9,7 @@ func registerImportRuleTools(registry: ToolRegistry, importRules: ImportRuleRepo
     // list_import_rules
     registry.register(
         name: "list_import_rules",
+        access: .read,
         description: "List all import rules (patterns to match and categorize imported transactions)",
         inputSchema: ToolHelpers.schema(properties: [:])
     ) { _ in
@@ -19,6 +20,7 @@ func registerImportRuleTools(registry: ToolRegistry, importRules: ImportRuleRepo
     // get_import_rule
     registry.register(
         name: "get_import_rule",
+        access: .read,
         description: "Get a specific import rule by ID",
         inputSchema: ToolHelpers.schema(
             properties: [
@@ -41,6 +43,7 @@ func registerImportRuleTools(registry: ToolRegistry, importRules: ImportRuleRepo
     // match_import_rules
     registry.register(
         name: "match_import_rules",
+        access: .read,
         description: "Test which import rules match a given transaction description",
         inputSchema: ToolHelpers.schema(
             properties: [
@@ -60,6 +63,7 @@ func registerImportRuleTools(registry: ToolRegistry, importRules: ImportRuleRepo
     // create_import_rule
     registry.register(
         name: "create_import_rule",
+        access: .write,
         description: "Create a new import rule to automatically categorize imported transactions based on a regex pattern",
         inputSchema: ToolHelpers.schema(
             properties: [
@@ -92,6 +96,7 @@ func registerImportRuleTools(registry: ToolRegistry, importRules: ImportRuleRepo
     // update_import_rule
     registry.register(
         name: "update_import_rule",
+        access: .write,
         description: "Update an existing import rule",
         inputSchema: ToolHelpers.schema(
             properties: [
@@ -124,6 +129,7 @@ func registerImportRuleTools(registry: ToolRegistry, importRules: ImportRuleRepo
     // delete_import_rule
     registry.register(
         name: "delete_import_rule",
+        access: .write,
         description: "Delete an import rule",
         inputSchema: ToolHelpers.schema(
             properties: [

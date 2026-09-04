@@ -14,6 +14,7 @@ public final class ToolRegistry: @unchecked Sendable {
 
     struct ToolDefinition: Sendable {
         let tool: Tool
+        let access: CapabilityAccess
         let handler: @Sendable ([String: Value]?) async throws -> CallTool.Result
     }
 
@@ -25,9 +26,14 @@ public final class ToolRegistry: @unchecked Sendable {
         self.bankFilePath = bankFilePath
     }
 
-    /// Register a tool with its handler
+    /// Register a tool with its handler.
+    ///
+    /// `access` has no default on purpose: a tool nobody classified is exactly
+    /// the gap that let write-capable tools be reachable over stdio while
+    /// unadvertised. Omitting it is a compile error rather than a silent read.
     func register(
         name: String,
+        access: CapabilityAccess,
         description: String,
         inputSchema: Value,
         handler: @escaping @Sendable ([String: Value]?) async throws -> CallTool.Result
@@ -37,7 +43,21 @@ public final class ToolRegistry: @unchecked Sendable {
             description: description,
             inputSchema: inputSchema
         )
-        tools[name] = ToolDefinition(tool: tool, handler: handler)
+        tools[name] = ToolDefinition(tool: tool, access: access, handler: handler)
+    }
+
+    /// The access this registry actually enforces for one tool, or nil if unknown.
+    public func access(of name: String) -> CapabilityAccess? {
+        tools[name]?.access
+    }
+
+    /// Every registered name with the access it was registered under.
+    ///
+    /// The drift test compares this against `CapabilityRegistry.mcpCapabilities()`;
+    /// nothing else may treat it as the authority, because a binary reporting on
+    /// itself cannot certify itself.
+    public func registeredToolAccess() -> [String: CapabilityAccess] {
+        tools.mapValues(\.access)
     }
 
     /// Get all registered tool definitions
@@ -62,7 +82,17 @@ public final class ToolRegistry: @unchecked Sendable {
     /// Register the built-in diagnostic tool for dumping the Core Data model schema
     func registerDiagnosticTools() {
         register(
+            name: "get_capabilities",
+            access: .read,
+            description: "Return stable JSON metadata for CLI commands and MCP tools, including read/write classification and safety requirements.",
+            inputSchema: ToolHelpers.schema(properties: [:])
+        ) { _ in
+            try ToolHelpers.jsonResponse(CapabilityRegistry.report())
+        }
+
+        register(
             name: "dump_schema",
+            access: .read,
             description:
                 "Dump the Core Data model schema showing all entity names, attributes, and relationships. Use this to discover property names for querying.",
             inputSchema: ToolHelpers.schema(properties: [
