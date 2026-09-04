@@ -33,9 +33,9 @@ public final class TransactionRepository: BaseRepository, @unchecked Sendable {
                 ))
             }
 
-            if let endDate = endDate, let ts = DateConversion.fromISO(endDate) {
+            if let endDate = endDate, let ts = DateConversion.endOfDayExclusive(endDate) {
                 predicates.append(NSPredicate(
-                    format: "pDate <= %@", DateConversion.toDate(ts) as NSDate
+                    format: "pDate < %@", DateConversion.toDate(ts) as NSDate
                 ))
             }
 
@@ -315,7 +315,7 @@ public final class TransactionRepository: BaseRepository, @unchecked Sendable {
                 var result = xml
                 if let t = title { result = updater.patchTransactionTitle(xml: result, title: t) }
                 if let n = note { result = updater.patchTransactionNote(xml: result, note: n) }
-                if let d = date { result = updater.patchTransactionDate(xml: result, date: d + "T00:00:00+0000") }
+                if let d = date { result = updater.patchTransactionDate(xml: result, date: DateConversion.syncBlobTimestamp(dateOnly: d)) }
                 if let bt = outcome.newTxTypeBaseType, let tu = outcome.newTxTypeUUID {
                     result = updater.patchTransactionType(xml: result, baseType: bt, typeUUID: tu)
                 }

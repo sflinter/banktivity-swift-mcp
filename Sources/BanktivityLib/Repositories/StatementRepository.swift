@@ -50,10 +50,10 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
         name: String? = nil,
         note: String? = nil
     ) throws -> StatementDTO {
-        guard let startTs = DateConversion.fromISO(startDate) else {
+        guard let startTs = DateConversion.fromISO(startDate, timeZone: DateConversion.dateOnlyTimeZone) else {
             throw ToolError.invalidInput("Invalid start date: \(startDate)")
         }
-        guard let endTs = DateConversion.fromISO(endDate) else {
+        guard let endTs = DateConversion.fromISO(endDate, timeZone: DateConversion.dateOnlyTimeZone) else {
             throw ToolError.invalidInput("Invalid end date: \(endDate)")
         }
         guard endTs > startTs else {
@@ -342,8 +342,8 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
             if let start = startDate, let startTs = DateConversion.fromISO(start) {
                 predicates.append(NSPredicate(format: "pTransaction.pDate >= %@", DateConversion.toDate(startTs) as NSDate))
             }
-            if let end = endDate, let endTs = DateConversion.fromISO(end) {
-                predicates.append(NSPredicate(format: "pTransaction.pDate <= %@", DateConversion.toDate(endTs) as NSDate))
+            if let end = endDate, let endTs = DateConversion.endOfDayExclusive(end) {
+                predicates.append(NSPredicate(format: "pTransaction.pDate < %@", DateConversion.toDate(endTs) as NSDate))
             }
 
             request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: predicates)

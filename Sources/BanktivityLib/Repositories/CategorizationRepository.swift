@@ -39,8 +39,8 @@ public final class CategorizationRepository: BaseRepository, @unchecked Sendable
             if let startDate = startDate, let ts = DateConversion.fromISO(startDate) {
                 predicates.append(NSPredicate(format: "pDate >= %@", DateConversion.toDate(ts) as NSDate))
             }
-            if let endDate = endDate, let ts = DateConversion.fromISO(endDate) {
-                predicates.append(NSPredicate(format: "pDate <= %@", DateConversion.toDate(ts) as NSDate))
+            if let endDate = endDate, let ts = DateConversion.endOfDayExclusive(endDate) {
+                predicates.append(NSPredicate(format: "pDate < %@", DateConversion.toDate(ts) as NSDate))
             }
 
             if !predicates.isEmpty {
@@ -215,8 +215,8 @@ public final class CategorizationRepository: BaseRepository, @unchecked Sendable
             if let startDate = startDate, let ts = DateConversion.fromISO(startDate) {
                 predicates.append(NSPredicate(format: "pDate >= %@", DateConversion.toDate(ts) as NSDate))
             }
-            if let endDate = endDate, let ts = DateConversion.fromISO(endDate) {
-                predicates.append(NSPredicate(format: "pDate <= %@", DateConversion.toDate(ts) as NSDate))
+            if let endDate = endDate, let ts = DateConversion.endOfDayExclusive(endDate) {
+                predicates.append(NSPredicate(format: "pDate < %@", DateConversion.toDate(ts) as NSDate))
             }
             if let pattern = payeePattern {
                 predicates.append(NSPredicate(format: "pTitle LIKE[cd] %@", "*\(pattern)*"))
@@ -287,8 +287,8 @@ public final class CategorizationRepository: BaseRepository, @unchecked Sendable
             if let startDate = startDate, let ts = DateConversion.fromISO(startDate) {
                 predicates.append(NSPredicate(format: "pDate >= %@", DateConversion.toDate(ts) as NSDate))
             }
-            if let endDate = endDate, let ts = DateConversion.fromISO(endDate) {
-                predicates.append(NSPredicate(format: "pDate <= %@", DateConversion.toDate(ts) as NSDate))
+            if let endDate = endDate, let ts = DateConversion.endOfDayExclusive(endDate) {
+                predicates.append(NSPredicate(format: "pDate < %@", DateConversion.toDate(ts) as NSDate))
             }
 
             if !predicates.isEmpty {

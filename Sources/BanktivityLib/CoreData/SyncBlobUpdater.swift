@@ -154,7 +154,7 @@ public final class SyncBlobUpdater: @unchecked Sendable {
         xml += "<field type=\"bool\" name=\"adjustment\">\(adjustment ? "yes" : "no")</field>"
         xml += "<field type=\"int\" name=\"checkNumber\" null=\"null\"/>"
         xml += "<field type=\"reference\" name=\"currency\">Currency:\(currencyUUID)</field>"
-        xml += "<field type=\"date\" name=\"date\">\(date)T00:00:00+0000</field>"
+        xml += "<field type=\"date\" name=\"date\">\(DateConversion.syncBlobTimestamp(dateOnly: date))</field>"
         xml += "<collection type=\"array\" name=\"lineItems\">"
 
         for li in lineItems {

@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- Anchor date-only writes to a fixed offset (10:00 UTC) so a calendar day reads
+  back as the same day wherever the vault is opened; previously a date-only value
+  was stored at the writer's local midnight, so the rendered day depended on the
+  reader's time zone
+- Keep the sync blob's `date` field in step with the anchored Core Data write, so
+  CloudKit and the local store describe the same instant
+- Close the end bound on date windows: `endDate` is now an exclusive
+  next-midnight bound (`pDate <`), so transactions later in the end day are no
+  longer silently dropped from `transactions list`, account activity, statement
+  membership, tag and categorization queries
+
 ## v0.13.0
 
 - Fix deletion sync: set `pSyncedState = 3` with current timestamp to signal deletion to CloudKit, instead of clearing blob and nulling modification date (which Banktivity ignored)
