@@ -3,7 +3,7 @@
 A Swift library, [MCP](https://modelcontextprotocol.io/) server, and CLI for [Banktivity](https://www.iggsoftware.com/banktivity/) personal finance files. Provides full read/write access to `.bank8` vaults — accounts, transactions, categories, tags, templates, import rules, scheduled transactions, statements, securities, and RDF export.
 
 - **BanktivityLib** — pure domain library with Core Data repositories and RDF export, no server dependencies
-- **banktivity-mcp** — MCP server exposing 64 tools over stdio, for AI assistants like Claude
+- **banktivity-mcp** — MCP server exposing 67 tools over stdio, for AI assistants like Claude
 - **banktivity-cli** — standalone CLI for scripting and automation
 
 Inspired by [banktivity-mcp](https://github.com/mhriemers/banktivity-mcp) (TypeScript/Node.js), this is a ground-up rewrite in Swift. The original uses `better-sqlite3` to read and write Core Data's SQLite store directly, bypassing Core Data's internal change tracking. This works for reads, but direct SQL writes are invisible to CloudKit sync — Banktivity doesn't know the data changed, and the vault can become corrupted or fail to sync. This Swift version uses `NSPersistentContainer` so all mutations go through Core Data's API, ensuring proper change tracking and CloudKit compatibility.
@@ -173,9 +173,12 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 - `get_security_holdings` — Get current holdings (positions) with shares, cost basis, and market value
 - `get_security_trades` — Get trade history (buys, sells, transfers) with shares, prices, and commissions
 - `get_security_income` — Get investment income (dividends, interest, capital gains distributions)
+- `create_security_trade` — Create a buy or sell with its cash and balancing line items
+- `create_security_income` — Create native security income, currently dividend income
 - `create_share_adjustment` — Create a share adjustment (e.g. charges, stock splits, position corrections)
 - `import_security_prices` — Import prices from a CSV file (Yahoo Finance, OHLCV, or Date/Close)
 - `delete_security_prices` — Delete price history for a security (optional date range)
+- `delete_security` — Delete a security record that no trade references
 
 ### Export
 - `export_turtle` — Export the entire vault as RDF/Turtle (.ttl), optionally to a file
@@ -209,7 +212,8 @@ banktivity-cli export turtle --output vault.ttl
 - `import-rules list`, `import-rules get`, `import-rules match`, `import-rules create`, `import-rules update`, `import-rules delete`
 - `scheduled list`, `scheduled get`, `scheduled create`, `scheduled update`, `scheduled delete`
 - `statements list`, `statements get`, `statements create`, `statements delete`, `statements reconcile`, `statements unreconcile`, `statements unreconciled`
-- `securities list`, `securities create`, `securities prices`, `securities holdings`, `securities trades`, `securities income`, `securities adjust`, `securities import-prices`, `securities delete-prices`
+- `securities list`, `securities create`, `securities delete`, `securities prices`, `securities holdings`, `securities trades`, `securities income`, `securities create-trade`, `securities create-income`, `securities adjust`, `securities import-prices`, `securities delete-prices`
+  - `securities delete` refuses while any trade still references the security, because deleting it would orphan the line items carrying its cost basis and realized gain. Merge those trades onto the surviving security with `securities update-trade --security-id` first. Price history is kept unless `--with-prices` is given.
 - `export turtle`
 - `schema`
 
@@ -260,7 +264,7 @@ Banktivity's `.bank8` bundle is a directory containing compiled Core Data models
 
 1. Loads and merges all `.momd` model bundles from the vault
 2. Opens the SQLite store via `NSPersistentContainer` (no history tracking)
-3. Exposes 64 MCP tools over stdio transport
+3. Exposes 67 MCP tools over stdio transport
 4. Uses KVC (`value(forKey:)`) to access entities since we load Banktivity's own compiled models at runtime
 
 ## License
