@@ -250,4 +250,30 @@ func registerSecurityTools(
         )
         return ToolHelpers.successResponse("Deleted \(count) price(s)")
     }
+
+    // rename_security
+    registry.register(
+        name: "rename_security",
+        description: "Rename a security's ticker symbol, display name, or both. Refuses a symbol another security already holds; that is a merge, not a rename.",
+        inputSchema: ToolHelpers.schema(
+            properties: [
+                "symbol": ToolHelpers.property(type: "string", description: "Current ticker symbol"),
+                "id": ToolHelpers.property(type: "number", description: "Security ID (alternative to symbol)"),
+                "new_symbol": ToolHelpers.property(type: "string", description: "New ticker symbol"),
+                "new_name": ToolHelpers.property(type: "string", description: "New display name"),
+            ],
+            required: []
+        )
+    ) { arguments in
+        if let msg = await writeGuard.guardWriteAccess() {
+            return ToolHelpers.errorResponse(msg)
+        }
+        let result = try securities.renameSecurity(
+            symbol: ToolHelpers.getString(arguments, key: "symbol"),
+            id: ToolHelpers.getInt(arguments, key: "id"),
+            newSymbol: ToolHelpers.getString(arguments, key: "new_symbol"),
+            newName: ToolHelpers.getString(arguments, key: "new_name")
+        )
+        return try ToolHelpers.jsonResponse(result)
+    }
 }

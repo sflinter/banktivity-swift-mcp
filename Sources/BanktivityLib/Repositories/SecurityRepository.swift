@@ -1284,4 +1284,91 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
             dataSource: Self.intValue(object, "pDataSource")
         )
     }
+
+    /// Rename a security: its ticker, its display name, or both.
+    ///
+    /// No path existed at any layer -- `pSymbol` and `pName` were written only
+    /// inside `createSecurity` -- so a security that arrived with a wrong or
+    /// missing identity stayed wrong. This vault has three: a ticker change
+    /// awaiting the rename, one security named as an advisory fee, and one named
+    /// as a bare CUSIP.
+    ///
+    /// Renaming is deliberately narrow. It does not merge, it refuses a symbol
+    /// that another security already holds, and it will not blank an identity --
+    /// an empty new value is a mistake, not an instruction, and a security with
+    /// no symbol is one of the defects this exists to repair.
+    public func renameSecurity(
+        symbol: String? = nil,
+        id: Int? = nil,
+        newSymbol: String? = nil,
+        newName: String? = nil
+    ) throws -> SecurityDTO {
+        guard newSymbol != nil || newName != nil else {
+            throw ToolError.missingParameter("Give a new symbol, a new name, or both")
+        }
+        if let newSymbol, newSymbol.trimmingCharacters(in: .whitespaces).isEmpty {
+            throw ToolError.invalidInput("New symbol cannot be blank")
+        }
+        if let newName, newName.trimmingCharacters(in: .whitespaces).isEmpty {
+            throw ToolError.invalidInput("New name cannot be blank")
+        }
+
+        let uuid: String = try performWriteReturning { [self] ctx in
+            let security: NSManagedObject
+            if let id {
+                guard let found = try fetchByPK(entityName: "Security", pk: id, in: ctx) else {
+                    throw ToolError.notFound("Security not found with ID: \(id)")
+                }
+                security = found
+            } else {
+                guard let sym = symbol else {
+                    throw ToolError.missingParameter("Either symbol or id is required")
+                }
+                let request = NSFetchRequest<NSManagedObject>(entityName: "Security")
+                request.predicate = NSPredicate(format: "pSymbol ==[c] %@", sym)
+                request.fetchLimit = 1
+                guard let found = try ctx.fetch(request).first else {
+                    throw ToolError.notFound("Security not found: \(sym)")
+                }
+                security = found
+            }
+
+            if let newSymbol {
+                // A duplicate ticker is how two securities become impossible to
+                // tell apart in every reader downstream. Refuse rather than merge:
+                // merging is a different operation with different evidence.
+                let clash = NSFetchRequest<NSManagedObject>(entityName: "Security")
+                clash.predicate = NSPredicate(format: "pSymbol ==[c] %@", newSymbol)
+                clash.fetchLimit = 2
+                for other in try ctx.fetch(clash) where other.objectID != security.objectID {
+                    throw ToolError.invalidInput(
+                        "Symbol '\(newSymbol)' is already held by security "
+                        + "\(Self.extractPK(from: other.objectID)); rename refuses to merge")
+                }
+                security.setValue(newSymbol, forKey: "pSymbol")
+            }
+            if let newName { security.setValue(newName, forKey: "pName") }
+            Self.setNow(security, "pModificationDate")
+            return Self.stringValue(security, "pUniqueID")
+        }
+
+        syncBlobUpdater?.updateSecurityIdentity(securityUUID: uuid, symbol: newSymbol, name: newName)
+
+        let after: SecurityDTO = try performRead { [self] ctx in
+            let request = NSFetchRequest<NSManagedObject>(entityName: "Security")
+            request.predicate = NSPredicate(format: "pUniqueID == %@", uuid)
+            request.fetchLimit = 1
+            guard let sec = try ctx.fetch(request).first else {
+                throw ToolError.notFound("Security vanished during rename")
+            }
+            // Reuse the one mapper every other read goes through. Building the
+            // DTO by hand here is what crashed the first version: it asked KVC
+            // for a "currency" relationship that is named `pCurrency`, and an
+            // unrecognised key is an Objective-C exception, so the process died
+            // with SIGSEGV *after* the rename had already committed -- a write
+            // that succeeds and then reports nothing.
+            return self.mapToSecurityDTO(sec)
+        }
+        return after
+    }
 }

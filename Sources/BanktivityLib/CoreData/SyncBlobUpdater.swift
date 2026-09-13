@@ -444,8 +444,12 @@ public final class SyncBlobUpdater: @unchecked Sendable {
             return result
         }
 
-        // Also touch the Security entity's pModificationDate so Banktivity
-        // recognises the change and re-pushes to CloudKit
+        touchSecurityModificationDate(securityUUID: securityUUID)
+    }
+
+    /// Touch a Security so Banktivity notices the change and re-pushes it.
+    /// Shared by the price and identity patchers rather than copied into both.
+    private func touchSecurityModificationDate(securityUUID: String) {
         do {
             let bgContext = container.newBackgroundContext()
             nonisolated(unsafe) var writeError: Error?
@@ -466,6 +470,36 @@ public final class SyncBlobUpdater: @unchecked Sendable {
         } catch {
             log("Failed to update Security modification date for \(securityUUID): \(error)")
         }
+    }
+
+    // MARK: - XML Patching: Security identity
+
+    /// Patch a security's `symbol` and `name` in its sync blob, and touch the
+    /// Security so Banktivity re-pushes it.
+    ///
+    /// Renaming a security is a Core Data write that CloudKit will not see on
+    /// its own: the blob keeps the old identity and the app keeps showing it.
+    /// Both fields are plain `<field type="string">` records in the Security
+    /// blob, verified against a real one before this was written.
+    ///
+    /// Non-fatal like every other blob update here -- if the record is missing
+    /// or the XML will not patch, the rename still stands locally and only the
+    /// sync push is skipped.
+    public func updateSecurityIdentity(securityUUID: String, symbol: String?, name: String?) {
+        guard symbol != nil || name != nil else { return }
+        updateTransactionBlob(transactionUUID: securityUUID) { xml in
+            var result = xml
+            for (field, value) in [("symbol", symbol), ("name", name)] {
+                guard let value else { continue }
+                let open = "<field type=\"string\" name=\"\(field)\">"
+                guard let start = result.range(of: open),
+                      let end = result.range(of: "</field>", range: start.upperBound..<result.endIndex)
+                else { continue }
+                result.replaceSubrange(start.upperBound..<end.lowerBound, with: escapeXML(value))
+            }
+            return result
+        }
+        touchSecurityModificationDate(securityUUID: securityUUID)
     }
 
     // MARK: - Gzip

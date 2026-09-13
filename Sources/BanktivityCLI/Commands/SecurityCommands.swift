@@ -7,8 +7,55 @@ import Foundation
 struct Securities: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Security and price history operations",
-        subcommands: [List.self, Create.self, Prices.self, ImportPrices.self, DeletePrices.self, FixPrices.self, Holdings.self, Trades.self, Income.self, Adjust.self, UpdateTrade.self]
+        subcommands: [List.self, Create.self, Prices.self, ImportPrices.self, DeletePrices.self, FixPrices.self, Holdings.self, Trades.self, Income.self, Adjust.self, UpdateTrade.self, Rename.self]
     )
+
+    struct Rename: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "rename",
+            abstract: "Rename a security's ticker, display name, or both",
+            discussion: """
+            The only way to correct a security's identity. `pSymbol` and `pName`
+            were otherwise written only when the security was created, so one that
+            arrived wrong stayed wrong.
+
+            Refuses a symbol another security already holds -- that is a merge,
+            which is a different operation with different evidence -- and refuses
+            a blank value, because a security with no symbol is one of the defects
+            this repairs.
+            """
+        )
+
+        @OptionGroup var parent: GlobalOptions
+
+        @Option(name: .long, help: "Current ticker symbol")
+        var symbol: String?
+
+        @Option(name: .long, help: "Security ID (alternative to --symbol)")
+        var id: Int?
+
+        @Option(name: .long, help: "New ticker symbol")
+        var newSymbol: String?
+
+        @Option(name: .long, help: "New display name")
+        var newName: String?
+
+        func run() async throws {
+            let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
+            let container = try BanktivityCLI.createContainer(vaultPath: path)
+            let writeGuard = BanktivityCLI.createWriteGuard(vaultPath: path)
+            try await guardWrite(writeGuard)
+
+            let securities = SecurityRepository(
+                container: container,
+                syncBlobUpdater: SyncBlobUpdater(container: container)
+            )
+            let result = try securities.renameSecurity(
+                symbol: symbol, id: id, newSymbol: newSymbol, newName: newName
+            )
+            try outputJSON(result, format: parent.format)
+        }
+    }
 
     struct List: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "List all securities")
