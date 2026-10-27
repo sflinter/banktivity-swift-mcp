@@ -831,6 +831,26 @@ Get security trade history (buys, sells, transfers). Shows share counts, prices,
 }
 ```
 
+### get_security_realized_gains
+Get realised capital gains, one row per closed lot: shares, acquisition and disposal date, proceeds, cost basis, gain, and short/long term.
+
+Banktivity does not store its lot matching -- gains are computed when a report is rendered and then discarded -- so this recomputes them by matching each disposal against the oldest open lot (FIFO). `Move Shares In` and `Transfer Shares` open lots; `Split Shares` moves shares without changing basis; `Return Of Capital` reduces basis. The dates filter on the **disposal**, which is what a gains schedule reports.
+
+It throws rather than returning figures when a security uses a cost-basis method other than FIFO, naming the method and the security.
+
+```json
+{
+  "properties": {
+    "symbol": { "type": "string", "description": "Security ticker symbol (e.g. AAPL)" },
+    "id": { "type": "number", "description": "Security ID (alternative to symbol)" },
+    "account_id": { "type": "number", "description": "Filter to a specific account" },
+    "start_date": { "type": "string", "description": "Earliest disposal date, YYYY-MM-DD" },
+    "end_date": { "type": "string", "description": "Latest disposal date, YYYY-MM-DD" },
+    "limit": { "type": "number", "description": "Maximum number of lots to return" }
+  }
+}
+```
+
 ### get_security_income
 Get investment income history (dividends, interest, capital gains distributions).
 

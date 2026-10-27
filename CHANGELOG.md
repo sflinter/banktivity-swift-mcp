@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Add `securities realized-gains` CLI command and `get_security_realized_gains` MCP tool: realised capital gains per closed lot, with acquisition date, holding period and term. Banktivity computes gains at render time and persists nothing (`SecurityLot` ships empty), so this recomputes them by FIFO lot matching; it refuses rather than guessing when a security uses a cost-basis method other than FIFO
+- Add `BaseRepository.decimalValue()`, returning `Decimal` rather than routing an `NSDecimalNumber` column through `Double`
+
 ## v0.13.0
 
 - Fix deletion sync: set `pSyncedState = 3` with current timestamp to signal deletion to CloudKit, instead of clearing blob and nulling modification date (which Banktivity ignored)

@@ -373,6 +373,39 @@ public struct SecurityHoldingDTO: Codable, Sendable {
     }
 }
 
+/// One realised disposal: a slice of an opening lot closed by a later sell.
+///
+/// Money and share fields are `Decimal`, not `Double`, and deliberately so — see
+/// `BaseRepository.decimalValue`. `Decimal` is `Codable` and encodes exactly, so
+/// callers see the same figures the arithmetic produced.
+public struct SecurityRealizedGainDTO: Codable, Sendable {
+    public let symbol: String
+    public let securityName: String
+    public let accountId: Int
+    public let accountName: String
+    /// Shares of the opening lot consumed by this disposal.
+    public let shares: Decimal
+    /// ISO date the consumed shares were acquired.
+    public let acquired: String
+    /// ISO date of the disposal.
+    public let sold: String
+    public let proceeds: Decimal
+    public let costBasis: Decimal
+    public let gain: Decimal
+    /// `"Short"` or `"Long"`, at a 365-day holding period.
+    public let term: String
+
+    public init(symbol: String, securityName: String, accountId: Int, accountName: String,
+                shares: Decimal, acquired: String, sold: String,
+                proceeds: Decimal, costBasis: Decimal, gain: Decimal, term: String) {
+        self.symbol = symbol; self.securityName = securityName
+        self.accountId = accountId; self.accountName = accountName
+        self.shares = shares; self.acquired = acquired; self.sold = sold
+        self.proceeds = proceeds; self.costBasis = costBasis; self.gain = gain
+        self.term = term
+    }
+}
+
 public struct SecurityTradeDTO: Codable, Sendable {
     public let id: Int
     public let date: String

@@ -167,6 +167,31 @@ open class BaseRepository: @unchecked Sendable {
         return (object.value(forKey: key) as? Double) ?? 0.0
     }
 
+    /// Read a decimal attribute WITHOUT going through `Double`.
+    ///
+    /// Money and share columns are `NSDecimalNumber` in the store, and
+    /// `doubleValue` above converts them the moment it reads them. That is fine
+    /// for display and wrong for arithmetic that is later rounded to cents:
+    /// binary doubles cannot hold most decimal fractions, so a running subtotal
+    /// accumulates residue until a value lands on the wrong side of a rounding
+    /// boundary. A realised-gain schedule computed through `Double` reproduces a
+    /// reference export to about 99.8% and looks correct; the same computation
+    /// in `Decimal` reproduces it exactly.
+    ///
+    /// Use this for anything that will be summed, apportioned or rounded. Use
+    /// `doubleValue` for anything merely displayed or compared loosely.
+    public static func decimalValue(_ object: NSManagedObject, _ key: String) -> Decimal {
+        if let decimal = object.value(forKey: key) as? NSDecimalNumber {
+            return decimal.decimalValue
+        }
+        if let double = object.value(forKey: key) as? Double {
+            // Via the shortest round-trip string rather than `Decimal(double)`,
+            // which carries the binary representation error straight through.
+            return Decimal(string: String(double)) ?? 0
+        }
+        return 0
+    }
+
     /// Safely get a boolean value from a managed object
     public static func boolValue(_ object: NSManagedObject, _ key: String) -> Bool {
         (object.value(forKey: key) as? Bool) ?? false

@@ -7,7 +7,7 @@ import Foundation
 struct Securities: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Security and price history operations",
-        subcommands: [List.self, Create.self, Prices.self, ImportPrices.self, DeletePrices.self, FixPrices.self, Holdings.self, Trades.self, Income.self, Adjust.self, UpdateTrade.self]
+        subcommands: [List.self, Create.self, Prices.self, ImportPrices.self, DeletePrices.self, FixPrices.self, Holdings.self, Trades.self, RealizedGains.self, Income.self, Adjust.self, UpdateTrade.self]
     )
 
     struct List: AsyncParsableCommand {
@@ -215,6 +215,43 @@ struct Securities: AsyncParsableCommand {
             let container = try BanktivityCLI.createContainer(vaultPath: path)
             let securities = SecurityRepository(container: container)
             let results = try securities.getHoldings(accountId: accountId, symbol: symbol, id: id)
+            try outputJSON(results, format: parent.format)
+        }
+    }
+
+    struct RealizedGains: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "realized-gains",
+            abstract: "Compute realised capital gains by matching disposals to opening lots (FIFO)")
+
+        @OptionGroup var parent: GlobalOptions
+
+        @Option(name: .long, help: "Security ticker symbol")
+        var symbol: String?
+
+        @Option(name: .long, help: "Security ID (alternative to --symbol)")
+        var id: Int?
+
+        @Option(name: .long, help: "Filter to a specific account ID")
+        var accountId: Int?
+
+        @Option(name: .long, help: "Earliest disposal date (YYYY-MM-DD)")
+        var startDate: String?
+
+        @Option(name: .long, help: "Latest disposal date (YYYY-MM-DD)")
+        var endDate: String?
+
+        @Option(name: .long, help: "Maximum number of rows to return")
+        var limit: Int?
+
+        func run() async throws {
+            let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
+            let container = try BanktivityCLI.createContainer(vaultPath: path)
+            let securities = SecurityRepository(container: container)
+            let results = try securities.getRealizedGains(
+                accountId: accountId, symbol: symbol, id: id,
+                startDate: startDate, endDate: endDate, limit: limit
+            )
             try outputJSON(results, format: parent.format)
         }
     }

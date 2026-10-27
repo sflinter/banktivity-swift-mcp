@@ -1005,6 +1005,271 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
         }
     }
 
+    /// Cost-basis methods this implementation has been validated against.
+    /// `nil` (unset, meaning the document default) and `1` are FIFO.
+    private static let supportedCostBasisMethods: Set<Int> = [0, 1]
+
+    public enum RealizedGainError: Error, CustomStringConvertible {
+        case unsupportedCostBasisMethod(method: Int, symbol: String)
+
+        public var description: String {
+            switch self {
+            case let .unsupportedCostBasisMethod(method, symbol):
+                return """
+                    Security \(symbol) uses cost-basis method \(method), which this                     command has not been validated against. It implements FIFO only.                     Refusing rather than reporting figures that may be wrong.
+                    """
+            }
+        }
+    }
+
+    /// Rule 2a: all `Split Shares` legs of one security on one day are ONE
+    /// corporate action, applied as their NET share change.
+    ///
+    /// A split that changes the CUSIP arrives as two legs on the same day -- the
+    /// old shares out (-2.53) and the new shares in (+10), 9615's ANET 4-for-1 on
+    /// 2024-12-04. Sorting by date alone left them in fetch order, and a
+    /// decrease applied first empties the lots, so the increase then opened a
+    /// fresh lot at ZERO cost and every later sale of those shares realised its
+    /// whole proceeds as gain. Netting (+7.47 here) is order-independent and is
+    /// exactly what the documented procedure records for a split ("enter the
+    /// DELTA"); applying increases before decreases would also preserve basis but
+    /// still depends on two legs agreeing to be read as one event. Only splits
+    /// are netted: a `Move Shares In/Out` carries its own basis and stays a
+    /// separate opener/closer. The netted event takes the first leg's place, so
+    /// its position among the day's other events is unchanged.
+    static func nettingSameDaySplits<E>(_ events: [E], isSplit: (E) -> Bool, day: (E) -> Int,
+                                        shares: (E) -> Decimal,
+                                        withShares: (E, Decimal) -> E) -> [E] {
+        var out: [E] = []
+        var firstSplitIndex: [Int: Int] = [:]
+        for e in events {
+            guard isSplit(e) else { out.append(e); continue }
+            let d = day(e)
+            if let i = firstSplitIndex[d] {
+                out[i] = withShares(out[i], shares(out[i]) + shares(e))
+            } else {
+                firstSplitIndex[d] = out.count
+                out.append(e)
+            }
+        }
+        return out
+    }
+
+    /// Compute realised capital gains by matching disposals to opening lots.
+    ///
+    /// Banktivity does NOT persist its lot matching — `SecurityLot` exists in the
+    /// model and holds no rows, because gains are computed when a report is
+    /// rendered and then discarded. So this recomputes them.
+    ///
+    /// Six rules make the result match Banktivity's own capital-gains export,
+    /// each one established by diffing against that export row by row:
+    ///
+    /// 1. `Move Shares In` and `Transfer Shares` OPEN a lot, not only `Buy`.
+    ///    Treating them otherwise corrupts every later lot in that holding.
+    /// 2. `Split Shares` adjusts share counts pro rata and leaves total basis
+    ///    alone. The row carries the adjustment in `pShares`, with amount and
+    ///    price both zero. Same-day split legs are one event, netted (rule 2a,
+    ///    `nettingSameDaySplits`).
+    /// 3. `Return Of Capital` reduces basis pro rata; its amount is in `pIncome`
+    ///    and `pShares` is zero.
+    /// 4. Apportion the recorded `pAmount`, never price x multiplier. `pAmount`
+    ///    is the cash actually recorded; the per-share price is derived and
+    ///    disagrees in the last cent.
+    /// 5. Carry the UNROUNDED remainder on the lot. Rounding what stays behind,
+    ///    rather than only what is reported, loses exactness on partial lots.
+    /// 6. `Move Shares Out` is a transfer, not a sale: proceeds equal the lot's
+    ///    basis, the gain is zero, and the term reads "Long" whatever the hold.
+    ///
+    /// Filters on the disposal date, since that is what a gains schedule reports.
+    /// Throws `RealizedGainError.unsupportedCostBasisMethod` rather than guessing
+    /// when a security uses a method other than FIFO.
+    public func getRealizedGains(
+        accountId: Int? = nil,
+        symbol: String? = nil,
+        id: Int? = nil,
+        startDate: String? = nil,
+        endDate: String? = nil,
+        limit: Int? = nil
+    ) throws -> [SecurityRealizedGainDTO] {
+        try performRead { [self] ctx in
+            var targetSecurity: NSManagedObject?
+            if let id = id {
+                targetSecurity = try fetchByPK(entityName: "Security", pk: id, in: ctx)
+            } else if let sym = symbol {
+                let req = NSFetchRequest<NSManagedObject>(entityName: "Security")
+                req.predicate = NSPredicate(format: "pSymbol ==[c] %@", sym)
+                req.fetchLimit = 1
+                targetSecurity = try ctx.fetch(req).first
+            }
+
+            let request = NSFetchRequest<NSManagedObject>(entityName: "SecurityLineItem")
+            var predicates: [NSPredicate] = [NSPredicate(format: "pShares != nil")]
+            if let targetSecurity = targetSecurity {
+                predicates.append(NSPredicate(format: "pSecurity == %@", targetSecurity))
+            }
+            request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: predicates)
+
+            struct Event {
+                let type: String
+                let shares: Decimal
+                let amount: Decimal
+                let income: Decimal
+                let date: Double
+                let security: NSManagedObject
+                let account: NSManagedObject
+            }
+            struct BookKey: Hashable { let account: Int; let security: Int }
+            struct Lot { var shares: Decimal; var basis: Decimal; let date: Double }
+
+            var books: [BookKey: [Event]] = [:]
+            for sli in try ctx.fetch(request) {
+                guard let security = Self.relatedObject(sli, "pSecurity"),
+                      let lineItem = Self.relatedObject(sli, "pLineItem"),
+                      let account = Self.relatedObject(lineItem, "pAccount"),
+                      let transaction = Self.relatedObject(lineItem, "pTransaction"),
+                      let date = Self.dateValue(transaction, "pDate") else { continue }
+
+                let acctPK = Self.extractPK(from: account.objectID)
+                if let filterAcct = accountId, acctPK != filterAcct { continue }
+
+                let method = Self.intValue(sli, "pCostBasisMethod")
+                guard Self.supportedCostBasisMethods.contains(method) else {
+                    throw RealizedGainError.unsupportedCostBasisMethod(
+                        method: method, symbol: Self.stringValue(security, "pSymbol"))
+                }
+
+                let typeName: String = {
+                    guard let t = Self.relatedObject(transaction, "pTransactionType") else { return "" }
+                    return Self.stringValue(t, "pName")
+                }()
+
+                let key = BookKey(account: acctPK, security: Self.extractPK(from: security.objectID))
+                books[key, default: []].append(Event(
+                    type: typeName,
+                    shares: Self.decimalValue(sli, "pShares"),
+                    amount: abs(Self.decimalValue(sli, "pAmount")),
+                    income: Self.decimalValue(sli, "pIncome"),
+                    date: date, security: security, account: account))
+            }
+
+            let openers: Set<String> = ["Buy", "Move Shares In", "Transfer Shares"]
+            let closers: Set<String> = ["Sell", "Move Shares Out"]
+            let epsilon = Decimal(string: "0.000000001")!
+
+            var results: [SecurityRealizedGainDTO] = []
+            for (_, unsorted) in books {
+                let events = Self.nettingSameDaySplits(unsorted.sorted { $0.date < $1.date },
+                                                       isSplit: { $0.type == "Split Shares" },
+                                                       day: { Int(($0.date / 86_400).rounded(.down)) },
+                                                       shares: { $0.shares },
+                                                       withShares: { e, n in
+                                                           Event(type: e.type, shares: n, amount: e.amount,
+                                                                 income: e.income, date: e.date,
+                                                                 security: e.security, account: e.account)
+                                                       })
+                var lots: [Lot] = []
+
+                for event in events {
+                    if event.type == "Split Shares" {
+                        // Rule 2: shares move, total basis does not.
+                        let total = lots.reduce(Decimal(0)) { $0 + $1.shares }
+                        if total > epsilon {
+                            for i in lots.indices {
+                                lots[i].shares += event.shares * (lots[i].shares / total)
+                            }
+                        } else if event.shares > 0 {
+                            lots.append(Lot(shares: event.shares, basis: 0, date: event.date))
+                        }
+                        continue
+                    }
+
+                    if event.type == "Return Of Capital" {
+                        // Rule 3: reduces basis pro rata; the amount is in pIncome.
+                        let total = lots.reduce(Decimal(0)) { $0 + $1.shares }
+                        if total > epsilon && event.income != 0 {
+                            for i in lots.indices {
+                                lots[i].basis -= event.income * (lots[i].shares / total)
+                            }
+                        }
+                        continue
+                    }
+
+                    if openers.contains(event.type) && event.shares > 0 {
+                        // Rule 4: the recorded amount is the basis.
+                        lots.append(Lot(shares: event.shares, basis: event.amount, date: event.date))
+                        continue
+                    }
+
+                    guard closers.contains(event.type), event.shares < 0 else { continue }
+
+                    let soldISO = DateConversion.toISO(event.date)
+                    // Rule 6: a transfer out is not a realisation. The lot moves
+                    // to another account at its carrying basis, so Banktivity
+                    // reports proceeds EQUAL to basis, a zero gain, and the term
+                    // as "Long" regardless of how long it was held -- a two-day
+                    // CCL holding transferred out reads "Long". That last part is
+                    // a quirk rather than a rule I can justify; it is reproduced
+                    // because the schedule has to match. Evidence is thin and
+                    // stated so: this vault holds five `Move Shares Out` rows,
+                    // four of which reach an export, and all four behave this way.
+                    let isTransferOut = event.type == "Move Shares Out"
+                    var remaining = -event.shares
+                    let disposalTotal = remaining
+
+                    while remaining > epsilon && !lots.isEmpty {
+                        let take = min(remaining, lots[0].shares)
+                        let basis = lots[0].shares > 0
+                            ? Self.roundToCents(lots[0].basis * (take / lots[0].shares))
+                            : 0
+                        let proceeds: Decimal = isTransferOut
+                            ? basis
+                            : (disposalTotal > 0
+                                ? Self.roundToCents(event.amount * (take / disposalTotal))
+                                : 0)
+                        let acquiredISO = DateConversion.toISO(lots[0].date)
+
+                        let held = (event.date - lots[0].date) / 86_400.0
+                        results.append(SecurityRealizedGainDTO(
+                            symbol: Self.stringValue(event.security, "pSymbol"),
+                            securityName: Self.stringValue(event.security, "pName"),
+                            accountId: Self.extractPK(from: event.account.objectID),
+                            accountName: Self.stringValue(event.account, "pName"),
+                            shares: take, acquired: acquiredISO, sold: soldISO,
+                            proceeds: proceeds, costBasis: basis, gain: proceeds - basis,
+                            term: (isTransferOut || held > 365) ? "Long" : "Short"))
+
+                        // Rule 5: what stays on the lot keeps full precision.
+                        if lots[0].shares > 0 {
+                            lots[0].basis -= lots[0].basis * (take / lots[0].shares)
+                        }
+                        lots[0].shares -= take
+                        remaining -= take
+                        if lots[0].shares <= epsilon { lots.removeFirst() }
+                    }
+                }
+            }
+
+            var filtered = results.filter { row in
+                if let start = startDate, row.sold < start { return false }
+                if let end = endDate, row.sold > end { return false }
+                return true
+            }
+            filtered.sort { ($0.sold, $0.symbol, $0.acquired) < ($1.sold, $1.symbol, $1.acquired) }
+            if let limit = limit, filtered.count > limit {
+                filtered = Array(filtered.prefix(limit))
+            }
+            return filtered
+        }
+    }
+
+    /// Round half-to-even, matching what Banktivity reports.
+    static func roundToCents(_ value: Decimal) -> Decimal {
+        var input = value
+        var output = Decimal()
+        NSDecimalRound(&output, &input, 2, .bankers)
+        return output
+    }
+
     public func getTrades(
         accountId: Int? = nil,
         symbol: String? = nil,

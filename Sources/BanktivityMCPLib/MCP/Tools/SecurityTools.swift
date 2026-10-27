@@ -174,6 +174,35 @@ func registerSecurityTools(
 
     // get_security_trades
     registry.register(
+        name: "get_security_realized_gains",
+        description: """
+            Compute realised capital gains by matching disposals to opening lots (FIFO). \
+            Banktivity does not persist its lot matching, so this recomputes it: splits \
+            adjust shares without touching basis, return of capital reduces basis, and \
+            money is handled as exact decimals. Refuses rather than guessing if a security \
+            uses a cost-basis method other than FIFO.
+            """,
+        inputSchema: ToolHelpers.schema(properties: [
+            "symbol": ToolHelpers.property(type: "string", description: "Security ticker symbol"),
+            "id": ToolHelpers.property(type: "integer", description: "Security ID (alternative to symbol)"),
+            "account_id": ToolHelpers.property(type: "integer", description: "Filter to a specific account ID"),
+            "start_date": ToolHelpers.property(type: "string", description: "Earliest disposal date (YYYY-MM-DD)"),
+            "end_date": ToolHelpers.property(type: "string", description: "Latest disposal date (YYYY-MM-DD)"),
+            "limit": ToolHelpers.property(type: "integer", description: "Maximum number of rows to return")
+        ])
+    ) { args in
+        let results = try securities.getRealizedGains(
+            accountId: ToolHelpers.getInt(args, key: "account_id"),
+            symbol: ToolHelpers.getString(args, key: "symbol"),
+            id: ToolHelpers.getInt(args, key: "id"),
+            startDate: ToolHelpers.getString(args, key: "start_date"),
+            endDate: ToolHelpers.getString(args, key: "end_date"),
+            limit: ToolHelpers.getInt(args, key: "limit")
+        )
+        return try ToolHelpers.jsonResponse(results)
+    }
+
+    registry.register(
         name: "get_security_trades",
         description: "Get security trade history (buys, sells, transfers). Shows share counts, prices, amounts, and commissions.",
         inputSchema: ToolHelpers.schema(properties: [

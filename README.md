@@ -172,6 +172,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 - `get_security_prices` — Get price history for a security (by symbol or ID, optional date range/limit)
 - `get_security_holdings` — Get current holdings (positions) with shares, cost basis, and market value
 - `get_security_trades` — Get trade history (buys, sells, transfers) with shares, prices, and commissions
+- `get_security_realized_gains` — Get realised capital gains per closed lot (acquisition date, proceeds, cost basis, gain, short/long term)
 - `get_security_income` — Get investment income (dividends, interest, capital gains distributions)
 - `create_share_adjustment` — Create a share adjustment (e.g. charges, stock splits, position corrections)
 - `import_security_prices` — Import prices from a CSV file (Yahoo Finance, OHLCV, or Date/Close)
@@ -209,7 +210,7 @@ banktivity-cli export turtle --output vault.ttl
 - `import-rules list`, `import-rules get`, `import-rules match`, `import-rules create`, `import-rules update`, `import-rules delete`
 - `scheduled list`, `scheduled get`, `scheduled create`, `scheduled update`, `scheduled delete`
 - `statements list`, `statements get`, `statements create`, `statements delete`, `statements reconcile`, `statements unreconcile`, `statements unreconciled`
-- `securities list`, `securities create`, `securities prices`, `securities holdings`, `securities trades`, `securities income`, `securities adjust`, `securities import-prices`, `securities delete-prices`
+- `securities list`, `securities create`, `securities prices`, `securities holdings`, `securities trades`, `securities realized-gains`, `securities income`, `securities adjust`, `securities import-prices`, `securities delete-prices`
 - `export turtle`
 - `schema`
 
