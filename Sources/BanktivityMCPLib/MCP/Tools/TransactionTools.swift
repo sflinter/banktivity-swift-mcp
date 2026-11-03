@@ -24,7 +24,13 @@ func registerTransactionTools(
             "offset": ToolHelpers.property(type: "number", description: "Number of transactions to skip"),
         ])
     ) { arguments in
-        let accountId = ToolHelpers.getInt(arguments, key: "account_id")
+        let accountId: Int?
+        if ToolHelpers.getInt(arguments, key: "account_id") != nil ||
+            ToolHelpers.getString(arguments, key: "account_name") != nil {
+            accountId = try resolveAccountId(accounts: accounts, arguments: arguments)
+        } else {
+            accountId = nil
+        }
         let startDate = ToolHelpers.getString(arguments, key: "start_date")
         let endDate = ToolHelpers.getString(arguments, key: "end_date")
         let limit = ToolHelpers.getInt(arguments, key: "limit")

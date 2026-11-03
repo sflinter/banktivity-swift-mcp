@@ -51,4 +51,38 @@ struct TransactionRepositoryTests {
         #expect(created.date == "2026-04-09")
         #expect(created.lineItems.contains { $0.accountId == account.id && abs($0.amount - -20.0) < 0.005 })
     }
+
+    @Test("List rejects missing account filter instead of returning the whole vault")
+    func listRejectsMissingAccountFilter() throws {
+        let repos = try makeRepositories()
+        defer { TestVaultHelper.cleanup(repos.vault) }
+
+        let account = try repos.accounts.create(
+            name: "Filtered Checking",
+            accountClass: AccountClass.checking,
+            currencyCode: "USD"
+        )
+        _ = try repos.transactions.create(
+            date: "2026-05-10",
+            title: "Should not leak through missing account filter",
+            lineItems: [(accountId: account.id, amount: -10.0, memo: nil)]
+        )
+
+        do {
+            _ = try repos.transactions.list(accountId: 999_999)
+            Issue.record("Expected missing account filter to fail")
+        } catch let error as ToolError {
+            if case .notFound(let message) = error {
+                #expect(message == "Account not found: 999999")
+            } else {
+                Issue.record("Expected notFound, got \(error)")
+            }
+        } catch {
+            Issue.record("Expected ToolError.notFound, got \(error)")
+        }
+
+        let filtered = try repos.transactions.list(accountId: account.id)
+        #expect(filtered.count == 1)
+        #expect(filtered.first?.title == "Should not leak through missing account filter")
+    }
 }
