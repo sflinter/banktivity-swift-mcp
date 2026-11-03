@@ -5,7 +5,10 @@ import Foundation
 import Testing
 @testable import BanktivityLib
 
+// Runs on the main actor: see TestVaultHelper for why every suite that
+// touches a view context has to.
 @Suite("Currency")
+@MainActor
 struct CurrencyTests {
 
     @Test("currency formatter uses deterministic grouped decimal style")

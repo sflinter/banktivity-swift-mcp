@@ -4,6 +4,27 @@ import CoreData
 import Foundation
 @testable import BanktivityLib
 
+/// Why the Core Data suites are annotated `@MainActor`.
+///
+/// `viewContext` is `NSMainQueueConcurrencyType` and a Swift Testing test body
+/// runs on the cooperative thread pool, not the main thread. Every touch of a
+/// view-context object from a test body is therefore the same threading
+/// violation #3 fixed in the repositories, and the suite still had it: under
+/// `-com.apple.CoreData.ConcurrencyDebug 1` the run traps in
+/// `_PFAssertSafeMultiThreadedAccess_impl` inside `seedCurrencies` before a
+/// single test finishes.
+///
+/// Left alone it does not fail cleanly. The context's change-tracking sets get
+/// mutated from the test thread while the main runloop processes the merge
+/// notifications `automaticallyMergesChangesFromParent` posts after every
+/// background write, and a torn `CFBasicHash` surfaces as a nil insert into an
+/// `__NSCFSet`, a segfault in `CFSetCreateCopy`, or a divide-by-zero in the
+/// bucket search when the table's capacity reads as zero. Measured on `main`:
+/// five crashed runs in sixteen.
+///
+/// `@MainActor` puts the body on the queue the context already belongs to,
+/// which makes the existing accesses correct rather than re-routing each one.
+/// Any new suite that builds a vault needs the same annotation.
 enum TestVaultHelper {
     struct TestVault {
         let path: String

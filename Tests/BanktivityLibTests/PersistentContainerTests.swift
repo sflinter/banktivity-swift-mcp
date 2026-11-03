@@ -5,7 +5,10 @@ import Foundation
 import Testing
 @testable import BanktivityLib
 
+// Runs on the main actor: see TestVaultHelper for why every suite that
+// touches a view context has to.
 @Suite("PersistentContainer")
+@MainActor
 struct PersistentContainerTests {
 
     /// Copy the test vault to a temp location and return the path. Returns nil if vault not found.
