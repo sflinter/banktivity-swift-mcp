@@ -15,6 +15,17 @@ Inspired by [banktivity-mcp](https://github.com/mhriemers/banktivity-mcp) (TypeS
 - macOS 14+
 - A Banktivity `.bank8` vault file
 
+## Read-only mode
+
+Set `BANKTIVITY_STORE_READ_ONLY` to `1`, `true`, or `yes` to open the Core Data store read-only. Even a pure read makes SQLite touch its write-ahead log and other housekeeping files, so use this when the goal is to inspect a vault without altering a byte of it. Writes then fail down at the store layer rather than at the write guard.
+
+```sh
+BANKTIVITY_STORE_READ_ONLY=1 \
+  banktivity-cli --vault ~/Documents/Banktivity/My\ Accounts.bank8 accounts list
+```
+
+One caveat: SQLite may still open `core.sql-shm` for writing on its own account. The default remains read/write and the write guard is unchanged, so treat this as a second layer rather than a substitute for backups.
+
 ## Installation
 
 ### Homebrew (recommended)

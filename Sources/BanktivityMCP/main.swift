@@ -29,7 +29,10 @@ guard FileManager.default.fileExists(atPath: bankFilePath) else {
 
 let container: NSPersistentContainer
 do {
-    container = try PersistentContainerFactory.create(bankFilePath: bankFilePath)
+    container = try PersistentContainerFactory.create(
+        bankFilePath: bankFilePath,
+        readOnly: PersistentContainerFactory.readOnlyFromEnvironment
+    )
     FileHandle.standardError.write(
         "Core Data container loaded successfully\n".data(using: .utf8)!
     )
