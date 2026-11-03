@@ -7,6 +7,11 @@ public func formatCurrency(_ amount: Double, currency: String = "EUR") -> String
     let formatter = NumberFormatter()
     formatter.numberStyle = .currency
     formatter.currencyCode = currency
-    formatter.locale = Locale(identifier: "nl_NL")
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.usesGroupingSeparator = true
+    formatter.groupingSeparator = ","
+    formatter.currencyGroupingSeparator = ","
+    formatter.decimalSeparator = "."
+    formatter.currencyDecimalSeparator = "."
     return formatter.string(from: NSNumber(value: amount)) ?? "\(amount)"
 }

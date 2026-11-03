@@ -8,6 +8,19 @@ import Testing
 @Suite("Currency")
 struct CurrencyTests {
 
+    @Test("currency formatter uses deterministic grouped decimal style")
+    func currencyFormatterUsesDeterministicGroupedDecimalStyle() {
+        let usd = formatCurrency(-145_915.17, currency: "USD")
+        #expect(usd.contains("145,915.17"))
+        #expect(!usd.contains(".915,17"))
+
+        let aud = formatCurrency(1_234.56, currency: "AUD")
+        let eur = formatCurrency(1_234.56, currency: "EUR")
+        #expect(aud.contains("1,234.56"))
+        #expect(eur.contains("1,234.56"))
+        #expect(aud != eur)
+    }
+
     @Test("createShareAdjustment uses account currency not first in DB")
     func adjustmentUsesAccountCurrency() throws {
         let vault = try TestVaultHelper.createFreshVault()
