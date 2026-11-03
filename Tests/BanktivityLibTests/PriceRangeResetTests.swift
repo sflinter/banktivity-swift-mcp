@@ -12,6 +12,9 @@ import Testing
 /// you expected there is nothing to go back to. `SecurityPriceItem` records what is
 /// known in three fields; clearing those says the same thing and leaves every row
 /// in place.
+// Runs on the main actor: see TestVaultHelper for why every suite that
+// touches a view context has to.
+@MainActor
 @Suite("Price range reset", .serialized)
 struct PriceRangeResetTests {
 

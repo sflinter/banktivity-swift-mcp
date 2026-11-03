@@ -11,6 +11,9 @@ import Testing
 /// disagreed with `ZTRANSACTIONTYPE`. It was wrong from 302 upward and omitted
 /// 250 entirely, so a correctly recorded row read back mislabelled -- or as
 /// `Unknown (250)`, which looks like a data defect when the data is fine.
+// Runs on the main actor: see TestVaultHelper for why every suite that
+// touches a view context has to.
+@MainActor
 @Suite("Security transaction type", .serialized)
 struct SecurityTransactionTypeTests {
 

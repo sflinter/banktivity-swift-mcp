@@ -4,6 +4,9 @@ import Foundation
 import Testing
 @testable import BanktivityLib
 
+// Runs on the main actor: see TestVaultHelper for why every suite that
+// touches a view context has to.
+@MainActor
 @Suite("TransactionRepository")
 struct TransactionRepositoryTests {
 

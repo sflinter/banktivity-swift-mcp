@@ -16,6 +16,9 @@ import Testing
 /// those concurrently -- with the other Core Data suites also in flight -- crashes the test
 /// process. Serialising this suite costs about a second and keeps the fix provable without
 /// pulling the wider Core Data threading work into a categorization change.
+// Runs on the main actor: see TestVaultHelper for why every suite that
+// touches a view context has to.
+@MainActor
 @Suite("Categorize safety", .serialized)
 struct CategorizeSafetyTests {
 
