@@ -301,9 +301,13 @@ public struct RecategorizationResultDTO: Codable, Sendable {
 public struct BulkRecategorizeResultDTO: Codable, Sendable {
     public let affected: [RecategorizationResultDTO]
     public let count: Int
+    /// Matched transactions passed over because they are transfers, which have no category.
+    /// Reported rather than silently dropped: a caller comparing `count` against the number
+    /// of matches needs to know the difference was a refusal, not a miss.
+    public let skippedTransfers: Int
 
-    public init(affected: [RecategorizationResultDTO], count: Int) {
-        self.affected = affected; self.count = count
+    public init(affected: [RecategorizationResultDTO], count: Int, skippedTransfers: Int = 0) {
+        self.affected = affected; self.count = count; self.skippedTransfers = skippedTransfers
     }
 }
 

@@ -348,6 +348,60 @@ public final class CategorizationRepository: BaseRepository, @unchecked Sendable
 
     // MARK: - Write Operations
 
+    /// How a transaction's line items divide into category legs, posting legs, and empty slots.
+    ///
+    /// One classifier, shared by `recategorize` and by the `bulkRecategorize` scan that
+    /// predicts it. When a dry run and the write it rehearses count legs separately, the
+    /// plan promises changes the apply then refuses -- so they read the same census here
+    /// rather than each deciding for itself what a transfer is.
+    struct LegCensus {
+        var categoryLineItem: NSManagedObject?
+        var primaryLineItem: NSManagedObject?
+        var orphanedLineItems: [NSManagedObject] = []
+        var oldCategoryName: String?
+        /// Legs posting to a real account (bank, asset, liability) rather than to a category.
+        var postingLegCount = 0
+
+        /// Two or more posting legs means this is a transfer between real accounts.
+        /// A transfer has no category: both sides are already accounted for.
+        var isTransfer: Bool { postingLegCount >= 2 }
+    }
+
+    static func censusOfLegs(_ lineItems: Set<NSManagedObject>) -> LegCensus {
+        var census = LegCensus()
+        for li in lineItems {
+            guard let account = Self.relatedObject(li, "pAccount") else {
+                census.orphanedLineItems.append(li)
+                continue
+            }
+            let acClass = Self.intValue(account, "pAccountClass")
+            if acClass == AccountClass.income || acClass == AccountClass.expense {
+                census.categoryLineItem = li
+                census.oldCategoryName = Self.stringValue(account, "pName")
+            } else {
+                census.primaryLineItem = li
+                census.postingLegCount += 1
+            }
+        }
+        return census
+    }
+
+    /// Refuse a target that is not an income or expense account.
+    ///
+    /// `recategorize` resolves `categoryId` against the `Account` entity, and in Banktivity
+    /// a category *is* an Account -- so a checking-account id resolves perfectly well and is
+    /// then written into the category slot, quietly turning the transaction into a second
+    /// transfer. Nothing downstream detects that, so it is refused here.
+    static func requireCategoryAccount(_ account: NSManagedObject, id: Int) throws {
+        let acClass = Self.intValue(account, "pAccountClass")
+        guard acClass == AccountClass.income || acClass == AccountClass.expense else {
+            let kind = accountClassNames[acClass] ?? "class \(acClass)"
+            throw ToolError.invalidInput(
+                "Account \(id) is a \(kind) account, not a category; "
+                    + "only income and expense accounts may be used as a category")
+        }
+    }
+
     /// Recategorize a single transaction
     public func recategorize(transactionId: Int, categoryId: Int) throws -> RecategorizationResultDTO? {
         struct RecategorizeOutcome: Sendable {
@@ -364,31 +418,30 @@ public final class CategorizationRepository: BaseRepository, @unchecked Sendable
                 throw ToolError.notFound("Category not found: \(categoryId)")
             }
 
+            try Self.requireCategoryAccount(categoryAccount, id: categoryId)
+
             let newCategoryName = Self.stringValue(categoryAccount, "pName")
             let catUUID = Self.stringValue(categoryAccount, "pUniqueID")
             let txUUID = Self.stringValue(tx, "pUniqueID")
             let lineItems = Self.relatedSet(tx, "lineItems")
 
-            // Find existing category line item, primary line item, and orphaned (null-account) line items
-            var categoryLineItem: NSManagedObject?
-            var primaryLineItem: NSManagedObject?
-            var orphanedLineItems: [NSManagedObject] = []
-            var oldCategoryName: String?
+            let census = Self.censusOfLegs(lineItems)
 
-            for li in lineItems {
-                guard let account = Self.relatedObject(li, "pAccount") else {
-                    // Line item with no account — orphaned slot
-                    orphanedLineItems.append(li)
-                    continue
-                }
-                let acClass = Self.intValue(account, "pAccountClass")
-                if acClass == AccountClass.income || acClass == AccountClass.expense {
-                    categoryLineItem = li
-                    oldCategoryName = Self.stringValue(account, "pName")
-                } else {
-                    primaryLineItem = li
-                }
+            // Refuse a transfer rather than fabricate a category for it. With two posting
+            // legs there is no category slot and no orphan to reuse, so the branch below
+            // would add a *third* leg offsetting only one side. The double entry no longer
+            // balances, Banktivity rebalances it with a phantom leg, and a clean transfer
+            // becomes a spurious split. Upstream PR #28 proposed a guard on the same defect.
+            if census.isTransfer {
+                throw ToolError.invalidInput(
+                    "Transaction \(transactionId) is a transfer (\(census.postingLegCount) posting "
+                        + "line items) and cannot be categorized")
             }
+
+            let categoryLineItem = census.categoryLineItem
+            let primaryLineItem = census.primaryLineItem
+            let orphanedLineItems = census.orphanedLineItems
+            let oldCategoryName = census.oldCategoryName
 
             var syncInfo: (txUUID: String, liUUID: String, catUUID: String)?
 
@@ -461,6 +514,7 @@ public final class CategorizationRepository: BaseRepository, @unchecked Sendable
             let title: String
             let hasCat: Bool
             let oldCatName: String?
+            let isTransfer: Bool
         }
 
         let txDataList: [TxData] = try performRead { ctx in
@@ -470,31 +524,42 @@ public final class CategorizationRepository: BaseRepository, @unchecked Sendable
 
             let transactions = try ctx.fetch(request)
             return transactions.map { tx in
-                let lineItems = Self.relatedSet(tx, "lineItems")
-                var hasCat = false
-                var oldCatName: String?
-                for li in lineItems {
-                    guard let account = Self.relatedObject(li, "pAccount") else { continue }
-                    let acClass = Self.intValue(account, "pAccountClass")
-                    if acClass == AccountClass.income || acClass == AccountClass.expense {
-                        hasCat = true
-                        oldCatName = Self.stringValue(account, "pName")
-                    }
-                }
+                // The same census the write uses, so a dry run cannot promise a row that
+                // `recategorize` would refuse.
+                let census = Self.censusOfLegs(Self.relatedSet(tx, "lineItems"))
                 return TxData(
                     id: Self.extractPK(from: tx.objectID),
                     title: Self.stringValue(tx, "pTitle"),
-                    hasCat: hasCat,
-                    oldCatName: oldCatName
+                    hasCat: census.categoryLineItem != nil,
+                    oldCatName: census.oldCategoryName,
+                    isTransfer: census.isTransfer
                 )
             }
         }
 
+        // Validate the target once, before any row is reported or written. A dry run that
+        // accepts a checking account as the category would rehearse a plan the apply refuses.
+        let _: Bool = try performRead { [self] ctx in
+            guard let categoryAccount = try fetchByPK(entityName: "Account", pk: categoryId, in: ctx) else {
+                throw ToolError.notFound("Category not found: \(categoryId)")
+            }
+            try Self.requireCategoryAccount(categoryAccount, id: categoryId)
+            return true
+        }
+
         var results: [RecategorizationResultDTO] = []
+        var skippedTransfers = 0
 
         for txData in txDataList {
             // Check if already categorized
             if uncategorizedOnly && txData.hasCat { continue }
+
+            // A transfer has no category. Skip it and account for it, rather than throwing:
+            // one transfer caught by a payee pattern must not abandon the rest of the batch.
+            if txData.isTransfer {
+                skippedTransfers += 1
+                continue
+            }
 
             if dryRun {
                 let catName = try categoryRepo.get(categoryId: categoryId)?.name ?? "Unknown"
@@ -511,7 +576,8 @@ public final class CategorizationRepository: BaseRepository, @unchecked Sendable
             }
         }
 
-        return BulkRecategorizeResultDTO(affected: results, count: results.count)
+        return BulkRecategorizeResultDTO(
+            affected: results, count: results.count, skippedTransfers: skippedTransfers)
     }
 
     /// Helper to get transaction title by ID (for recategorization results)
