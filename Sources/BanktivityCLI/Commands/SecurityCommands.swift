@@ -7,7 +7,7 @@ import Foundation
 struct Securities: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Security and price history operations",
-        subcommands: [List.self, Create.self, Prices.self, ImportPrices.self, DeletePrices.self, FixPrices.self, Holdings.self, Trades.self, Income.self, Adjust.self, UpdateTrade.self]
+        subcommands: [List.self, Create.self, Prices.self, ImportPrices.self, DeletePrices.self, ResetPriceRange.self, FixPrices.self, Holdings.self, Trades.self, Income.self, Adjust.self, UpdateTrade.self]
     )
 
     struct List: AsyncParsableCommand {
@@ -158,6 +158,40 @@ struct Securities: AsyncParsableCommand {
                 startDate: startDate, endDate: endDate
             )
             try outputJSON(["message": "Deleted \(count) price(s)"] as [String: Any], format: parent.format)
+        }
+    }
+
+    struct ResetPriceRange: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "reset-price-range",
+            abstract: "Forget which price history is known for a security, without deleting any of it",
+            discussion: """
+            Clears pKnownDateRangeBegin, pKnownDateRangeEnd and pLatestImportDate on
+            the security's SecurityPriceItem. Every SecurityPrice row stays exactly
+            where it is; only the record of what is known is cleared. The response
+            reports the previous values and the surviving row count.
+            """
+        )
+
+        @OptionGroup var parent: GlobalOptions
+
+        @Option(name: .long, help: "Security ticker symbol")
+        var symbol: String?
+
+        @Option(name: .long, help: "Security ID (alternative to --symbol)")
+        var id: Int?
+
+        func run() async throws {
+            let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
+            let container = try BanktivityCLI.createContainer(vaultPath: path)
+            let writeGuard = BanktivityCLI.createWriteGuard(vaultPath: path)
+            try await guardWrite(writeGuard)
+
+            let securities = SecurityRepository(container: container)
+            guard let result = try securities.resetKnownPriceRange(symbol: symbol, id: id) else {
+                throw ToolError.notFound("No price item for security: \(symbol ?? id.map(String.init) ?? "<none>")")
+            }
+            try outputJSON(result, format: parent.format)
         }
     }
 

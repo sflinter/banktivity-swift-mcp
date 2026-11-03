@@ -250,4 +250,26 @@ func registerSecurityTools(
         )
         return ToolHelpers.successResponse("Deleted \(count) price(s)")
     }
+
+    // reset_security_price_range
+    registry.register(
+        name: "reset_security_price_range",
+        description: "Forget which price history is known for a security without deleting any of it. Clears the known date range and last import date; every price row is left in place.",
+        inputSchema: ToolHelpers.schema(properties: [
+            "symbol": ToolHelpers.property(type: "string", description: "Security ticker symbol (e.g. AAPL)"),
+            "id": ToolHelpers.property(type: "number", description: "Security ID (alternative to symbol)"),
+        ])
+    ) { arguments in
+        if let msg = await writeGuard.guardWriteAccess() {
+            return ToolHelpers.errorResponse(msg)
+        }
+
+        let symbol = ToolHelpers.getString(arguments, key: "symbol")
+        let id = ToolHelpers.getInt(arguments, key: "id")
+
+        guard let result = try securities.resetKnownPriceRange(symbol: symbol, id: id) else {
+            return ToolHelpers.errorResponse("No price item for that security; there is no known range to forget")
+        }
+        return try ToolHelpers.jsonResponse(result)
+    }
 }

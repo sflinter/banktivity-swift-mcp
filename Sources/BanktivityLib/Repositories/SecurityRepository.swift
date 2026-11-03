@@ -691,6 +691,97 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
         return result
     }
 
+    /// What a security's price history looked like before a reset, and after.
+    public struct PriceRangeResetDTO: Codable, Sendable {
+        public let symbol: String
+        public let priceRowCount: Int
+        public let previousKnownRangeBegin: String?
+        public let previousKnownRangeEnd: String?
+        public let previousLatestImportDate: String?
+
+        public init(symbol: String, priceRowCount: Int, previousKnownRangeBegin: String?,
+                    previousKnownRangeEnd: String?, previousLatestImportDate: String?) {
+            self.symbol = symbol
+            self.priceRowCount = priceRowCount
+            self.previousKnownRangeBegin = previousKnownRangeBegin
+            self.previousKnownRangeEnd = previousKnownRangeEnd
+            self.previousLatestImportDate = previousLatestImportDate
+        }
+    }
+
+    /// Forget what price history is known for a security, without deleting any of
+    /// it.
+    ///
+    /// `SecurityPriceItem` carries one record per security with
+    /// `pKnownDateRangeBegin`, `pKnownDateRangeEnd` and `pLatestImportDate`.
+    /// Clearing those says "nothing is known" while every `SecurityPrice` row stays
+    /// exactly where it was.
+    ///
+    /// The alternative available today is `deletePrices`, which is destructive: to
+    /// make a security's history look unknown you delete the rows that make it
+    /// known, and if the refetch does not return what you expected you have
+    /// nothing to go back to. This is the same statement without the data loss --
+    /// reversible by re-running `import-prices`, or by doing nothing at all, since
+    /// the rows never left.
+    ///
+    /// Returns nil when the security has no price item, which is not an error: a
+    /// security nothing has ever priced has no range to forget.
+    @discardableResult
+    public func resetKnownPriceRange(symbol: String? = nil, id: Int? = nil) throws -> PriceRangeResetDTO? {
+        struct Resolved: Sendable {
+            let objectID: NSManagedObjectID
+            let symbol: String
+        }
+        let resolved: Resolved? = try performRead { [self] ctx in
+            let security: NSManagedObject
+            if let id = id {
+                guard let s = try fetchByPK(entityName: "Security", pk: id, in: ctx) else { return nil }
+                security = s
+            } else {
+                guard let sym = symbol else { return nil }
+                let req = NSFetchRequest<NSManagedObject>(entityName: "Security")
+                req.predicate = NSPredicate(format: "pSymbol ==[c] %@", sym)
+                req.fetchLimit = 1
+                guard let s = try ctx.fetch(req).first else { return nil }
+                security = s
+            }
+            let uniqueId = Self.stringValue(security, "pUniqueID")
+            let piRequest = NSFetchRequest<NSManagedObject>(entityName: "SecurityPriceItem")
+            piRequest.predicate = NSPredicate(format: "pSecurityID == %@", uniqueId)
+            piRequest.fetchLimit = 1
+            guard let item = try ctx.fetch(piRequest).first else { return nil }
+            return Resolved(objectID: item.objectID, symbol: Self.stringValue(security, "pSymbol"))
+        }
+        guard let resolved else { return nil }
+
+        return try performWriteReturning { ctx in
+            guard let item = try? ctx.existingObject(with: resolved.objectID) else { return nil }
+
+            func stamp(_ key: String) -> String? {
+                (item.value(forKey: key) as? Date).map { DateConversion.toISODateTime(DateConversion.fromDate($0)) }
+            }
+            let before = PriceRangeResetDTO(
+                symbol: resolved.symbol,
+                // Reported so a caller can see the rows are still there. This is
+                // the difference from deletePrices and it is worth stating in the
+                // response rather than leaving to be checked separately.
+                priceRowCount: try {
+                    let request = NSFetchRequest<NSManagedObject>(entityName: "SecurityPrice")
+                    request.predicate = NSPredicate(format: "pSecurityPriceItem == %@", item)
+                    return try ctx.count(for: request)
+                }(),
+                previousKnownRangeBegin: stamp("pKnownDateRangeBegin"),
+                previousKnownRangeEnd: stamp("pKnownDateRangeEnd"),
+                previousLatestImportDate: stamp("pLatestImportDate")
+            )
+
+            item.setValue(nil, forKey: "pKnownDateRangeBegin")
+            item.setValue(nil, forKey: "pKnownDateRangeEnd")
+            item.setValue(nil, forKey: "pLatestImportDate")
+            return before
+        }
+    }
+
     public func deletePrices(
         symbol: String? = nil,
         id: Int? = nil,
