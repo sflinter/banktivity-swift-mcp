@@ -71,6 +71,7 @@ public enum PersistentContainerFactory {
         }
 
         let mergedModel = try loadMergedModel(from: storeContentURL)
+        registerOpaqueTransformers(for: mergedModel)
 
         let container = NSPersistentContainer(
             name: "Banktivity",
@@ -99,6 +100,35 @@ public enum PersistentContainerFactory {
         container.viewContext.automaticallyMergesChangesFromParent = true
 
         return container
+    }
+
+    /// Register a byte-preserving transformer for every transformer name the model
+    /// uses that this process cannot resolve.
+    ///
+    /// Banktivity's model names value transformers that live inside Banktivity.app
+    /// (`IGGCAccountingUnarchiveFromData`, `IGGCAccountingSecureUnarchiveFromDataTransformer`).
+    /// Without them Core Data logs a warning per attribute on every store load. These
+    /// attributes hold Banktivity's own archives, which this package never decodes,
+    /// so the correct stand-in keeps them opaque: `Data` in, the same `Data` out,
+    /// and any other value is a programming error rather than something to store.
+    /// Names that are already registered, including the system's
+    /// `NSSecureUnarchiveFromData`, are left alone.
+    ///
+    /// - Returns: The names this call registered.
+    @discardableResult
+    static func registerOpaqueTransformers(for model: NSManagedObjectModel) -> [String] {
+        var registered: [String] = []
+        for entity in model.entities {
+            for case let attribute as NSAttributeDescription in entity.properties
+            where attribute.attributeType == .transformableAttributeType {
+                guard let name = attribute.valueTransformerName,
+                      ValueTransformer(forName: NSValueTransformerName(name)) == nil else { continue }
+                ValueTransformer.setValueTransformer(
+                    OpaqueDataTransformer(), forName: NSValueTransformerName(name))
+                registered.append(name)
+            }
+        }
+        return registered
     }
 
     /// Dump all entity names, attributes, and relationships from a merged model.
@@ -170,5 +200,29 @@ extension NSAttributeType: @retroactive CustomStringConvertible {
         case .compositeAttributeType: return "composite"
         @unknown default: return "unknown(\(rawValue))"
         }
+    }
+}
+
+/// Stands in for a Banktivity.app transformer this package does not link: it
+/// passes the stored archive through untouched in both directions, so a save
+/// writes back exactly the bytes that were read.
+///
+/// Anything other than `Data` or nil stops the process. Returning nil instead
+/// would make Core Data store NULL, silently erasing Banktivity's archive, and
+/// the only way to hand this a decoded object is new code that assumed a real
+/// Banktivity transformer was present.
+final class OpaqueDataTransformer: ValueTransformer {
+    override class func transformedValueClass() -> AnyClass { NSData.self }
+    override class func allowsReverseTransformation() -> Bool { true }
+    override func transformedValue(_ value: Any?) -> Any? { Self.opaque(value) }
+    override func reverseTransformedValue(_ value: Any?) -> Any? { Self.opaque(value) }
+
+    private static func opaque(_ value: Any?) -> Data? {
+        guard let value else { return nil }
+        guard let data = value as? Data else {
+            preconditionFailure(
+                "Banktivity archive attribute given \(type(of: value)); only its stored Data may pass through")
+        }
+        return data
     }
 }

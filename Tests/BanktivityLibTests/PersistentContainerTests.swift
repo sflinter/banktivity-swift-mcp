@@ -143,3 +143,42 @@ struct PersistentContainerTests {
         }
     }
 }
+
+// Banktivity's model names transformers that live in Banktivity.app. Opening a
+// store must neither warn about them nor alter the archives they guard.
+@Suite("Opaque Banktivity transformers", .serialized)
+@MainActor
+struct OpaqueTransformerTests {
+
+    @Test("Every transformer the model names resolves after a store load")
+    func everyTransformerResolves() throws {
+        let vault = try TestVaultHelper.createFreshVault()
+        defer { TestVaultHelper.cleanup(vault) }
+
+        let names = vault.container.managedObjectModel.entities
+            .flatMap { $0.properties.compactMap { ($0 as? NSAttributeDescription)?.valueTransformerName } }
+        #expect(names.contains("IGGCAccountingUnarchiveFromData"))
+        for name in Set(names) {
+            #expect(ValueTransformer(forName: NSValueTransformerName(name)) != nil, "\(name) unresolved")
+        }
+    }
+
+    @Test("A Banktivity archive survives a save byte for byte")
+    func archiveBytesSurviveSave() throws {
+        let vault = try TestVaultHelper.createFreshVault()
+        defer { TestVaultHelper.cleanup(vault) }
+        let archive = Data((0..<64).map { UInt8(truncatingIfNeeded: $0 &* 37 &+ 11) })
+
+        let context = vault.container.viewContext
+        let group = NSEntityDescription.insertNewObject(forEntityName: "Group", into: context)
+        group.setValue(archive, forKey: "pItems")
+        try context.save()
+        let id = group.objectID
+        context.reset()
+
+        // Reload through a second container so the value comes from SQLite, not a cache.
+        let reopened = try PersistentContainerFactory.create(bankFilePath: vault.path)
+        let reloaded = try reopened.viewContext.existingObject(with: id)
+        #expect(reloaded.value(forKey: "pItems") as? Data == archive)
+    }
+}
