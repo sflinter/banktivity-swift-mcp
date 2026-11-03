@@ -97,6 +97,15 @@ public final class TransactionRepository: BaseRepository, @unchecked Sendable {
         }
     }
 
+    private func get(uniqueID: String) throws -> TransactionDTO? {
+        try performRead { [self] ctx in
+            let request = NSFetchRequest<NSManagedObject>(entityName: "Transaction")
+            request.predicate = NSPredicate(format: "pUniqueID == %@", uniqueID)
+            request.fetchLimit = 1
+            return try ctx.fetch(request).first.map { self.mapToDTO($0) }
+        }
+    }
+
     /// Get total transaction count
     public func count() throws -> Int {
         try count(entityName: "Transaction")
@@ -241,9 +250,7 @@ public final class TransactionRepository: BaseRepository, @unchecked Sendable {
             try lineItemRepo.recalculateRunningBalances(accountId: accountId)
         }
 
-        // Fetch the created transaction by searching for the most recent one with this title
-        let results = try search(query: title, limit: 1)
-        guard let created = results.first else {
+        guard let created = try get(uniqueID: syncInfo.txUUID) else {
             throw ToolError.notFound("Failed to retrieve created transaction")
         }
         return created
