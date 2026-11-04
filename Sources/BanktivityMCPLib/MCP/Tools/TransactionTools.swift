@@ -166,7 +166,7 @@ func registerTransactionTools(
                 "note": ToolHelpers.property(type: "string", description: "New note"),
                 "date": ToolHelpers.property(type: "string", description: "New date in ISO format (YYYY-MM-DD)"),
                 "cleared": ToolHelpers.property(type: "boolean", description: "Set cleared status"),
-                "transaction_type": ToolHelpers.property(type: "string", description: "New transaction type: deposit, withdrawal, transfer, check, buy, sell, move-shares-in, move-shares-out, dividend, etc."),
+                "transaction_type": ToolHelpers.property(type: "string", description: "New transaction type. Accepts: \(TransactionRepository.transactionTypeNames)"),
             ],
             required: ["transaction_id"]
         )

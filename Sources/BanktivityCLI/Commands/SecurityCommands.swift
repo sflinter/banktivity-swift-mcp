@@ -346,6 +346,9 @@ struct Securities: AsyncParsableCommand {
         @Option(name: .long, parsing: .unconditional, help: "Cash amount (negative for buy outflow)")
         var amount: Double?
 
+        @Option(name: .long, help: "Movement type. Accepts: \(SecurityRepository.shareMovementTypeNames). Defaults to buy or sell by the sign of --shares")
+        var transactionType: String?
+
         func run() async throws {
             let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
             let container = try BanktivityCLI.createContainer(vaultPath: path)
@@ -356,7 +359,8 @@ struct Securities: AsyncParsableCommand {
             let securities = SecurityRepository(container: container, syncBlobUpdater: syncBlobUpdater)
             let result = try securities.createShareAdjustment(
                 accountId: accountId, symbol: symbol, id: id,
-                shares: shares, date: date, title: title, amount: amount
+                shares: shares, date: date, title: title, amount: amount,
+                transactionType: transactionType
             )
             try outputJSON(result, format: parent.format)
         }

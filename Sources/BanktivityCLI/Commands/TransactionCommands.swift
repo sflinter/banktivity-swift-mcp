@@ -217,7 +217,7 @@ struct Transactions: AsyncParsableCommand {
         @Flag(name: .long, help: "Mark as uncleared")
         var uncleared: Bool = false
 
-        @Option(name: .long, help: "New transaction type (deposit, withdrawal, transfer, check, buy, sell, move-shares-in, move-shares-out, dividend, etc.)")
+        @Option(name: .long, help: "New transaction type. Accepts: \(TransactionRepository.transactionTypeNames). These are the write slugs; a read returns the vault's display name, so `move-shares-out` writes what `Move Shares Out` reads back.")
         var transactionType: String?
 
         func run() async throws {

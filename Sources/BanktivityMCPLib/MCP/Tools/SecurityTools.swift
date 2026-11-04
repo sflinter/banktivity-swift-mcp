@@ -63,6 +63,7 @@ func registerSecurityTools(
                 "date": ToolHelpers.property(type: "string", description: "Date of adjustment in YYYY-MM-DD format"),
                 "title": ToolHelpers.property(type: "string", description: "Transaction title/memo"),
                 "amount": ToolHelpers.property(type: "number", description: "Cash amount (negative for buy outflow, positive for sell inflow)"),
+                "transaction_type": ToolHelpers.property(type: "string", description: "Movement type. Accepts: \(SecurityRepository.shareMovementTypeNames). Defaults to buy or sell by the sign of shares"),
             ],
             required: ["account_id", "shares", "date"]
         )
@@ -87,7 +88,8 @@ func registerSecurityTools(
 
         let result = try securities.createShareAdjustment(
             accountId: accountId, symbol: symbol, id: id,
-            shares: shares, date: date, title: title, amount: amount
+            shares: shares, date: date, title: title, amount: amount,
+            transactionType: ToolHelpers.getString(arguments, key: "transaction_type")
         )
         return try ToolHelpers.jsonResponse(result)
     }
