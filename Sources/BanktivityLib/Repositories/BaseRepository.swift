@@ -167,6 +167,28 @@ open class BaseRepository: @unchecked Sendable {
         return (object.value(forKey: key) as? Double) ?? 0.0
     }
 
+    /// Read a decimal attribute without going through `Double`, for sums.
+    public static func decimalValue(_ object: NSManagedObject, _ key: String) -> Decimal {
+        if let decimal = object.value(forKey: key) as? NSDecimalNumber {
+            return decimal.decimalValue
+        }
+        if let double = object.value(forKey: key) as? Double {
+            return Decimal(string: String(double)) ?? 0
+        }
+        return 0
+    }
+
+    /// The line item's exchange rate, with a missing or zero rate read as 1.
+    ///
+    /// `pTransactionAmount * pExchangeRate` is the account-currency amount. A
+    /// line with no rate, or a stored 0, would otherwise drop out of a
+    /// balance. Banktivity writes 1 for a same-currency line, so 1 is the
+    /// neutral reading (as in #27 and #19).
+    public static func effectiveExchangeRate(_ lineItem: NSManagedObject) -> Double {
+        let rate = doubleValue(lineItem, "pExchangeRate")
+        return rate == 0 ? 1.0 : rate
+    }
+
     /// Safely get a boolean value from a managed object
     public static func boolValue(_ object: NSManagedObject, _ key: String) -> Bool {
         (object.value(forKey: key) as? Bool) ?? false

@@ -54,12 +54,17 @@ struct Accounts: AsyncParsableCommand {
             let balance = try accounts.getBalance(accountId: resolvedId)
             let account = try accounts.get(accountId: resolvedId)
 
-            try outputJSON([
+            var result: [String: Any] = [
                 "accountId": resolvedId,
                 "accountName": account?.name ?? "Unknown",
                 "balance": balance,
                 "formattedBalance": formatCurrency(balance, currency: account?.currency ?? "EUR"),
-            ] as [String: Any], format: parent.format)
+            ]
+            if let holdings = try accounts.holdingsValue(accountId: resolvedId) {
+                result["holdingsValue"] = holdings
+                result["formattedHoldingsValue"] = formatCurrency(holdings, currency: account?.currency ?? "EUR")
+            }
+            try outputJSON(result, format: parent.format)
         }
     }
 
