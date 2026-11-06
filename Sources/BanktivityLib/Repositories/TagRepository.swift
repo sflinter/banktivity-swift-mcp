@@ -5,13 +5,6 @@ import Foundation
 
 /// Repository for tag operations using Core Data
 public final class TagRepository: BaseRepository, @unchecked Sendable {
-    private let syncBlobUpdater: SyncBlobUpdater?
-
-    public init(container: NSPersistentContainer, syncBlobUpdater: SyncBlobUpdater? = nil) {
-        self.syncBlobUpdater = syncBlobUpdater
-        super.init(container: container)
-    }
-
     /// List all tags
     public func list() throws -> [TagDTO] {
         try performRead { [self] ctx in
@@ -76,6 +69,20 @@ public final class TagRepository: BaseRepository, @unchecked Sendable {
             guard let tag = try fetchByPK(entityName: "Tag", pk: tagId, in: ctx) else {
                 return false
             }
+            // Deleting a tag edits every line item that carried it, and line
+            // items travel inside their Transaction's sync record: mark each
+            // such Transaction modified so Banktivity uploads the change.
+            // (Fetched through LineItem: a Transaction predicate would need two
+            // to-many keys, which Core Data rejects.)
+            let tagged = NSFetchRequest<NSManagedObject>(entityName: "LineItem")
+            tagged.predicate = NSPredicate(format: "ANY pTags == %@", tag)
+            for li in try ctx.fetch(tagged) {
+                if let tx = Self.relatedObject(li, "pTransaction") {
+                    Self.setNow(tx, "pModificationDate")
+                }
+            }
+            // Tags are synced entities: tombstone the record in the same save.
+            try SyncRecords.markDeletedIfPresent(entityUUID: Self.stringValue(tag, "pUniqueID"), in: ctx)
             ctx.delete(tag)
             return true
         }
@@ -83,31 +90,16 @@ public final class TagRepository: BaseRepository, @unchecked Sendable {
 
     /// Add a tag to all line items of a transaction
     public func tagTransaction(transactionId: Int, tagId: Int) throws -> Int {
-        let outcome = try applyTagOutcome(transactionId: transactionId, tagId: tagId, add: true)
-        applyTagSyncBlob(outcome: outcome)
-        return outcome.count
+        try applyTagChange(transactionId: transactionId, tagId: tagId, add: true)
     }
 
     /// Remove a tag from all line items of a transaction
     public func untagTransaction(transactionId: Int, tagId: Int) throws -> Int {
-        let outcome = try applyTagOutcome(transactionId: transactionId, tagId: tagId, add: false)
-        applyTagSyncBlob(outcome: outcome)
-        return outcome.count
+        try applyTagChange(transactionId: transactionId, tagId: tagId, add: false)
     }
 
-    private struct LineItemTagInfo: Sendable {
-        let liUUID: String
-        let tagUUIDs: [String]
-    }
-
-    private struct TagOutcome: Sendable {
-        let count: Int
-        let txUUID: String
-        let lineItemTagInfo: [LineItemTagInfo]
-        var didChange: Bool { count > 0 }
-    }
-
-    private func applyTagOutcome(transactionId: Int, tagId: Int, add: Bool) throws -> TagOutcome {
+    /// Returns the number of line items changed.
+    private func applyTagChange(transactionId: Int, tagId: Int, add: Bool) throws -> Int {
         try performWriteReturning { [self] ctx in
             guard let tx = try fetchByPK(entityName: "Transaction", pk: transactionId, in: ctx) else {
                 throw ToolError.notFound("Transaction not found: \(transactionId)")
@@ -118,7 +110,6 @@ public final class TagRepository: BaseRepository, @unchecked Sendable {
 
             let lineItems = Self.relatedSet(tx, "lineItems")
             var count = 0
-            var info: [LineItemTagInfo] = []
 
             for li in lineItems {
                 let tags = li.mutableSetValue(forKey: "pTags")
@@ -129,32 +120,14 @@ public final class TagRepository: BaseRepository, @unchecked Sendable {
                     tags.remove(tag)
                     count += 1
                 }
-                // Collect current tag UUIDs for blob patching
-                let liUUID = Self.stringValue(li, "pUniqueID")
-                let currentTagUUIDs = (tags as? Set<NSManagedObject>)?.map { Self.stringValue($0, "pUniqueID") } ?? []
-                info.append(LineItemTagInfo(liUUID: liUUID, tagUUIDs: currentTagUUIDs))
             }
 
+            // The Transaction's modification date, in the same save, is the
+            // upload signal for its line items' tags.
             if count > 0 {
                 Self.setNow(tx, "pModificationDate")
             }
-
-            return TagOutcome(
-                count: count,
-                txUUID: Self.stringValue(tx, "pUniqueID"),
-                lineItemTagInfo: info
-            )
-        }
-    }
-
-    private func applyTagSyncBlob(outcome: TagOutcome) {
-        guard outcome.didChange, let updater = syncBlobUpdater else { return }
-        updater.updateTransactionBlob(transactionUUID: outcome.txUUID) { xml in
-            var result = xml
-            for item in outcome.lineItemTagInfo {
-                result = updater.patchTags(xml: result, lineItemUUID: item.liUUID, tagUUIDs: item.tagUUIDs)
-            }
-            return result
+            return count
         }
     }
 

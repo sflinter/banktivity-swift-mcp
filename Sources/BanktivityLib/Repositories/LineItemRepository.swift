@@ -58,6 +58,9 @@ public final class LineItemRepository: BaseRepository, @unchecked Sendable {
             Self.setNow(li, "pCreationTime")
             li.setValue(account, forKey: "pAccount")
             li.setValue(tx, forKey: "pTransaction")
+            // Line items sync inside their Transaction's record, so the
+            // Transaction's modification date is the upload signal.
+            Self.setNow(tx, "pModificationDate")
 
             return Self.extractPK(from: li.objectID)
         }
@@ -93,6 +96,12 @@ public final class LineItemRepository: BaseRepository, @unchecked Sendable {
                 li.setValue(memo, forKey: "pMemo")
             }
 
+            // Line items sync inside their Transaction's record, so the
+            // Transaction's modification date is the upload signal.
+            if let tx = Self.relatedObject(li, "pTransaction") {
+                Self.setNow(tx, "pModificationDate")
+            }
+
             return affectedAccountIds
         }
     }
@@ -112,6 +121,8 @@ public final class LineItemRepository: BaseRepository, @unchecked Sendable {
             }
             if let tx = Self.relatedObject(li, "pTransaction") {
                 transactionId = Self.extractPK(from: tx.objectID)
+                // The removal travels inside the Transaction's record.
+                Self.setNow(tx, "pModificationDate")
             }
 
             ctx.delete(li)

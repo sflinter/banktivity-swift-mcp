@@ -141,9 +141,8 @@ struct Transactions: AsyncParsableCommand {
             try await guardWrite(writeGuard)
 
             let accounts = AccountRepository(container: container)
-            let syncBlobUpdater = SyncBlobUpdater(container: container)
             let lineItemRepo = LineItemRepository(container: container)
-            let transactions = TransactionRepository(container: container, lineItemRepo: lineItemRepo, syncBlobUpdater: syncBlobUpdater)
+            let transactions = TransactionRepository(container: container, lineItemRepo: lineItemRepo)
 
             let resolvedLineItems: [(accountId: Int, amount: Double, memo: String?)]
 
@@ -226,9 +225,8 @@ struct Transactions: AsyncParsableCommand {
             let writeGuard = BanktivityCLI.createWriteGuard(vaultPath: path)
             try await guardWrite(writeGuard)
 
-            let syncBlobUpdater = SyncBlobUpdater(container: container)
             let lineItemRepo = LineItemRepository(container: container)
-            let transactions = TransactionRepository(container: container, lineItemRepo: lineItemRepo, syncBlobUpdater: syncBlobUpdater)
+            let transactions = TransactionRepository(container: container, lineItemRepo: lineItemRepo)
 
             let clearedValue: Bool? = cleared ? true : (uncleared ? false : nil)
 
@@ -260,9 +258,8 @@ struct Transactions: AsyncParsableCommand {
             let writeGuard = BanktivityCLI.createWriteGuard(vaultPath: path)
             try await guardWrite(writeGuard)
 
-            let syncBlobUpdater = SyncBlobUpdater(container: container)
             let lineItemRepo = LineItemRepository(container: container)
-            let transactions = TransactionRepository(container: container, lineItemRepo: lineItemRepo, syncBlobUpdater: syncBlobUpdater)
+            let transactions = TransactionRepository(container: container, lineItemRepo: lineItemRepo)
 
             let deleted = try transactions.delete(transactionId: id)
             if !deleted {
@@ -289,7 +286,6 @@ struct Transactions: AsyncParsableCommand {
 
             let lineItemRepo = LineItemRepository(container: container)
             let transactions = TransactionRepository(container: container, lineItemRepo: lineItemRepo)
-            let syncBlobUpdater = SyncBlobUpdater(container: container)
 
             // Get the transaction's UUID
             guard let tx = try transactions.get(transactionId: id) else {
@@ -323,7 +319,7 @@ struct Transactions: AsyncParsableCommand {
                 "date": tx.date
             ]
 
-            if let syncInfo = syncBlobUpdater.inspectSyncRecord(entityUUID: uuid) {
+            if let syncInfo = SyncRecords.inspect(entityUUID: uuid, in: container) {
                 output["syncRecord"] = syncInfo
             } else {
                 output["syncRecord"] = "NOT FOUND — no SyncedHostedEntity for this UUID"

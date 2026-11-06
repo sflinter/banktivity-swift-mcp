@@ -4,12 +4,6 @@ import CoreData
 import Foundation
 
 public final class SecurityRepository: BaseRepository, @unchecked Sendable {
-    private let syncBlobUpdater: SyncBlobUpdater?
-
-    public init(container: NSPersistentContainer, syncBlobUpdater: SyncBlobUpdater? = nil) {
-        self.syncBlobUpdater = syncBlobUpdater
-        super.init(container: container)
-    }
 
     // MARK: - Date Helpers (SecurityPrice uses int32 = days since Unix epoch)
 
@@ -160,7 +154,6 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
             let objectID: NSManagedObjectID
             let symbol: String
             let name: String
-            let uuid: String
         }
 
         let secInfo: SecurityInfo = try performRead { [self] ctx in
@@ -185,27 +178,16 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
             return SecurityInfo(
                 objectID: sec.objectID,
                 symbol: Self.stringValue(sec, "pSymbol"),
-                name: Self.stringValue(sec, "pName"),
-                uuid: Self.stringValue(sec, "pUniqueID")
+                name: Self.stringValue(sec, "pName")
             )
         }
         let securityObjectID = secInfo.objectID
         let secSymbol = secInfo.symbol
         let secName = secInfo.name
-        let secUUID = secInfo.uuid
 
-        struct SyncInfo: Sendable {
-            let txPK: Int
-            let txUUID: String
-            let txTitle: String
-            let liUUID: String
-            let accountUUID: String
-            let currencyUUID: String
-            let transactionTypeBaseType: String
-            let transactionTypeUUID: String
-        }
-
-        let info: SyncInfo = try performWriteReturning { [self] ctx in
+        // pCreationTime / pModificationDate on the new Transaction, set in
+        // this same save, are what tells Banktivity's sync to upload it.
+        let txPK: Int = try performWriteReturning { [self] ctx in
             guard let securityInCtx = try? ctx.existingObject(with: securityObjectID) else {
                 throw ToolError.notFound("Security not found in write context")
             }
@@ -222,17 +204,12 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
 
             // Use the account's currency (Account uses "currency" not "pCurrency")
             let currency = Self.relatedObject(account, "currency")
-            let accountUUID = Self.stringValue(account, "pUniqueID")
-            let currencyUUID = currency.map { Self.stringValue($0, "pUniqueID") } ?? ""
-            let txTypeBaseType = shares >= 0 ? "buy" : "sell"
-            let txTypeUUID = txType.map { Self.stringValue($0, "pUniqueID") } ?? ""
 
             // Create Transaction
             let tx = Self.createObject(entityName: "Transaction", in: ctx)
             let txTitle = title ?? "Charge adjustment — \(secSymbol)"
-            let txUUID = Self.generateUUID()
             tx.setValue(txTitle, forKey: "pTitle")
-            tx.setValue(txUUID, forKey: "pUniqueID")
+            tx.setValue(Self.generateUUID(), forKey: "pUniqueID")
             tx.setValue(false, forKey: "pCleared")
             tx.setValue(false, forKey: "pVoid")
             tx.setValue(false, forKey: "pAdjustment")
@@ -244,9 +221,8 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
 
             // Create LineItem
             let li = Self.createObject(entityName: "LineItem", in: ctx)
-            let liUUID = Self.generateUUID()
             li.setValue(0.0 as NSNumber, forKey: "pTransactionAmount")
-            li.setValue(liUUID, forKey: "pUniqueID")
+            li.setValue(Self.generateUUID(), forKey: "pUniqueID")
             li.setValue(1.0 as NSNumber, forKey: "pExchangeRate")
             li.setValue(0.0 as NSNumber, forKey: "pRunningBalance")
             li.setValue(false, forKey: "pCleared")
@@ -267,38 +243,11 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
             sli.setValue(li, forKey: "pLineItem")
 
             try ctx.obtainPermanentIDs(for: [tx])
-            return SyncInfo(
-                txPK: Self.extractPK(from: tx.objectID),
-                txUUID: txUUID, txTitle: txTitle, liUUID: liUUID,
-                accountUUID: accountUUID, currencyUUID: currencyUUID,
-                transactionTypeBaseType: txTypeBaseType, transactionTypeUUID: txTypeUUID
-            )
-        }
-
-        // Create sync record (non-fatal)
-        if let updater = syncBlobUpdater {
-            let sliAmount = amount ?? 0.0
-            let syncSLI = SyncBlobUpdater.SyncSecurityLineItem(
-                amount: sliAmount, commission: 0, pricePerShare: 0,
-                priceMultiplier: 1, securityUUID: secUUID,
-                shares: shares, hasDistributionType: false
-            )
-            let syncLI = SyncBlobUpdater.SyncLineItem(
-                accountUUID: info.accountUUID, accountAmount: 0,
-                cleared: false, identifier: info.liUUID, memo: nil,
-                securityLineItem: syncSLI, transactionAmount: 0
-            )
-            updater.createTransactionSyncRecord(
-                transactionUUID: info.txUUID, currencyUUID: info.currencyUUID,
-                date: date, title: info.txTitle, note: nil, adjustment: false,
-                lineItems: [syncLI],
-                transactionTypeBaseType: info.transactionTypeBaseType,
-                transactionTypeUUID: info.transactionTypeUUID
-            )
+            return Self.extractPK(from: tx.objectID)
         }
 
         return SecurityTradeDTO(
-            id: info.txPK,
+            id: txPK,
             date: date,
             type: shares >= 0 ? "Buy" : "Sell",
             symbol: secSymbol,
@@ -322,14 +271,9 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
         cashLineItemAmount: Double? = nil
     ) throws -> SecurityTradeDTO {
         // Resolve new security if specified
-        struct NewSecInfo: Sendable {
-            let objectID: NSManagedObjectID
-            let uuid: String
-        }
-
-        let newSecInfo: NewSecInfo?
+        let newSecurityObjectID: NSManagedObjectID?
         if securitySymbol != nil || securityId != nil {
-            newSecInfo = try performRead { [self] ctx in
+            newSecurityObjectID = try performRead { [self] ctx in
                 let sec: NSManagedObject
                 if let id = securityId {
                     guard let s = try fetchByPK(entityName: "Security", pk: id, in: ctx) else {
@@ -348,27 +292,16 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
                     }
                     sec = s
                 }
-                return NewSecInfo(objectID: sec.objectID, uuid: Self.stringValue(sec, "pUniqueID"))
+                return sec.objectID
             }
         } else {
-            newSecInfo = nil
+            newSecurityObjectID = nil
         }
-        let newSecurityObjectID = newSecInfo?.objectID
-        let newSecurityUUID = newSecInfo?.uuid
 
         struct UpdateResult: Sendable {
-            let txUUID: String
-            let liUUID: String
             let trade: SecurityTradeDTO
-            let cashSync: CashSyncInfo?
-        }
-
-        struct CashSyncInfo: Sendable {
-            let accountId: Int
-            let cashLineItemUUID: String
-            let cashAmount: Double
-            let offsetLineItemUUID: String
-            let offsetAmount: Double
+            /// The account whose cash line changed, if any.
+            let cashAccountId: Int?
         }
 
         let result: UpdateResult = try performWriteReturning { [self] ctx in
@@ -427,7 +360,7 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
                 sli.setValue(secInCtx, forKey: "pSecurity")
             }
 
-            let cashSync: CashSyncInfo?
+            let cashAccountId: Int?
             if let cashLineItemAmount = cashLineItemAmount {
                 guard let account = Self.relatedObject(li, "pAccount") else {
                     throw ToolError.invalidInput("Cash line repair requires the security line item to belong to an account")
@@ -442,17 +375,14 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
                 let offsetAmount = -cashLineItemAmount
                 li.setValue(cashLineItemAmount as NSNumber, forKey: "pTransactionAmount")
                 offsetLI.setValue(offsetAmount as NSNumber, forKey: "pTransactionAmount")
-                cashSync = CashSyncInfo(
-                    accountId: Self.extractPK(from: account.objectID),
-                    cashLineItemUUID: Self.stringValue(li, "pUniqueID"),
-                    cashAmount: cashLineItemAmount,
-                    offsetLineItemUUID: Self.stringValue(offsetLI, "pUniqueID"),
-                    offsetAmount: offsetAmount
-                )
+                cashAccountId = Self.extractPK(from: account.objectID)
             } else {
-                cashSync = nil
+                cashAccountId = nil
             }
 
+            // The line items and security line item sync inside the
+            // Transaction's record: its modification date, in this same save,
+            // is the upload signal.
             Self.setNow(tx, "pModificationDate")
 
             // Build return DTO
@@ -489,60 +419,11 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
                 accountId: account.map { Self.extractPK(from: $0.objectID) } ?? 0
             )
 
-            let txUUID = Self.stringValue(tx, "pUniqueID")
-            let liUUID = Self.stringValue(li, "pUniqueID")
-
-            return UpdateResult(txUUID: txUUID, liUUID: liUUID, trade: trade, cashSync: cashSync)
+            return UpdateResult(trade: trade, cashAccountId: cashAccountId)
         }
 
-        if let cashSync = result.cashSync {
-            try LineItemRepository(container: container).recalculateRunningBalances(accountId: cashSync.accountId)
-        }
-
-        // Patch sync blob (non-fatal)
-        if let updater = syncBlobUpdater {
-            // Pre-format values for the sendable closure
-            let liUUID = result.liUUID
-            let sharesStr = shares.map { updater.formatDecimalPublic($0) }
-            let ppsStr = pricePerShare.map { updater.formatDecimalPublic($0) }
-            let amountStr = amount.map { updater.formatDecimalPublic($0) }
-            let secRef = newSecurityUUID.map { "Security:\($0)" }
-            let cashSync = result.cashSync
-
-            updater.updateTransactionBlob(transactionUUID: result.txUUID) { xml in
-                var patched = xml
-                if let v = sharesStr {
-                    patched = SyncBlobUpdater.patchSecurityLineItemFieldStatic(
-                        xml: patched, lineItemUUID: liUUID, fieldName: "shares", fieldType: "decimal", value: v)
-                }
-                if let v = ppsStr {
-                    patched = SyncBlobUpdater.patchSecurityLineItemFieldStatic(
-                        xml: patched, lineItemUUID: liUUID, fieldName: "pricePerShare", fieldType: "decimal", value: v)
-                }
-                if let v = amountStr {
-                    patched = SyncBlobUpdater.patchSecurityLineItemFieldStatic(
-                        xml: patched, lineItemUUID: liUUID, fieldName: "cost", fieldType: "decimal", value: v)
-                }
-                if let v = secRef {
-                    patched = SyncBlobUpdater.patchSecurityLineItemFieldStatic(
-                        xml: patched, lineItemUUID: liUUID, fieldName: "security", fieldType: "reference", value: v)
-                }
-                if let cashSync {
-                    patched = updater.patchLineItemAmounts(
-                        xml: patched,
-                        lineItemUUID: cashSync.cashLineItemUUID,
-                        accountAmount: cashSync.cashAmount,
-                        transactionAmount: cashSync.cashAmount
-                    )
-                    patched = updater.patchLineItemAmounts(
-                        xml: patched,
-                        lineItemUUID: cashSync.offsetLineItemUUID,
-                        accountAmount: cashSync.offsetAmount,
-                        transactionAmount: cashSync.offsetAmount
-                    )
-                }
-                return patched
-            }
+        if let cashAccountId = result.cashAccountId {
+            try LineItemRepository(container: container).recalculateRunningBalances(accountId: cashAccountId)
         }
 
         return result.trade
@@ -652,7 +533,19 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
 
             priceItem.setValue(Date(), forKey: "pLatestImportDate")
 
-            // Find the latest price to update the Security sync blob
+            // Mark the Security modified so Banktivity re-uploads it. Price
+            // history itself does not sync; whether Banktivity's upload then
+            // carries the new latest price is unverified.
+            if imported > 0 {
+                let securityRequest = NSFetchRequest<NSManagedObject>(entityName: "Security")
+                securityRequest.predicate = NSPredicate(format: "pUniqueID == %@", securityUniqueId)
+                securityRequest.fetchLimit = 1
+                if let security = try ctx.fetch(securityRequest).first {
+                    Self.setNow(security, "pModificationDate")
+                }
+            }
+
+            // Find the latest price for the import result
             let allPriceRequest = NSFetchRequest<NSManagedObject>(entityName: "SecurityPrice")
             allPriceRequest.predicate = NSPredicate(format: "pSecurityPriceItem == %@", priceItem)
             allPriceRequest.sortDescriptors = [NSSortDescriptor(key: "pDate", ascending: false)]
@@ -680,13 +573,6 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
         // Banktivity's custom IGGCAccountingSecurityPrice class resets pClosePrice
         // to 0 on insert, leaving the value only in pAdjustedClosePrice.
         _ = try? fixBrokenPrices(symbol: securitySymbol)
-
-        // Update Security sync blob with latest price
-        if let price = result.latestClosePrice, let date = result.latestDateISO {
-            syncBlobUpdater?.updateSecurityLatestPrice(
-                securityUUID: securityUniqueId, closePrice: price, date: date
-            )
-        }
 
         return result
     }
@@ -830,6 +716,19 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
                 ctx.delete(price)
             }
 
+            // Mark the Security modified so Banktivity re-uploads it (whether
+            // the upload carries a changed `latestSecurityPrice` is unverified).
+            if deleteCount > 0 {
+                let securityRequest = NSFetchRequest<NSManagedObject>(entityName: "Security")
+                securityRequest.predicate = NSPredicate(
+                    format: "pUniqueID == %@", Self.stringValue(piInCtx, "pSecurityID")
+                )
+                securityRequest.fetchLimit = 1
+                if let security = try ctx.fetch(securityRequest).first {
+                    Self.setNow(security, "pModificationDate")
+                }
+            }
+
             // Update date range on SecurityPriceItem
             let remainingRequest = NSFetchRequest<NSManagedObject>(entityName: "SecurityPrice")
             remainingRequest.predicate = NSPredicate(format: "pSecurityPriceItem == %@", piInCtx)
@@ -855,7 +754,7 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
     }
 
     /// Fix price records where closePrice=0 but adjustedClosePrice has the actual value.
-    /// Optionally filter by symbol. Returns per-security fix counts and updates sync blobs.
+    /// Optionally filter by symbol. Returns per-security fix counts and marks the affected securities modified.
     public func fixBrokenPrices(symbol: String? = nil) throws -> [(symbol: String, fixed: Int)] {
         // Gather broken price info on the context's thread
         struct BrokenPriceInfo: Sendable {
@@ -923,12 +822,11 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
         // Fix in a write context
         struct FixResult: Sendable {
             let counts: [String: Int]
-            let latestPrices: [String: (price: Double, date: String)] // securityUUID → latest price
         }
 
         let fixResult: FixResult = try performWriteReturning { ctx in
             var counts: [String: Int] = [:]
-            var latestByUUID: [String: (price: Double, daysSinceEpoch: Int32)] = [:]
+            var securityUUIDs: Set<String> = []
 
             for objID in brokenPriceObjectIDs {
                 guard let price = try? ctx.existingObject(with: objID) else { continue }
@@ -938,36 +836,23 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
                 if let pi = Self.relatedObject(price, "pSecurityPriceItem") {
                     let sym = symbolLookup[pi.objectID] ?? "unknown"
                     counts[sym, default: 0] += 1
-
-                    let secUUID = uuidLookup[pi.objectID] ?? ""
-                    let days = Self.intValue(price, "pDate")
-                    if let existing = latestByUUID[secUUID] {
-                        if Int32(days) > existing.daysSinceEpoch {
-                            latestByUUID[secUUID] = (price: adjClose, daysSinceEpoch: Int32(days))
-                        }
-                    } else {
-                        latestByUUID[secUUID] = (price: adjClose, daysSinceEpoch: Int32(days))
+                    if let secUUID = uuidLookup[pi.objectID] {
+                        securityUUIDs.insert(secUUID)
                     }
                 }
             }
 
-            // Convert daysSinceEpoch to ISO date strings
-            var latestPrices: [String: (price: Double, date: String)] = [:]
-            for (uuid, info) in latestByUUID {
-                let dateStr = Self.daysSinceEpochToISO(info.daysSinceEpoch)
-                latestPrices[uuid] = (price: info.price, date: dateStr)
+            // Mark the affected securities modified so Banktivity re-uploads
+            // them (whether that carries the latest price is unverified).
+            if !securityUUIDs.isEmpty {
+                let securityRequest = NSFetchRequest<NSManagedObject>(entityName: "Security")
+                securityRequest.predicate = NSPredicate(format: "pUniqueID IN %@", Array(securityUUIDs))
+                for security in try ctx.fetch(securityRequest) {
+                    Self.setNow(security, "pModificationDate")
+                }
             }
 
-            return FixResult(counts: counts, latestPrices: latestPrices)
-        }
-
-        // Update sync blobs for affected securities
-        if let updater = syncBlobUpdater {
-            for (uuid, info) in fixResult.latestPrices {
-                updater.updateSecurityLatestPrice(
-                    securityUUID: uuid, closePrice: info.price, date: info.date
-                )
-            }
+            return FixResult(counts: counts)
         }
 
         return fixResult.counts.map { (symbol: $0.key, fixed: $0.value) }.sorted { $0.symbol < $1.symbol }
