@@ -185,12 +185,10 @@ struct Uncategorized: AsyncParsableCommand {
             let writeGuard = BanktivityCLI.createWriteGuard(vaultPath: path)
             try await guardWrite(writeGuard)
 
-            let syncBlobUpdater = SyncBlobUpdater(container: container)
             let categoryRepo = CategoryRepository(container: container)
             let importRuleRepo = ImportRuleRepository(container: container)
             let categorization = CategorizationRepository(
-                container: container, categoryRepo: categoryRepo, importRuleRepo: importRuleRepo,
-                syncBlobUpdater: syncBlobUpdater
+                container: container, categoryRepo: categoryRepo, importRuleRepo: importRuleRepo
             )
 
             guard let resolvedId = try categoryRepo.resolveId(
@@ -240,12 +238,10 @@ struct Uncategorized: AsyncParsableCommand {
                 try await guardWrite(writeGuard)
             }
 
-            let syncBlobUpdater = SyncBlobUpdater(container: container)
             let categoryRepo = CategoryRepository(container: container)
             let importRuleRepo = ImportRuleRepository(container: container)
             let categorization = CategorizationRepository(
-                container: container, categoryRepo: categoryRepo, importRuleRepo: importRuleRepo,
-                syncBlobUpdater: syncBlobUpdater
+                container: container, categoryRepo: categoryRepo, importRuleRepo: importRuleRepo
             )
 
             guard let resolvedId = try categoryRepo.resolveId(

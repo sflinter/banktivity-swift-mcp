@@ -7,17 +7,14 @@ import Foundation
 public final class CategorizationRepository: BaseRepository, @unchecked Sendable {
     private let categoryRepo: CategoryRepository
     private let importRuleRepo: ImportRuleRepository
-    private let syncBlobUpdater: SyncBlobUpdater?
 
     public init(
         container: NSPersistentContainer,
         categoryRepo: CategoryRepository,
-        importRuleRepo: ImportRuleRepository,
-        syncBlobUpdater: SyncBlobUpdater? = nil
+        importRuleRepo: ImportRuleRepository
     ) {
         self.categoryRepo = categoryRepo
         self.importRuleRepo = importRuleRepo
-        self.syncBlobUpdater = syncBlobUpdater
         super.init(container: container)
     }
 
@@ -407,7 +404,6 @@ public final class CategorizationRepository: BaseRepository, @unchecked Sendable
         struct RecategorizeOutcome: Sendable {
             let oldCategoryName: String?
             let newCategoryName: String
-            let syncInfo: (txUUID: String, liUUID: String, catUUID: String)?
         }
 
         let outcome: RecategorizeOutcome = try performWriteReturning { [self] ctx in
@@ -421,8 +417,6 @@ public final class CategorizationRepository: BaseRepository, @unchecked Sendable
             try Self.requireCategoryAccount(categoryAccount, id: categoryId)
 
             let newCategoryName = Self.stringValue(categoryAccount, "pName")
-            let catUUID = Self.stringValue(categoryAccount, "pUniqueID")
-            let txUUID = Self.stringValue(tx, "pUniqueID")
             let lineItems = Self.relatedSet(tx, "lineItems")
 
             let census = Self.censusOfLegs(lineItems)
@@ -443,12 +437,9 @@ public final class CategorizationRepository: BaseRepository, @unchecked Sendable
             let orphanedLineItems = census.orphanedLineItems
             let oldCategoryName = census.oldCategoryName
 
-            var syncInfo: (txUUID: String, liUUID: String, catUUID: String)?
-
             if let existingCatLI = categoryLineItem {
                 // Update existing category line item to new category
                 existingCatLI.setValue(categoryAccount, forKey: "pAccount")
-                syncInfo = (txUUID: txUUID, liUUID: Self.stringValue(existingCatLI, "pUniqueID"), catUUID: catUUID)
                 // Clean up any orphaned line items
                 for orphan in orphanedLineItems {
                     ctx.delete(orphan)
@@ -456,7 +447,6 @@ public final class CategorizationRepository: BaseRepository, @unchecked Sendable
             } else if let orphan = orphanedLineItems.first {
                 // Reuse orphaned line item as the category slot
                 orphan.setValue(categoryAccount, forKey: "pAccount")
-                syncInfo = (txUUID: txUUID, liUUID: Self.stringValue(orphan, "pUniqueID"), catUUID: catUUID)
                 // Delete any additional orphans
                 for extra in orphanedLineItems.dropFirst() {
                     ctx.delete(extra)
@@ -473,24 +463,16 @@ public final class CategorizationRepository: BaseRepository, @unchecked Sendable
                 Self.setNow(catLI, "pCreationTime")
                 catLI.setValue(categoryAccount, forKey: "pAccount")
                 catLI.setValue(tx, forKey: "pTransaction")
-                // New line item won't be in existing blob — skip blob patch
             }
 
-            // Mark transaction as modified
+            // Line items sync inside the Transaction's record: its
+            // modification date, in this same save, is the upload signal.
             Self.setNow(tx, "pModificationDate")
 
             return RecategorizeOutcome(
                 oldCategoryName: oldCategoryName,
-                newCategoryName: newCategoryName,
-                syncInfo: syncInfo
+                newCategoryName: newCategoryName
             )
-        }
-
-        // Patch sync blob (non-fatal)
-        if let updater = syncBlobUpdater, let info = outcome.syncInfo {
-            updater.updateTransactionBlob(transactionUUID: info.txUUID) { xml in
-                updater.patchAccount(xml: xml, lineItemUUID: info.liUUID, accountUUID: info.catUUID)
-            }
         }
 
         return RecategorizationResultDTO(

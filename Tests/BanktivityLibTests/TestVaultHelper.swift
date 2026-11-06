@@ -140,6 +140,123 @@ enum TestVaultHelper {
         return doc
     }
 
+    /// The three `SyncedHostedEntity` fields an update must never write:
+    /// Banktivity's merge base (`pRemoteEntityData`), `pSyncedState` and
+    /// `pSyncedModificationDate`. Compared byte for byte before and after.
+    struct SyncRecordSnapshot: Equatable, Sendable {
+        let remoteEntityData: Data?
+        let syncedState: Int?
+        let syncedModificationDate: Date?
+    }
+
+    static func syncRecordSnapshot(uuid: String, in container: NSPersistentContainer) -> SyncRecordSnapshot? {
+        let ctx = container.newBackgroundContext()
+        nonisolated(unsafe) var snapshot: SyncRecordSnapshot?
+        ctx.performAndWait {
+            let request = NSFetchRequest<NSManagedObject>(entityName: "SyncedHostedEntity")
+            request.predicate = NSPredicate(format: "pLocalID == %@", uuid)
+            request.fetchLimit = 1
+            guard let record = try? ctx.fetch(request).first else { return }
+            snapshot = SyncRecordSnapshot(
+                remoteEntityData: record.value(forKey: "pRemoteEntityData") as? Data,
+                syncedState: (record.value(forKey: "pSyncedState") as? NSNumber)?.intValue,
+                syncedModificationDate: record.value(forKey: "pSyncedModificationDate") as? Date
+            )
+        }
+        return snapshot
+    }
+
+    /// A fixed past instant, so a later `pModificationDate` bump is
+    /// observable regardless of clock resolution.
+    static let pinnedModificationDate = Date(timeIntervalSince1970: 1_600_000_000)
+
+    static func pinModificationDate(entityName: String, uuid: String, in container: NSPersistentContainer) throws {
+        let ctx = container.newBackgroundContext()
+        nonisolated(unsafe) var writeError: Error?
+        ctx.performAndWait {
+            do {
+                let request = NSFetchRequest<NSManagedObject>(entityName: entityName)
+                request.predicate = NSPredicate(format: "pUniqueID == %@", uuid)
+                request.fetchLimit = 1
+                guard let entity = try ctx.fetch(request).first else { return }
+                entity.setValue(pinnedModificationDate, forKey: "pModificationDate")
+                try ctx.save()
+            } catch {
+                writeError = error
+            }
+        }
+        if let writeError { throw writeError }
+    }
+
+    static func modificationDate(entityName: String, uuid: String, in container: NSPersistentContainer) -> Date? {
+        let ctx = container.newBackgroundContext()
+        nonisolated(unsafe) var date: Date?
+        ctx.performAndWait {
+            let request = NSFetchRequest<NSManagedObject>(entityName: entityName)
+            request.predicate = NSPredicate(format: "pUniqueID == %@", uuid)
+            request.fetchLimit = 1
+            date = (try? ctx.fetch(request).first)?.value(forKey: "pModificationDate") as? Date
+        }
+        return date
+    }
+
+    /// Stand in for the `SyncedHostedEntity` Banktivity's own sync would have
+    /// written for an already-synced row. The CLI never writes one, so tests
+    /// that need a synced baseline seed it here. The blob is opaque bytes: the
+    /// contract under test is that the CLI leaves it byte-identical.
+    @discardableResult
+    static func seedSyncRecord(uuid: String, entityType: String, in container: NSPersistentContainer) throws -> SyncRecordSnapshot {
+        let blob = Data("<entity type=\"\(entityType)\" id=\"\(uuid)\">base</entity>".utf8)
+        let syncedAt = Date(timeIntervalSince1970: 1_650_000_000)
+        let ctx = container.newBackgroundContext()
+        nonisolated(unsafe) var writeError: Error?
+        ctx.performAndWait {
+            do {
+                let record = NSEntityDescription.insertNewObject(forEntityName: "SyncedHostedEntity", into: ctx)
+                record.setValue(uuid, forKey: "pLocalID")
+                record.setValue(uuid, forKey: "pRemoteID")
+                record.setValue(entityType, forKey: "pHostedEntityType")
+                record.setValue(Int16(0), forKey: "pSyncedState")
+                record.setValue(syncedAt, forKey: "pSyncedModificationDate")
+                record.setValue(blob, forKey: "pRemoteEntityData")
+                try ctx.save()
+            } catch {
+                writeError = error
+            }
+        }
+        if let writeError { throw writeError }
+        return SyncRecordSnapshot(remoteEntityData: blob, syncedState: 0, syncedModificationDate: syncedAt)
+    }
+
+    static func syncRecordCount(in container: NSPersistentContainer) -> Int {
+        let ctx = container.newBackgroundContext()
+        nonisolated(unsafe) var count = -1
+        ctx.performAndWait {
+            count = (try? ctx.count(for: NSFetchRequest<NSManagedObject>(entityName: "SyncedHostedEntity"))) ?? -1
+        }
+        return count
+    }
+
+    static func uniqueID(entityName: String, pk: Int, in container: NSPersistentContainer) throws -> String {
+        let base = BaseRepository(container: container)
+        return try base.performRead { ctx in
+            let object = try base.fetchByPK(entityName: entityName, pk: pk, in: ctx)
+            return object.map { BaseRepository.stringValue($0, "pUniqueID") } ?? ""
+        }
+    }
+
+    static func creationDate(entityName: String, uuid: String, in container: NSPersistentContainer) -> Date? {
+        let ctx = container.newBackgroundContext()
+        nonisolated(unsafe) var date: Date?
+        ctx.performAndWait {
+            let request = NSFetchRequest<NSManagedObject>(entityName: entityName)
+            request.predicate = NSPredicate(format: "pUniqueID == %@", uuid)
+            request.fetchLimit = 1
+            date = (try? ctx.fetch(request).first)?.value(forKey: "pCreationTime") as? Date
+        }
+        return date
+    }
+
     private static func findFixturesPath() -> String {
         // Walk up from the build directory to find Tests/Fixtures/StoreContent
         var url = URL(fileURLWithPath: #filePath)

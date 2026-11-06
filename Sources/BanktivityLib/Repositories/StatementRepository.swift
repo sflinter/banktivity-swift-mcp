@@ -5,11 +5,9 @@ import Foundation
 
 public final class StatementRepository: BaseRepository, @unchecked Sendable {
     private let lineItemRepo: LineItemRepository
-    private let syncBlobUpdater: SyncBlobUpdater?
 
-    public init(container: NSPersistentContainer, lineItemRepo: LineItemRepository, syncBlobUpdater: SyncBlobUpdater? = nil) {
+    public init(container: NSPersistentContainer, lineItemRepo: LineItemRepository) {
         self.lineItemRepo = lineItemRepo
-        self.syncBlobUpdater = syncBlobUpdater
         super.init(container: container)
     }
 
@@ -91,75 +89,29 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
     }
 
     public func delete(statementId: Int) throws -> Bool {
-        // Gather UUID and blob-patch info on the context's thread
-        struct PreReadData: Sendable {
-            let statementUUID: String
-            let txLineItems: [String: [String]]
-            let lineItemObjectIDs: [NSManagedObjectID]
-        }
-        let preRead: PreReadData? = try performRead { [self] ctx in
-            guard let statement = try fetchByPK(entityName: "Statement", pk: statementId, in: ctx) else { return nil }
-            let statementUUID = Self.stringValue(statement, "pUniqueID")
-            var txLineItems: [String: [String]] = [:]
-            let lineItems = Self.relatedSet(statement, "pLineItems")
-            for li in lineItems {
-                let liUUID = Self.stringValue(li, "pUniqueID")
+        // One save: unreconcile the statement's line items, mark their
+        // Transactions modified (line items sync inside the Transaction's
+        // record), tombstone the statement's sync record, delete the statement.
+        try performWriteReturning { [self] ctx in
+            guard let statement = try fetchByPK(entityName: "Statement", pk: statementId, in: ctx) else {
+                return false
+            }
+            for li in Self.relatedSet(statement, "pLineItems") {
+                li.setValue(nil, forKey: "pStatement")
+                li.setValue(false, forKey: "pCleared")
                 if let tx = Self.relatedObject(li, "pTransaction") {
-                    let txUUID = Self.stringValue(tx, "pUniqueID")
-                    txLineItems[txUUID, default: []].append(liUUID)
+                    Self.setNow(tx, "pModificationDate")
                 }
             }
-            return PreReadData(statementUUID: statementUUID, txLineItems: txLineItems, lineItemObjectIDs: lineItems.map { $0.objectID })
+            try SyncRecords.markDeletedIfPresent(entityUUID: Self.stringValue(statement, "pUniqueID"), in: ctx)
+            ctx.delete(statement)
+            return true
         }
-        guard let preRead = preRead else { return false }
-
-        let statementUUID = preRead.statementUUID
-        let txLineItems = preRead.txLineItems
-
-        // Cascade: unreconcile all line items first
-        let lineItemObjectIDs = preRead.lineItemObjectIDs
-        if !lineItemObjectIDs.isEmpty {
-            let ids = lineItemObjectIDs
-            try performWrite { ctx in
-                for objectID in ids {
-                    let liInCtx = try ctx.existingObject(with: objectID)
-                    liInCtx.setValue(nil, forKey: "pStatement")
-                    liInCtx.setValue(false, forKey: "pCleared")
-                }
-            }
-        }
-
-        try performWrite { [self] ctx in
-            guard let obj = try fetchByPK(entityName: "Statement", pk: statementId, in: ctx) else { return }
-            ctx.delete(obj)
-        }
-
-        // Mark statement sync record as deleted (non-fatal)
-        if let updater = syncBlobUpdater, !statementUUID.isEmpty {
-            updater.deleteSyncRecord(entityUUID: statementUUID)
-        }
-
-        // Patch transaction sync blobs to reflect unreconciled line items (non-fatal)
-        if let updater = syncBlobUpdater {
-            for (txUUID, liUUIDs) in txLineItems {
-                updater.updateTransactionBlob(transactionUUID: txUUID) { xml in
-                    var result = xml
-                    for liUUID in liUUIDs {
-                        result = updater.patchCleared(xml: result, lineItemUUID: liUUID, cleared: false)
-                        result = updater.patchStatement(xml: result, lineItemUUID: liUUID, statementUUID: nil)
-                    }
-                    return result
-                }
-            }
-        }
-
-        return true
     }
 
     public func reconcileLineItems(statementId: Int, lineItemIds: [Int]) throws -> StatementDTO {
         struct StatementInfo: Sendable {
             let accountId: Int
-            let uuid: String
             let startTs: Double?
             let endTs: Double?
         }
@@ -172,29 +124,21 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
             }
             return StatementInfo(
                 accountId: Self.extractPK(from: account.objectID),
-                uuid: Self.stringValue(statement, "pUniqueID"),
                 startTs: Self.dateValue(statement, "pStartDate"),
                 endTs: Self.dateValue(statement, "pEndDate")
             )
         }
 
         let statementAccountId = info.accountId
-        let statementUUID = info.uuid
         let startTs = info.startTs
         let endTs = info.endTs
 
-        struct ReconcileLineInfo: Sendable {
-            let liUUID: String
-            let liId: Int
-        }
-
-        // Collect line item UUID → transaction UUID mapping for blob patching
-        let txLineItems: [String: [ReconcileLineInfo]] = try performWriteReturning { [self] ctx in
+        // Each changed line item marks its Transaction modified in the same
+        // save: line items sync inside the Transaction's record.
+        try performWrite { [self] ctx in
             guard let stmtInCtx = try fetchByPK(entityName: "Statement", pk: statementId, in: ctx) else {
                 throw ToolError.notFound("Statement not found: \(statementId)")
             }
-
-            var result: [String: [ReconcileLineInfo]] = [:]
 
             for liId in lineItemIds {
                 guard let li = try fetchByPK(entityName: "LineItem", pk: liId, in: ctx) else {
@@ -234,30 +178,8 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
                 li.setValue(stmtInCtx, forKey: "pStatement")
                 li.setValue(true, forKey: "pCleared")
 
-                // Gather info for blob patching and mark transaction modified
-                let liUUID = Self.stringValue(li, "pUniqueID")
                 if let tx = Self.relatedObject(li, "pTransaction") {
-                    let txUUID = Self.stringValue(tx, "pUniqueID")
-                    if result[txUUID] == nil {
-                        Self.setNow(tx, "pModificationDate")
-                    }
-                    result[txUUID, default: []].append(ReconcileLineInfo(liUUID: liUUID, liId: liId))
-                }
-            }
-
-            return result
-        }
-
-        // Patch sync blobs (non-fatal)
-        if let updater = syncBlobUpdater {
-            for (txUUID, items) in txLineItems {
-                updater.updateTransactionBlob(transactionUUID: txUUID) { xml in
-                    var result = xml
-                    for item in items {
-                        result = updater.patchCleared(xml: result, lineItemUUID: item.liUUID, cleared: true)
-                        result = updater.patchStatement(xml: result, lineItemUUID: item.liUUID, statementUUID: statementUUID)
-                    }
-                    return result
+                    Self.setNow(tx, "pModificationDate")
                 }
             }
         }
@@ -276,9 +198,9 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
             throw ToolError.notFound("Statement not found: \(statementId)")
         }
 
-        let txLineItems: [String: [String]] = try performWriteReturning { [self] ctx in
-            var result: [String: [String]] = [:]
-
+        // Each changed line item marks its Transaction modified in the same
+        // save: line items sync inside the Transaction's record.
+        try performWrite { [self] ctx in
             for liId in lineItemIds {
                 guard let li = try fetchByPK(entityName: "LineItem", pk: liId, in: ctx) else {
                     throw ToolError.notFound("Line item not found: \(liId)")
@@ -294,33 +216,12 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
                     continue // not assigned to any statement
                 }
 
-                let liUUID = Self.stringValue(li, "pUniqueID")
                 if let tx = Self.relatedObject(li, "pTransaction") {
-                    let txUUID = Self.stringValue(tx, "pUniqueID")
-                    if result[txUUID] == nil {
-                        Self.setNow(tx, "pModificationDate")
-                    }
-                    result[txUUID, default: []].append(liUUID)
+                    Self.setNow(tx, "pModificationDate")
                 }
 
                 li.setValue(nil, forKey: "pStatement")
                 li.setValue(false, forKey: "pCleared")
-            }
-
-            return result
-        }
-
-        // Patch sync blobs (non-fatal)
-        if let updater = syncBlobUpdater {
-            for (txUUID, liUUIDs) in txLineItems {
-                updater.updateTransactionBlob(transactionUUID: txUUID) { xml in
-                    var result = xml
-                    for liUUID in liUUIDs {
-                        result = updater.patchCleared(xml: result, lineItemUUID: liUUID, cleared: false)
-                        result = updater.patchStatement(xml: result, lineItemUUID: liUUID, statementUUID: nil)
-                    }
-                    return result
-                }
             }
         }
 

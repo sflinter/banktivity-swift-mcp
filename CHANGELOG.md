@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Signal sync by modification date only and stop writing `pRemoteEntityData`. `SyncBlobUpdater` patched Banktivity's three-way-merge base to match each CLI edit, so a later sync could restore the old value and silently undo the edit. Inserts and updates now stamp `pCreationTime` / `pModificationDate` (the owning Transaction for line-item edits) in the same save; deletes of synced Transactions, Statements and Tags set an idempotent `pSyncedState = 3` tombstone in the same save. `SyncBlobUpdater` is removed; the read-only `transactions sync-info` now uses `SyncRecords.inspect`.
+
 ## v0.13.0
 
 - Fix deletion sync: set `pSyncedState = 3` with current timestamp to signal deletion to CloudKit, instead of clearing blob and nulling modification date (which Banktivity ignored)

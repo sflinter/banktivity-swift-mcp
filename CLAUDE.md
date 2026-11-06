@@ -47,7 +47,7 @@ Three-target package structure:
 
 ```
 BanktivityLib        ← Pure domain library (no MCP dependency)
-  CoreData/          PersistentContainer, DateConversion, WriteGuard, SyncBlobUpdater
+  CoreData/          PersistentContainer, DateConversion, WriteGuard, SyncRecords
   Repositories/      BaseRepository + 10 domain repositories
   Models/            DTOs, Constants, Errors, Formatting
   Export/            RDF export: TurtleWriter, TurtleSerializer, VaultExporter
@@ -96,27 +96,19 @@ Property names are prefixed with `p` (e.g., `pName`, `pDate`, `pAccountClass`, `
 
 **Transactions require balancing offset line items.** Every transaction must have line items that sum to zero (double-entry). When `TransactionRepository.create()` receives line items that don't sum to zero, it automatically creates a balancing offset line item with no account (uncategorized). Without this, Opening Balance transactions won't affect the account's running cash balance in Banktivity.
 
-**Security prices must set `pClosePrice`.** Some price records (from older imports or Banktivity itself) have `pClosePrice=0` with the actual value only in `pAdjustedClosePrice`. The sync blob embeds only `closePrice`, so the mobile app shows 0. Security price history does **not** sync via CloudKit — only the `latestSecurityPrice` embedded in the Security entity's sync blob propagates. Use `securities fix-prices` to repair broken records and update sync blobs.
+**Security prices must set `pClosePrice`.** Some price records (from older imports or Banktivity itself) have `pClosePrice=0` with the actual value only in `pAdjustedClosePrice`. The sync blob embeds only `closePrice`, so the mobile app shows 0. Security price history does **not** sync via CloudKit — only the `latestSecurityPrice` embedded in the Security entity's sync blob propagates. Use `securities fix-prices` to repair broken records; it marks the affected securities modified so Banktivity re-uploads them (whether the upload carries the new latest price is unverified).
 
 **WriteGuard before mutations.** All write tools check `WriteGuard.guardWriteAccess()` first. If Banktivity.app has the SQLite file open (detected via `lsof`), writes are blocked to prevent corruption.
 
-### Sync Blob Updates (SyncBlobUpdater)
+### Sync: signal by modification date, never touch the merge base
 
-Banktivity's CloudKit sync uses `ZSYNCEDENTITY` records with gzipped XML blobs (`pRemoteEntityData`) representing each entity's last-synced state. When CLI/MCP tools modify transactions, the `SyncBlobUpdater` patches these blobs so Banktivity recognizes the changes and pushes them to CloudKit.
+Banktivity 10 finds local changes to upload by date: an entity whose `pCreationTime` or `pModificationDate` is later than the last sync is uploaded. `ZSYNCEDENTITY` (`SyncedHostedEntity`) records hold `pRemoteEntityData`, a gzipped XML blob of what the server last held. Banktivity uses that blob as the **base of a three-way merge**, creates the record itself when it first uploads a row, and is the only thing that should write the blob.
 
-**How it works**: After a Core Data write succeeds, `SyncBlobUpdater` fetches the `SyncedHostedEntity` by the transaction's `pUniqueID`, decompresses the gzip blob, applies XML string patches to the relevant fields, validates the result, saves the compressed blob back, and nulls `pSyncedModificationDate` so Banktivity re-checks the record on next sync.
+**Rules for every write** (see `SyncRecords`):
+- **Insert:** set `pCreationTime` and `pModificationDate` in the same save. Do not create a `SyncedHostedEntity`.
+- **Update:** set the owning entity's `pModificationDate` in the same save. Line items have no record of their own (they travel inside the Transaction's record), so editing a line item, its tags, its statement or its category stamps the parent Transaction.
+- **Delete of a synced entity** (Transaction, Statement, Tag): `SyncRecords.markDeletedIfPresent` sets `pSyncedState = 3` and `pSyncedModificationDate` to now, in the same save as the delete, keeping the blob so Banktivity knows what to delete. It is idempotent, and a row with no record (never synced) is simply deleted.
+- **Price history does not sync.** A write that changes what a Security's record carries, such as its latest price, stamps the Security. `resetKnownPriceRange` changes only the local `SecurityPriceItem`, so it stamps nothing.
+- **Never write `pRemoteEntityData`.** Rewriting the merge base to match a CLI edit tells Banktivity the server already has the edit; when the server sends back its older copy, the older copy wins and the CLI edit is silently undone. An edit made in the Banktivity UI, which leaves the base alone, survives the same sync.
 
-**Operations patched**:
-- Reconcile/unreconcile: patches `cleared` and `statement` fields on line items in the blob
-- Recategorize: patches `account` reference on the category line item
-- Tag/untag: patches `tags` collection on line items
-- Transaction update: patches `title`, `note`, `date` at the transaction level
-- Transaction delete: keeps the `SyncedHostedEntity` record, sets `pSyncedState = 3` and `pSyncedModificationDate` to the current timestamp — Banktivity recognises state 3 as "deleted" and pushes the deletion to CloudKit. The blob (`pRemoteEntityData`) is preserved so Banktivity knows what to delete.
-
-**Non-fatal by design**: All blob updates are wrapped in try/catch. If a sync record is missing, decompression fails, or the XML can't be patched, the Core Data write still succeeds — only the sync push is skipped. Failures log to stderr.
-
-**`pSyncedModificationDate` must be NULL** for Banktivity to check a sync record during sync. Non-NULL means "already synced, skip". All blob patches must null this field after saving, otherwise changes made after the initial sync won't propagate to CloudKit.
-
-**LineItems have no separate sync records** — they're serialized inside the parent Transaction's blob. The `identifier` field in the XML maps to `pUniqueID` in Core Data. **Statements DO have their own sync records** in `ZSYNCEDENTITY` with `pHostedEntityType = "Statement"`.
-
-**`pSyncedState` values**: 0 = normal/synced, 3 = deleted. For deletions, set state to 3 and `pSyncedModificationDate` to the current timestamp (preserving the blob). For modifications, null `pSyncedModificationDate` (keeping state at 0).
+`transactions sync-info` reads a record for diagnostics without changing it.
