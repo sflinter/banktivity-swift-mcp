@@ -19,16 +19,20 @@ release: ## Universal release build (arm64 + x86_64)
 	swift build -c release --arch arm64 --arch x86_64
 
 test: ## Run all tests
+	swift build --product banktivity-cli
 	SDKROOT=$(XCODE_SDK) \
 	DYLD_FRAMEWORK_PATH=$(XCODE_FRAMEWORKS) \
-	swift test \
+	swift test -c release \
+	  --no-parallel \
 	  -Xswiftc -F -Xswiftc $(XCODE_FRAMEWORKS) \
 	  -Xlinker -rpath -Xlinker $(XCODE_FRAMEWORKS)
 
 test-filter: ## Run filtered tests (usage: make test-filter FILTER=TurtleWriter)
+	swift build --product banktivity-cli
 	SDKROOT=$(XCODE_SDK) \
 	DYLD_FRAMEWORK_PATH=$(XCODE_FRAMEWORKS) \
-	swift test --filter '$(FILTER)' \
+	swift test -c release --filter '$(FILTER)' \
+	  --no-parallel \
 	  -Xswiftc -F -Xswiftc $(XCODE_FRAMEWORKS) \
 	  -Xlinker -rpath -Xlinker $(XCODE_FRAMEWORKS)
 
