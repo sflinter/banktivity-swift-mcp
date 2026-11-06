@@ -41,12 +41,7 @@ public final class TransactionRepository: BaseRepository, @unchecked Sendable {
 
             if let accountId = accountId {
                 // Filter transactions that have at least one line item in this account
-                guard let account = try fetchByPK(entityName: "Account", pk: accountId, in: ctx) else {
-                    throw ToolError.notFound("Account not found: \(accountId)")
-                }
-                predicates.append(NSPredicate(
-                    format: "ANY lineItems.pAccount == %@", account
-                ))
+                predicates.append(try accountPredicate(accountId: accountId, in: ctx))
             }
 
             if !predicates.isEmpty {
