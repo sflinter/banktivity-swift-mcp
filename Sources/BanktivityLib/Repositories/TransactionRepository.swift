@@ -20,7 +20,8 @@ public final class TransactionRepository: BaseRepository, @unchecked Sendable {
         startDate: String? = nil,
         endDate: String? = nil,
         limit: Int? = nil,
-        offset: Int? = nil
+        offset: Int? = nil,
+        includeInstant: Bool = false
     ) throws -> [TransactionDTO] {
         try performRead { [self] ctx in
             let request = NSFetchRequest<NSManagedObject>(entityName: "Transaction")
@@ -33,9 +34,9 @@ public final class TransactionRepository: BaseRepository, @unchecked Sendable {
                 ))
             }
 
-            if let endDate = endDate, let ts = DateConversion.fromISO(endDate) {
+            if let endDate = endDate, let ts = DateConversion.endOfDayExclusive(endDate) {
                 predicates.append(NSPredicate(
-                    format: "pDate <= %@", DateConversion.toDate(ts) as NSDate
+                    format: "pDate < %@", DateConversion.toDate(ts) as NSDate
                 ))
             }
 
@@ -66,12 +67,12 @@ public final class TransactionRepository: BaseRepository, @unchecked Sendable {
             }
 
             let results = try ctx.fetch(request)
-            return results.map { self.mapToDTO($0) }
+            return results.map { self.mapToDTO($0, includeInstant: includeInstant) }
         }
     }
 
     /// Search transactions by title or note (case-insensitive LIKE)
-    public func search(query: String, limit: Int = 50) throws -> [TransactionDTO] {
+    public func search(query: String, limit: Int = 50, includeInstant: Bool = false) throws -> [TransactionDTO] {
         try performRead { [self] ctx in
             let request = NSFetchRequest<NSManagedObject>(entityName: "Transaction")
             let pattern = "*\(query)*"
@@ -84,17 +85,17 @@ public final class TransactionRepository: BaseRepository, @unchecked Sendable {
             request.fetchLimit = limit
 
             let results = try ctx.fetch(request)
-            return results.map { self.mapToDTO($0) }
+            return results.map { self.mapToDTO($0, includeInstant: includeInstant) }
         }
     }
 
     /// Get a single transaction by primary key
-    public func get(transactionId: Int) throws -> TransactionDTO? {
+    public func get(transactionId: Int, includeInstant: Bool = false) throws -> TransactionDTO? {
         try performRead { [self] ctx in
             guard let object = try fetchByPK(entityName: "Transaction", pk: transactionId, in: ctx) else {
                 return nil
             }
-            return self.mapToDTO(object)
+            return self.mapToDTO(object, includeInstant: includeInstant)
         }
     }
 
@@ -323,7 +324,11 @@ public final class TransactionRepository: BaseRepository, @unchecked Sendable {
                 var result = xml
                 if let t = title { result = updater.patchTransactionTitle(xml: result, title: t) }
                 if let n = note { result = updater.patchTransactionNote(xml: result, note: n) }
-                if let d = date { result = updater.patchTransactionDate(xml: result, date: d + "T00:00:00+0000") }
+                // No timestamp, no patch: leaving the blob's existing date alone
+                // beats writing an unparseable label into it.
+                if let d = date, let stamp = DateConversion.syncBlobTimestamp(dateOnly: d) {
+                    result = updater.patchTransactionDate(xml: result, date: stamp)
+                }
                 if let bt = outcome.newTxTypeBaseType, let tu = outcome.newTxTypeUUID {
                     result = updater.patchTransactionType(xml: result, baseType: bt, typeUUID: tu)
                 }
@@ -376,7 +381,7 @@ public final class TransactionRepository: BaseRepository, @unchecked Sendable {
 
     // MARK: - DTO Mapping
 
-    public func mapToDTO(_ object: NSManagedObject) -> TransactionDTO {
+    public func mapToDTO(_ object: NSManagedObject, includeInstant: Bool = false) -> TransactionDTO {
         let pk = Self.extractPK(from: object.objectID)
 
         var transactionTypeName: String? = nil
@@ -385,8 +390,10 @@ public final class TransactionRepository: BaseRepository, @unchecked Sendable {
         }
 
         let dateStr: String
+        var dateInstant: String?
         if let dateVal = Self.dateValue(object, "pDate") {
             dateStr = DateConversion.toISO(dateVal)
+            if includeInstant { dateInstant = DateConversion.toISODateTime(dateVal) }
         } else {
             dateStr = "unknown"
         }
@@ -396,6 +403,7 @@ public final class TransactionRepository: BaseRepository, @unchecked Sendable {
         return TransactionDTO(
             id: pk,
             date: dateStr,
+            dateInstant: dateInstant,
             title: Self.stringValue(object, "pTitle"),
             note: Self.string(object, "pNote"),
             cleared: Self.boolValue(object, "pCleared"),

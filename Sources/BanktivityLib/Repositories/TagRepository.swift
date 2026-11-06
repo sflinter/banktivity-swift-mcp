@@ -228,8 +228,8 @@ public final class TagRepository: BaseRepository, @unchecked Sendable {
             if let startDate = startDate, let ts = DateConversion.fromISO(startDate) {
                 predicates.append(NSPredicate(format: "pDate >= %@", DateConversion.toDate(ts) as NSDate))
             }
-            if let endDate = endDate, let ts = DateConversion.fromISO(endDate) {
-                predicates.append(NSPredicate(format: "pDate <= %@", DateConversion.toDate(ts) as NSDate))
+            if let endDate = endDate, let ts = DateConversion.endOfDayExclusive(endDate) {
+                predicates.append(NSPredicate(format: "pDate < %@", DateConversion.toDate(ts) as NSDate))
             }
 
             request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: predicates)

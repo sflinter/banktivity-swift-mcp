@@ -34,6 +34,9 @@ struct Transactions: AsyncParsableCommand {
         @Option(name: .long, help: "Number of transactions to skip")
         var offset: Int?
 
+        @Flag(name: .long, help: "Also report the instant each date is stored at. A date-only value is anchored at 10:00 UTC, so an anchored row reads exactly T10:00:00Z and anything else was written before the anchor or around it.")
+        var showInstant: Bool = false
+
         func run() async throws {
             let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
             let container = try BanktivityCLI.createContainer(vaultPath: path)
@@ -53,7 +56,8 @@ struct Transactions: AsyncParsableCommand {
                 startDate: startDate,
                 endDate: endDate,
                 limit: limit,
-                offset: offset
+                offset: offset,
+                includeInstant: showInstant
             )
             try outputJSON(results, format: parent.format)
         }
@@ -89,13 +93,16 @@ struct Transactions: AsyncParsableCommand {
         @Argument(help: "Transaction ID")
         var id: Int
 
+        @Flag(name: .long, help: "Also report the instant each date is stored at. A date-only value is anchored at 10:00 UTC, so an anchored row reads exactly T10:00:00Z and anything else was written before the anchor or around it.")
+        var showInstant: Bool = false
+
         func run() async throws {
             let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
             let container = try BanktivityCLI.createContainer(vaultPath: path)
             let lineItemRepo = LineItemRepository(container: container)
             let transactions = TransactionRepository(container: container, lineItemRepo: lineItemRepo)
 
-            guard let tx = try transactions.get(transactionId: id) else {
+            guard let tx = try transactions.get(transactionId: id, includeInstant: showInstant) else {
                 throw ToolError.notFound("Transaction not found: \(id)")
             }
             try outputJSON(tx, format: parent.format)
