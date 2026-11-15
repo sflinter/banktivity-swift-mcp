@@ -7,7 +7,7 @@ import Testing
 
 // Runs on the main actor: see TestVaultHelper for why every suite that
 // touches a view context has to.
-@Suite("SyncRecord")
+@Suite("SyncRecord", .serialized)
 @MainActor
 struct SyncRecordTests {
 

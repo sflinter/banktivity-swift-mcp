@@ -22,6 +22,14 @@ BANKTIVITY_FILE_PATH="$HOME/Documents/Banktivity/My Accounts.bank8" banktivity-c
 
 Always redirect stderr with `2>/dev/null` — CoreData prints harmless warnings to stderr on every invocation.
 
+## Safety Rules For Writes
+
+- Use one `banktivity-mcp` or `banktivity-cli` process per vault. Reads are low risk, but parallel writes from multiple processes can corrupt or lose data.
+- Serialize write calls in the agent or harness. Where practical, read the current row first and only write if the value still matches what the agent planned to change.
+- Make a fresh backup before any write run. Prefer a copied vault until the workflow is proven.
+- Shut down `banktivity-mcp` and any long-running CLI process before opening the same vault in Banktivity.app.
+- Re-resolve account, transaction, statement, and category IDs after restoring from backup, importing, or migrating a Banktivity 10 vault; local numeric IDs can change.
+
 ## Output Format
 
 - All tools return **JSON on stdout**
