@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.17.0
+
+- **Transaction type inference:** `transactions create` picks the transaction type from the accounts and sign (Charge/Refund/Payment on credit cards, Transfer between real accounts, otherwise Withdrawal/Deposit) instead of the first type in the vault; adds `charge`, `refund` and `payment` to `transactions update --transaction-type`
+- **Tag lookup crash:** fixed `tags get-by-tag` / `get_transactions_by_tag`, which crashed on an unsupported Core Data keypath
+- **Late-posted reconciles:** added `statements reconcile --allow-out-of-range` (MCP `allow_out_of_range`) for card charges posted on a later statement
+- **Stable signing:** `make install` signs with a stable local identity and fixed identifiers so macOS Full Disk Access survives rebuilds; `make install` / `make package` locate release binaries via `--show-bin-path`
+- **Merged contributions:**
+  - fixed `transactions create` return value (#5)
+  - Core Data threading fixes in repository reads (#3)
+  - negative numeric CLI option values accepted (#9)
+  - security trade cash line repair (#10)
+  - deterministic currency formatting (#12)
+  - fail loudly for missing account filters (#15)
+  - read-only store opening (#38)
+  - trade transaction types read from the vault (#40)
+  - forget a security's price history (#44)
+  - Core Data tests on the main actor (#45)
+  - refuse to categorize transfers and non-category targets (#47)
+  - silence value-transformer warnings (#52)
+
 ## v0.13.0
 
 - Fix deletion sync: set `pSyncedState = 3` with current timestamp to signal deletion to CloudKit, instead of clearing blob and nulling modification date (which Banktivity ignored)
