@@ -151,6 +151,11 @@ public struct NetWorthDTO: Codable, Sendable {
     public let formattedNetWorth: String?
     public let breakdown: NetWorthBreakdownDTO
     public let warnings: [String]
+    /// Accounts with a non-zero balance that the totals leave out because there is
+    /// no exchange rate to the reporting currency. `complete` is false whenever
+    /// this is not empty.
+    public let excludedAccounts: [ExcludedNetWorthAccountDTO]
+    public let complete: Bool
 
     public init(
         reportingCurrency: String = ReportingCurrency.defaultCode,
@@ -161,7 +166,8 @@ public struct NetWorthDTO: Codable, Sendable {
         formattedLiabilities: String?,
         formattedNetWorth: String?,
         breakdown: NetWorthBreakdownDTO = NetWorthBreakdownDTO(byCurrency: [:]),
-        warnings: [String] = []
+        warnings: [String] = [],
+        excludedAccounts: [ExcludedNetWorthAccountDTO] = []
     ) {
         self.reportingCurrency = ReportingCurrency.resolve(reportingCurrency)
         self.assets = assets; self.liabilities = liabilities; self.netWorth = netWorth
@@ -169,6 +175,22 @@ public struct NetWorthDTO: Codable, Sendable {
         self.formattedNetWorth = formattedNetWorth
         self.breakdown = breakdown
         self.warnings = warnings
+        self.excludedAccounts = excludedAccounts
+        self.complete = excludedAccounts.isEmpty
+    }
+}
+
+/// An account left out of net worth, with the balance that is missing from the totals.
+public struct ExcludedNetWorthAccountDTO: Codable, Sendable {
+    public let accountId: Int
+    public let name: String
+    public let currency: String
+    public let balance: Double
+    public let reason: String
+
+    public init(accountId: Int, name: String, currency: String, balance: Double, reason: String) {
+        self.accountId = accountId; self.name = name; self.currency = currency
+        self.balance = balance; self.reason = reason
     }
 }
 

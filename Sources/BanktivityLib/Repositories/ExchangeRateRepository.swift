@@ -108,11 +108,17 @@ public final class ExchangeRateRepository: BaseRepository, @unchecked Sendable {
     static func currencyCodesByUniqueId(in ctx: NSManagedObjectContext) throws -> [String: String] {
         let request = NSFetchRequest<NSManagedObject>(entityName: "Currency")
         let currencies = try ctx.fetch(request)
-        return Dictionary(uniqueKeysWithValues: currencies.compactMap { currency in
+        let pairs: [(String, String)] = currencies.compactMap { currency in
             guard let uniqueId = currency.value(forKey: "pUniqueID") as? String,
                   let code = currency.value(forKey: "pCode") as? String
             else { return nil }
             return (uniqueId, code.uppercased())
+        }
+        // Two currency rows can share a unique ID. Keep the alphabetically first
+        // code so the answer is the same on every run, and say so.
+        return Dictionary(pairs, uniquingKeysWith: { first, second in
+            FileHandle.standardError.write(Data("warning: duplicate currency unique ID (\(first), \(second)); using \(min(first, second))\n".utf8))
+            return min(first, second)
         })
     }
 

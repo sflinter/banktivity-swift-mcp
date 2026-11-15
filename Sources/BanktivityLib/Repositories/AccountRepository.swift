@@ -5,6 +5,7 @@ import Foundation
 
 /// Repository for account operations using Core Data
 struct NetWorthAccountBalance: Sendable {
+    var id: Int = 0
     let name: String
     let accountClass: Int
     let currency: String?
@@ -130,6 +131,7 @@ public final class AccountRepository: BaseRepository, @unchecked Sendable {
 
         let accountBalances = accounts.map { account in
             NetWorthAccountBalance(
+                id: account.id,
                 name: account.name,
                 accountClass: account.accountClass,
                 currency: account.currency,
@@ -403,12 +405,18 @@ public final class AccountRepository: BaseRepository, @unchecked Sendable {
 
         var totalsByCurrency: [String: CurrencyTotals] = [:]
         var warnings: [String] = []
+        var excluded: [ExcludedNetWorthAccountDTO] = []
 
         for account in accounts {
             let currency = ReportingCurrency.resolve(account.currency ?? reportingCurrency)
             let balance = Decimal(account.balance)
             guard let lookup = ExchangeRateRepository.resolve(from: currency, to: reportingCurrency, rates: rates) else {
                 warnings.append("Account \(account.name) (currency \(currency)) excluded: no exchange rate available")
+                if account.balance != 0 {
+                    excluded.append(ExcludedNetWorthAccountDTO(
+                        accountId: account.id, name: account.name, currency: currency, balance: account.balance,
+                        reason: "no \(currency)->\(reportingCurrency) exchange rate in the vault"))
+                }
                 continue
             }
 
@@ -467,7 +475,8 @@ public final class AccountRepository: BaseRepository, @unchecked Sendable {
             formattedLiabilities: formatCurrency(liabilityDouble, currency: reportingCurrency),
             formattedNetWorth: formatCurrency(netWorth, currency: reportingCurrency),
             breakdown: NetWorthBreakdownDTO(byCurrency: breakdown),
-            warnings: warnings
+            warnings: warnings,
+            excludedAccounts: excluded
         )
     }
 

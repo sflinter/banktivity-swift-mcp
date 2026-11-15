@@ -96,7 +96,7 @@ func registerAccountTools(registry: ToolRegistry, accounts: AccountRepository, t
     registry.register(
         name: "get_net_worth",
         access: .read,
-        description: "Calculate current net worth (assets minus liabilities)",
+        description: "Calculate current net worth (assets minus liabilities). The result has `complete` and `excludedAccounts`: accounts with a balance but no exchange rate to the reporting currency are left out and listed there.",
         inputSchema: ToolHelpers.schema(properties: [:])
     ) { _ in
         let netWorth = try accounts.getNetWorth()
