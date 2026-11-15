@@ -132,7 +132,7 @@ struct Accounts: AsyncParsableCommand {
         @Option(name: .long, help: "Account name")
         var name: String
 
-        @Option(name: .long, help: "Account type (checking, savings, cash, credit-card, loan, investment, retirement)")
+        @Option(name: .long, help: "Account type (checking, savings, cash, money-market, investment, ira, 401k, credit-card, loan, mortgage, real-estate)")
         var type: String = "savings"
 
         @Option(name: .long, help: "Currency code (e.g. EUR, USD)")
@@ -150,16 +150,42 @@ struct Accounts: AsyncParsableCommand {
             let accounts = AccountRepository(container: container)
 
             let typeMap: [String: Int] = [
+                "asset": AccountClass.asset,
+                "real-estate": AccountClass.realEstate,
+                "automobile": AccountClass.automobile,
+                "collectible": AccountClass.collectible,
+                "artwork": AccountClass.artwork,
                 "cash": AccountClass.cash,
                 "checking": AccountClass.checking,
                 "savings": AccountClass.savings,
                 "money-market": AccountClass.moneyMarket,
+                "certificate-of-deposit": AccountClass.certificateOfDeposit,
+                "cd": AccountClass.certificateOfDeposit,
+                "health-savings-account": AccountClass.healthSavingsAccount,
+                "hsa": AccountClass.healthSavingsAccount,
+                "current": AccountClass.current,
                 "investment": AccountClass.investment,
-                "retirement": AccountClass.retirement,
-                "education": AccountClass.education,
+                "ira": AccountClass.ira,
+                "sep": AccountClass.sep,
+                "401k": AccountClass.fourOhOneK,
+                "403b": AccountClass.fourOhThreeB,
+                "college-savings-529": AccountClass.collegeSavings529,
+                "529": AccountClass.collegeSavings529,
+                "mutual-fund": AccountClass.mutualFund,
+                "rrsp": AccountClass.rrsp,
+                "resp": AccountClass.resp,
+                "tfsa": AccountClass.tfsa,
+                "hsa-investment": AccountClass.hsaInvestment,
+                "liability": AccountClass.liability,
                 "loan": AccountClass.loan,
+                "mortgage": AccountClass.mortgage,
+                "student-loan": AccountClass.studentLoan,
+                "auto-loan": AccountClass.autoLoan,
+                "revolving-debt": AccountClass.revolvingDebt,
                 "credit-card": AccountClass.creditCard,
-                "real-estate": AccountClass.realEstate,
+                "line-of-credit": AccountClass.lineOfCredit,
+                "heloc": AccountClass.heloc,
+                "equity": AccountClass.equity,
             ]
 
             guard let accountClass = typeMap[type] else {
