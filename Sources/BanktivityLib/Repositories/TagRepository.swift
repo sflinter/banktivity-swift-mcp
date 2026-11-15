@@ -219,10 +219,14 @@ public final class TagRepository: BaseRepository, @unchecked Sendable {
         endDate: String? = nil,
         limit: Int = 50
     ) throws -> [Int] {
-        try performRead { ctx in
+        try performRead { [self] ctx in
+            // Core Data has no @pk keypath aggregate; match on the tag object itself.
+            guard let tag = try fetchByPK(entityName: "Tag", pk: tagId, in: ctx) else {
+                throw ToolError.notFound("Tag not found: \(tagId)")
+            }
             let request = NSFetchRequest<NSManagedObject>(entityName: "Transaction")
             var predicates: [NSPredicate] = [
-                NSPredicate(format: "ANY lineItems.pTags.@pk == %d", tagId)
+                NSPredicate(format: "SUBQUERY(lineItems, $li, ANY $li.pTags == %@).@count > 0", tag)
             ]
 
             if let startDate = startDate, let ts = DateConversion.fromISO(startDate) {

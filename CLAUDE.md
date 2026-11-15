@@ -12,11 +12,8 @@ A Swift MCP (Model Context Protocol) server and CLI for [Banktivity](https://www
 swift build                    # Debug build
 swift build -c release         # Release build
 
-# Install binaries
-cp .build/release/banktivity-mcp ~/.local/bin/
-cp .build/release/banktivity-cli ~/.local/bin/
-codesign -fs - ~/.local/bin/banktivity-mcp   # Re-sign after copy
-codesign -fs - ~/.local/bin/banktivity-cli
+# Install binaries (builds universal release, copies to ~/.local/bin, signs)
+make install
 
 # Run MCP server
 BANKTIVITY_FILE_PATH="/path/to/file.bank8" swift run banktivity-mcp
@@ -25,6 +22,8 @@ BANKTIVITY_FILE_PATH="/path/to/file.bank8" swift run banktivity-mcp
 BANKTIVITY_FILE_PATH="/path/to/file.bank8" swift run banktivity-cli accounts list
 swift run banktivity-cli --vault "/path/to/file.bank8" accounts list
 ```
+
+**Code signing.** `make install` signs with the self-signed "Banktivity MCP Code Signing" certificate in the login keychain and fixed identifiers (`com.flinter.banktivity-cli` / `-mcp`). The vault lives in Banktivity's Group Container, so both binaries need Full Disk Access. That grant is keyed to identifier + certificate, so it survives rebuilds. With an ad-hoc signature (`codesign -s -`, the fallback when the certificate is absent) it is lost on every rebuild. Recreate the certificate with `openssl req -x509 ... -addext "extendedKeyUsage=critical,codeSigning"` and `security import ... -T /usr/bin/codesign`. The "not trusted" status doesn't matter.
 
 If the build fails with `module compiled with Swift 6.x cannot be imported by the Swift 6.y compiler` (e.g. for `ArgumentParserToolInfo`), the `.build` cache was produced by a different Swift toolchain. Fix with `rm -rf .build && swift build`.
 

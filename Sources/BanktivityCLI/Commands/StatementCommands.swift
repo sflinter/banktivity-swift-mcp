@@ -146,6 +146,9 @@ struct Statements: AsyncParsableCommand {
         @Option(name: .long, help: "Comma-separated line item IDs")
         var lineItemIds: String
 
+        @Flag(name: .long, help: "Allow line items dated outside the statement period (e.g. card charges posted late)")
+        var allowOutOfRange = false
+
         func run() async throws {
             let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
             let container = try BanktivityCLI.createContainer(vaultPath: path)
@@ -161,7 +164,7 @@ struct Statements: AsyncParsableCommand {
                 throw ToolError.invalidInput("No valid line item IDs provided")
             }
 
-            let result = try statements.reconcileLineItems(statementId: statementId, lineItemIds: ids)
+            let result = try statements.reconcileLineItems(statementId: statementId, lineItemIds: ids, allowOutOfRange: allowOutOfRange)
             try outputJSON(result, format: parent.format)
         }
     }

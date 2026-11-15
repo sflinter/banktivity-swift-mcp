@@ -143,23 +143,18 @@ public final class TransactionRepository: BaseRepository, @unchecked Sendable {
             Self.setNow(tx, "pModificationDate")
             Self.setDate(tx, "pDate", isoString: date)
 
-            // Set default transaction type (fetch the first available)
+            // Pick the transaction type from what is being created: a transfer between two
+            // real accounts, a card charge/payment/refund, or a plain withdrawal/deposit.
+            let baseCode = try inferBaseTypeCode(lineItems: lineItems, in: ctx)
             let typeRequest = NSFetchRequest<NSManagedObject>(entityName: "TransactionType")
-            typeRequest.fetchLimit = 1
-            let txType = try ctx.fetch(typeRequest).first
+            typeRequest.predicate = NSPredicate(format: "pBaseType == %d", baseCode)
+            let candidates = try ctx.fetch(typeRequest)
+            let canonicalName = Self.transactionTypeBaseTypeName(baseCode)
+            let txType = candidates.first { Self.stringValue($0, "pName").lowercased() == canonicalName } ?? candidates.first
             if let txType = txType {
                 tx.setValue(txType, forKey: "pTransactionType")
             }
-
-            let txTypeBaseType: String = {
-                guard let txType = txType else { return "deposit" }
-                let bt = Self.intValue(txType, "pBaseType")
-                switch bt {
-                case 0: return "withdrawal"
-                case 1: return "deposit"
-                default: return "deposit"
-                }
-            }()
+            let txTypeBaseType = txType == nil ? "deposit" : canonicalName
             let txTypeUUID = txType.map { Self.stringValue($0, "pUniqueID") } ?? ""
 
             // Create line items
@@ -285,7 +280,7 @@ public final class TransactionRepository: BaseRepository, @unchecked Sendable {
             if let transactionType = transactionType {
                 let baseType = Self.transactionTypeBaseTypeCode(transactionType)
                 guard let baseType = baseType else {
-                    throw ToolError.invalidInput("Unknown transaction type: \(transactionType). Valid types: deposit, withdrawal, buy, sell, move-shares-in, move-shares-out, short-sell, buy-to-cover")
+                    throw ToolError.invalidInput("Unknown transaction type: \(transactionType). Valid types: deposit, withdrawal, transfer, check, charge, refund, payment, buy, sell, move-shares-in, move-shares-out, dividend")
                 }
                 let typeRequest = NSFetchRequest<NSManagedObject>(entityName: "TransactionType")
                 typeRequest.predicate = NSPredicate(format: "pBaseType == %d", baseType)
@@ -405,6 +400,33 @@ public final class TransactionRepository: BaseRepository, @unchecked Sendable {
         )
     }
 
+    /// Base type for a new transaction. The first line item is the primary account.
+    /// - Credit card: money out is a Charge; money in is a Payment when it comes from
+    ///   another real account, otherwise a Refund.
+    /// - Two real (non-category) accounts: Transfer.
+    /// - Otherwise Withdrawal or Deposit by the sign of the primary amount.
+    func inferBaseTypeCode(
+        lineItems: [(accountId: Int, amount: Double, memo: String?)],
+        in ctx: NSManagedObjectContext
+    ) throws -> Int {
+        guard let first = lineItems.first,
+              let primary = try fetchByPK(entityName: "Account", pk: first.accountId, in: ctx) else { return 1 }
+        let isCategory: (Int) -> Bool = { $0 == AccountClass.income || $0 == AccountClass.expense }
+        var counterpartyIsAccount = false
+        for li in lineItems.dropFirst() {
+            if let acct = try fetchByPK(entityName: "Account", pk: li.accountId, in: ctx),
+               !isCategory(Self.intValue(acct, "pAccountClass")) {
+                counterpartyIsAccount = true
+            }
+        }
+        if Self.intValue(primary, "pAccountClass") == AccountClass.creditCard {
+            if first.amount < 0 { return 5 }
+            return counterpartyIsAccount ? 7 : 6
+        }
+        if counterpartyIsAccount { return 3 }
+        return first.amount < 0 ? 2 : 1
+    }
+
     // MARK: - Transaction Type Mapping
 
     static func transactionTypeBaseTypeCode(_ name: String) -> Int? {
@@ -413,6 +435,9 @@ public final class TransactionRepository: BaseRepository, @unchecked Sendable {
         case "withdrawal": return 2
         case "transfer": return 3
         case "check": return 4
+        case "charge": return 5
+        case "refund": return 6
+        case "payment": return 7
         case "buy": return 100
         case "sell": return 101
         case "buy-to-open": return 102
@@ -434,6 +459,9 @@ public final class TransactionRepository: BaseRepository, @unchecked Sendable {
         case 2: return "withdrawal"
         case 3: return "transfer"
         case 4: return "check"
+        case 5: return "charge"
+        case 6: return "refund"
+        case 7: return "payment"
         case 100: return "buy"
         case 101: return "sell"
         case 102: return "buy-to-open"

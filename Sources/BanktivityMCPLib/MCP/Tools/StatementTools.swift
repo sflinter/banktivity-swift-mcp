@@ -132,6 +132,7 @@ func registerStatementTools(
             properties: [
                 "statement_id": ToolHelpers.property(type: "number", description: "The statement ID"),
                 "line_item_ids": ToolHelpers.property(type: "array", description: "Array of line item IDs to reconcile"),
+                "allow_out_of_range": ToolHelpers.property(type: "boolean", description: "Allow line items dated outside the statement period, e.g. card charges posted on a later statement (default false)"),
             ],
             required: ["statement_id", "line_item_ids"]
         )
@@ -151,7 +152,7 @@ func registerStatementTools(
             return nil
         }
 
-        let result = try statements.reconcileLineItems(statementId: statementId, lineItemIds: lineItemIds)
+        let result = try statements.reconcileLineItems(statementId: statementId, lineItemIds: lineItemIds, allowOutOfRange: ToolHelpers.getBool(arguments, key: "allow_out_of_range"))
         return try ToolHelpers.jsonResponse(result)
     }
 

@@ -156,7 +156,7 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
         return true
     }
 
-    public func reconcileLineItems(statementId: Int, lineItemIds: [Int]) throws -> StatementDTO {
+    public func reconcileLineItems(statementId: Int, lineItemIds: [Int], allowOutOfRange: Bool = false) throws -> StatementDTO {
         struct StatementInfo: Sendable {
             let accountId: Int
             let uuid: String
@@ -212,13 +212,13 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
                 }
 
                 // Validate date range (allow 2-day buffer before start for credit card timing)
-                if let startTs = startTs, let endTs = endTs,
+                if !allowOutOfRange, let startTs = startTs, let endTs = endTs,
                    let tx = Self.relatedObject(li, "pTransaction"),
                    let txDate = Self.dateValue(tx, "pDate") {
                     let bufferSeconds: Double = 2 * 86400
                     guard txDate >= (startTs - bufferSeconds) && txDate <= endTs else {
                         let dateStr = DateConversion.toISO(txDate)
-                        throw ToolError.invalidInput("Line item \(liId) transaction date \(dateStr) is outside statement date range")
+                        throw ToolError.invalidInput("Line item \(liId) transaction date \(dateStr) is outside statement date range (pass allowOutOfRange / --allow-out-of-range for late-posted items)")
                     }
                 }
 
