@@ -252,3 +252,22 @@ struct StatementReconciliationTests {
         #expect(throws: ToolError.self) { _ = try r.statements.update(statementId: stmt.id) }
     }
 }
+
+@MainActor
+@Suite("Statement sync-info", .serialized)
+struct StatementSyncInfoTests {
+    @Test("uniqueId returns the statement UUID and refuses an unknown id")
+    func uniqueId() throws {
+        let vault = try TestVaultHelper.createFreshVault()
+        defer { TestVaultHelper.cleanup(vault) }
+        let ctx = vault.container.viewContext
+        let st = NSEntityDescription.insertNewObject(forEntityName: "Statement", into: ctx)
+        st.setValue("stmt-uuid-1", forKey: "pUniqueID")
+        try ctx.save()
+        let repo = StatementRepository(
+            container: vault.container, lineItemRepo: LineItemRepository(container: vault.container))
+        let pk = Int(st.objectID.uriRepresentation().lastPathComponent.dropFirst())!
+        #expect(try repo.uniqueId(statementId: pk) == "stmt-uuid-1")
+        #expect(throws: (any Error).self) { try repo.uniqueId(statementId: 999_999) }
+    }
+}

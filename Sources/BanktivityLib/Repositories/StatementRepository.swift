@@ -30,6 +30,16 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
         }
     }
 
+    /// The statement's `pUniqueID`, the key of its sync record. Read-only.
+    public func uniqueId(statementId: Int) throws -> String {
+        try performRead { [self] ctx in
+            guard let statement = try fetchByPK(entityName: "Statement", pk: statementId, in: ctx) else {
+                throw ToolError.notFound("Statement not found: \(statementId)")
+            }
+            return Self.stringValue(statement, "pUniqueID")
+        }
+    }
+
     public func get(statementId: Int) throws -> StatementDTO? {
         try performRead { [self] ctx in
             guard let statement = try fetchByPK(entityName: "Statement", pk: statementId, in: ctx) else {
