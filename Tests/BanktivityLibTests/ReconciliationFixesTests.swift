@@ -125,6 +125,9 @@ struct ReconciliationFixesTests {
             try r.categories.fetchByPK(entityName: "Account", pk: wines.id, in: ctx)?.entity.name
         }
         #expect(entityName == "Category")
+        let wines2 = try r.categories.create(name: "Wines", type: "expense")
+        #expect(wines2.id != wines.id)
+        _ = try r.categories.delete(categoryId: wines2.id)
 
         let tx = try r.transactions.create(date: "2026-10-01", title: "Wine shop",
                                            lineItems: [(checking.id, -30.0, nil), (wines.id, 30.0, nil)])

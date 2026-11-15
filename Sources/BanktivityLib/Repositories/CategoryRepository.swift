@@ -130,6 +130,7 @@ public final class CategoryRepository: BaseRepository, @unchecked Sendable {
         hidden: Bool = false,
         currencyCode: String? = nil
     ) throws -> CategoryDTO {
+        let newUUID = Self.generateUUID()
         try performWrite { [self] ctx in
             // Categories are Category entities (Z_ENT=2). PrimaryAccount (Z_ENT=3) is a
             // sibling subentity used for real accounts — creating a category as one makes
@@ -143,7 +144,7 @@ public final class CategoryRepository: BaseRepository, @unchecked Sendable {
             cat.setValue(true, forKey: "pDebit")
             cat.setValue(hidden, forKey: "pHidden")
             cat.setValue(false, forKey: "pTaxable")
-            cat.setValue(Self.generateUUID(), forKey: "pUniqueID")
+            cat.setValue(newUUID, forKey: "pUniqueID")
             Self.setNow(cat, "pCreationTime")
             Self.setNow(cat, "pModificationDate")
 
@@ -174,11 +175,18 @@ public final class CategoryRepository: BaseRepository, @unchecked Sendable {
             }
         }
 
-        // Re-fetch by name
-        if let result = try findByPath(parentId != nil ? "" : name) ?? findByName(name).last {
-            return result
+        // Re-fetch the row just inserted, by its unique ID. Looking it up by name returned an
+        // older category of the same name instead.
+        let created: CategoryDTO? = try performRead { [self] ctx in
+            let request = NSFetchRequest<NSManagedObject>(entityName: "Account")
+            request.predicate = NSPredicate(format: "pUniqueID == %@", newUUID)
+            request.fetchLimit = 1
+            return try ctx.fetch(request).first.map { self.mapToDTO($0) }
         }
-        throw ToolError.notFound("Failed to retrieve created category")
+        guard let result = created else {
+            throw ToolError.notFound("Failed to retrieve created category")
+        }
+        return result
     }
 
     // MARK: - DTO Mapping
