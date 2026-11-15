@@ -129,7 +129,7 @@ struct SecurityTradeCreationTests {
         let createdSLI = try #require(securityLineItems.first)
         #expect(abs(BaseRepository.doubleValue(createdSLI, "pShares") + 2.5) < 0.000001)
         #expect(abs(BaseRepository.doubleValue(createdSLI, "pPricePerShare") - 12.34) < 0.000001)
-        #expect(abs(BaseRepository.doubleValue(createdSLI, "pAmount") - 30.85) < 0.000001)
+        #expect(abs(BaseRepository.doubleValue(createdSLI, "pAmount") - 596.06) < 0.000001)
         #expect(abs(BaseRepository.doubleValue(createdSLI, "pCommission") - 1.23) < 0.000001)
 
         let txRequest = NSFetchRequest<NSManagedObject>(entityName: "Transaction")
@@ -146,7 +146,7 @@ struct SecurityTradeCreationTests {
         #expect(xml.contains("<field enum=\"IGGCSyncAccountingTransactionBaseType\" name=\"baseType\">sell</field>"))
         #expect(xml.contains("<field type=\"decimal\" name=\"shares\">-2.5</field>"))
         #expect(xml.contains("<field type=\"decimal\" name=\"pricePerShare\">12.34</field>"))
-        #expect(xml.contains("<field type=\"decimal\" name=\"cost\">30.85</field>"))
+        #expect(xml.contains("<field type=\"decimal\" name=\"cost\">596.06</field>"))
         #expect(xml.contains("<field type=\"decimal\" name=\"commission\">1.23</field>"))
         #expect(xml.contains("<field type=\"decimal\" name=\"accountAmount\">596.06</field>"))
         #expect(xml.contains("<field type=\"decimal\" name=\"accountAmount\">-596.06</field>"))
@@ -204,7 +204,7 @@ struct SecurityTradeCreationTests {
         let trade = try #require(trades.first { $0.id == result.id })
         #expect(trade.type == "Buy")
         #expect(abs(trade.shares - 250000) < 0.000001)
-        #expect(abs(trade.amount - 250000) < 0.000001)
+        #expect(abs(trade.amount + 250000) < 0.000001)
 
         let ctx = vault.container.viewContext
         let txRequest = NSFetchRequest<NSManagedObject>(entityName: "Transaction")
@@ -221,9 +221,164 @@ struct SecurityTradeCreationTests {
         #expect(xml.contains("<field enum=\"IGGCSyncAccountingTransactionBaseType\" name=\"baseType\">buy</field>"))
         #expect(xml.contains("<field type=\"decimal\" name=\"shares\">250000</field>"))
         #expect(xml.contains("<field type=\"decimal\" name=\"pricePerShare\">1</field>"))
-        #expect(xml.contains("<field type=\"decimal\" name=\"cost\">250000</field>"))
+        #expect(xml.contains("<field type=\"decimal\" name=\"cost\">-250000</field>"))
         #expect(xml.contains("<field type=\"decimal\" name=\"accountAmount\">-250000</field>"))
         #expect(xml.contains("<field type=\"decimal\" name=\"accountAmount\">250000</field>"))
+    }
+
+    @Test("a created buy and sell move the account balance by their signed cash")
+    func tradeCashReachesAccountBalance() throws {
+        let vault = try TestVaultHelper.createFreshVault()
+        defer { TestVaultHelper.cleanup(vault) }
+
+        let (_, eur) = try TestVaultHelper.seedCurrencies(in: vault.container)
+        _ = try TestVaultHelper.seedTransactionTypes(in: vault.container)
+        let account = try TestVaultHelper.seedInvestmentAccount(in: vault.container, currency: eur)
+        _ = try TestVaultHelper.seedSecurity(in: vault.container, symbol: "CASH", currency: eur)
+
+        let repo = SecurityRepository(container: vault.container)
+        let accounts = AccountRepository(container: vault.container)
+        let accountPK = BaseRepository.extractPK(from: account.objectID)
+
+        // Buy 10 at 10 plus 1 commission: cash out is 101.
+        let buy = try repo.createSecurityTrade(
+            accountId: accountPK, symbol: "CASH", shares: 10, pricePerShare: 10,
+            amount: 100, commission: 1, cashLineItemAmount: -101, date: "2026-06-01")
+        #expect(abs(try accounts.getBalance(accountId: accountPK) + 101) < 0.000001)
+
+        // Sell 4 at 12 less 1 commission: cash in is 47.
+        _ = try repo.createSecurityTrade(
+            accountId: accountPK, symbol: "CASH", shares: -4, pricePerShare: 12,
+            amount: 48, commission: 1, cashLineItemAmount: 47, date: "2026-06-02")
+        #expect(abs(try accounts.getBalance(accountId: accountPK) + 54) < 0.000001)
+
+        // Changing the buy's cash through update-trade moves the balance too.
+        _ = try repo.updateSecurityLineItem(transactionId: buy.id, cashLineItemAmount: -121)
+        #expect(abs(try accounts.getBalance(accountId: accountPK) + 74) < 0.000001)
+    }
+
+    @Test("a trade's cash must be negative for a buy and positive for a sell")
+    func tradeCashSignIsChecked() throws {
+        let vault = try TestVaultHelper.createFreshVault()
+        defer { TestVaultHelper.cleanup(vault) }
+
+        let (_, eur) = try TestVaultHelper.seedCurrencies(in: vault.container)
+        _ = try TestVaultHelper.seedTransactionTypes(in: vault.container)
+        let account = try TestVaultHelper.seedInvestmentAccount(in: vault.container, currency: eur)
+        _ = try TestVaultHelper.seedSecurity(in: vault.container, symbol: "SIGN", currency: eur)
+
+        let repo = SecurityRepository(container: vault.container)
+        let accountPK = BaseRepository.extractPK(from: account.objectID)
+        #expect(throws: ToolError.self) {
+            try repo.createSecurityTrade(
+                accountId: accountPK, symbol: "SIGN", shares: 10, pricePerShare: 2,
+                amount: 20, cashLineItemAmount: 20, date: "2026-06-01")
+        }
+        #expect(throws: ToolError.self) {
+            try repo.createSecurityTrade(
+                accountId: accountPK, symbol: "SIGN", shares: -10, pricePerShare: 2,
+                amount: 20, cashLineItemAmount: -20, date: "2026-06-01")
+        }
+    }
+
+    // MARK: - Worthless sales and clearing a price
+
+    private func zeroPriceFixture() throws -> (TestVaultHelper.TestVault, SecurityRepository, Int) {
+        let vault = try TestVaultHelper.createFreshVault()
+        let (_, eur) = try TestVaultHelper.seedCurrencies(in: vault.container)
+        _ = try TestVaultHelper.seedTransactionTypes(in: vault.container)
+        let account = try TestVaultHelper.seedInvestmentAccount(in: vault.container, currency: eur)
+        _ = try TestVaultHelper.seedSecurity(in: vault.container, symbol: "DEAD", currency: eur)
+        let repo = SecurityRepository(container: vault.container)
+        return (vault, repo, BaseRepository.extractPK(from: account.objectID))
+    }
+
+    private func storedPrice(_ vault: TestVaultHelper.TestVault) throws -> Double? {
+        let ctx = vault.container.viewContext
+        ctx.refreshAllObjects()
+        let slis = try ctx.fetch(NSFetchRequest<NSManagedObject>(entityName: "SecurityLineItem"))
+        let sli = try #require(slis.first)
+        return (sli.value(forKey: "pPricePerShare") as? NSNumber)?.doubleValue
+    }
+
+    @Test("a worthless sale is recorded with no stored price, and a zero price without the option is still refused")
+    func worthlessSaleStoresNoPrice() throws {
+        let (vault, repo, accountPK) = try zeroPriceFixture()
+        defer { TestVaultHelper.cleanup(vault) }
+
+        #expect(throws: ToolError.self) {
+            try repo.createSecurityTrade(
+                accountId: accountPK, symbol: "DEAD", shares: -10, pricePerShare: 0,
+                amount: 0, cashLineItemAmount: 0, date: "2026-06-01")
+        }
+        // worthless is for sales only, and a worthless sale cannot carry a price.
+        #expect(throws: ToolError.self) {
+            try repo.createSecurityTrade(
+                accountId: accountPK, symbol: "DEAD", shares: 10, pricePerShare: 0,
+                amount: 0, cashLineItemAmount: 0, date: "2026-06-01", worthless: true)
+        }
+        #expect(throws: ToolError.self) {
+            try repo.createSecurityTrade(
+                accountId: accountPK, symbol: "DEAD", shares: -10, pricePerShare: 1.5,
+                amount: 0, cashLineItemAmount: 0, date: "2026-06-01", worthless: true)
+        }
+
+        let sale = try repo.createSecurityTrade(
+            accountId: accountPK, symbol: "DEAD", shares: -10, pricePerShare: 0,
+            amount: 0, commission: 5, cashLineItemAmount: -5, date: "2026-06-01", worthless: true)
+        #expect(sale.type == "Sell")
+        #expect(try storedPrice(vault) == nil)
+        #expect(abs(try AccountRepository(container: vault.container).getBalance(accountId: accountPK) + 5) < 0.000001)
+    }
+
+    @Test("a worthless share adjustment stores no price and never derives one from the fee")
+    func worthlessAdjustmentStoresNoPrice() throws {
+        let (vault, repo, accountPK) = try zeroPriceFixture()
+        defer { TestVaultHelper.cleanup(vault) }
+
+        _ = try repo.createShareAdjustment(
+            accountId: accountPK, symbol: "DEAD", shares: -10, date: "2026-06-01", amount: -5, worthless: true)
+        #expect(try storedPrice(vault) == nil)
+    }
+
+    @Test("a buy without a price is refused with a pointer to move-shares-in")
+    func buyWithoutPricePointsToMoveSharesIn() throws {
+        let (vault, repo, accountPK) = try zeroPriceFixture()
+        defer { TestVaultHelper.cleanup(vault) }
+
+        do {
+            _ = try repo.createShareAdjustment(accountId: accountPK, symbol: "DEAD", shares: 3, date: "2026-06-01")
+            Issue.record("expected a buy without a price to be refused")
+        } catch {
+            #expect("\(error)".contains("move-shares-in"))
+        }
+    }
+
+    @Test("update-trade can clear a price on a worthless sale or a share move, but not on a priced buy or sell")
+    func clearPriceRules() throws {
+        let (vault, repo, accountPK) = try zeroPriceFixture()
+        defer { TestVaultHelper.cleanup(vault) }
+
+        let buy = try repo.createSecurityTrade(
+            accountId: accountPK, symbol: "DEAD", shares: 10, pricePerShare: 2,
+            amount: 20, cashLineItemAmount: -20, date: "2026-06-01")
+        #expect(throws: ToolError.self) { try repo.updateSecurityLineItem(transactionId: buy.id, clearPrice: true) }
+        #expect(throws: ToolError.self) {
+            try repo.updateSecurityLineItem(transactionId: buy.id, pricePerShare: 2, clearPrice: true)
+        }
+        #expect(try storedPrice(vault) == 2)
+
+        // A sale with no proceeds (a worthless sale recorded with a price earlier).
+        let sale = try repo.createSecurityTrade(
+            accountId: accountPK, symbol: "DEAD", shares: -10, pricePerShare: 2,
+            amount: 0, cashLineItemAmount: 0, date: "2026-06-02")
+        _ = try repo.updateSecurityLineItem(transactionId: sale.id, clearPrice: true)
+        let ctx = vault.container.viewContext
+        ctx.refreshAllObjects()
+        let slis = try ctx.fetch(NSFetchRequest<NSManagedObject>(entityName: "SecurityLineItem"))
+        let prices = slis.map { ($0.value(forKey: "pPricePerShare") as? NSNumber)?.doubleValue }
+        #expect(prices.filter { $0 == nil }.count == 1)
+        #expect(prices.filter { $0 == 2 }.count == 1)
     }
 
     @Test("createSecurityIncome creates native dividend income")

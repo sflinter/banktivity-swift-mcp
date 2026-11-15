@@ -181,12 +181,26 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
         date: String,
         title: String? = nil,
         memo: String? = nil,
-        offsetCategoryId: Int? = nil
+        offsetCategoryId: Int? = nil,
+        worthless: Bool = false
     ) throws -> SecurityTradeDTO {
         guard shares != 0 else {
             throw ToolError.invalidInput("shares must be non-zero")
         }
-        _ = try Self.validatedPricePerShare(pricePerShare, shares: shares, amount: nil, baseType: shares < 0 ? 101 : 100)
+        // A worthless disposal stores no price at all, so nothing can write a 0
+        // into price history on another device (see `zeroPriceMessage`).
+        let storedPrice: Double? = try Self.validatedPricePerShare(
+            pricePerShare, shares: shares, amount: nil, baseType: shares < 0 ? 101 : 100, worthless: worthless)
+        // Cash moves the opposite way to shares: a buy pays (negative cash), a
+        // sell receives (positive). A worthless sale has no proceeds, only a
+        // possible fee, so its cash is zero or negative.
+        if worthless {
+            guard cashLineItemAmount <= 0 else {
+                throw ToolError.invalidInput("a worthless sale has no proceeds: cash line amount must be 0 or a negative fee")
+            }
+        } else {
+            try Self.validateTradeCashSign(cashLineItemAmount, isBuy: shares > 0)
+        }
         guard DateConversion.fromISO(date) != nil else {
             throw ToolError.invalidInput("date must be YYYY-MM-DD")
         }
@@ -321,8 +335,11 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
 
             let sli = Self.createObject(entityName: "SecurityLineItem", in: ctx)
             sli.setValue(shares as NSNumber, forKey: "pShares")
-            sli.setValue(amount as NSNumber, forKey: "pAmount")
-            sli.setValue(pricePerShare as NSNumber, forKey: "pPricePerShare")
+            // Banktivity ignores the cash line's pTransactionAmount for a trade
+            // and counts the security line's pAmount (see `accountAmount`), so
+            // the trade's signed cash, commission included, goes there.
+            sli.setValue(cashLineItemAmount as NSNumber, forKey: "pAmount")
+            sli.setValue(storedPrice.map { $0 as NSNumber }, forKey: "pPricePerShare")
             sli.setValue(commission as NSNumber, forKey: "pCommission")
             sli.setValue(0.0 as NSNumber, forKey: "pIncome")
             sli.setValue(1.0 as NSNumber, forKey: "pPriceMultiplier")
@@ -347,9 +364,9 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
 
         if let updater = syncBlobUpdater {
             let syncSLI = SyncBlobUpdater.SyncSecurityLineItem(
-                amount: amount,
+                amount: cashLineItemAmount,
                 commission: commission,
-                pricePerShare: pricePerShare,
+                pricePerShare: storedPrice,
                 priceMultiplier: 1,
                 securityUUID: secInfo.uuid,
                 shares: shares,
@@ -399,6 +416,16 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
             accountName: info.accountName,
             accountId: accountId
         )
+    }
+
+    /// A buy's cash is negative and a sell's positive (zero is left alone).
+    static func validateTradeCashSign(_ cash: Double, isBuy: Bool) throws {
+        if isBuy, cash > 0 {
+            throw ToolError.invalidInput("cash line amount \(cash) has the wrong sign for a buy: cash must be negative")
+        }
+        if !isBuy, cash < 0 {
+            throw ToolError.invalidInput("cash line amount \(cash) has the wrong sign for a sell: cash must be positive")
+        }
     }
 
     /// The income types `ZTRANSACTIONTYPE` holds, by the slug `--income-type` takes.
@@ -814,13 +841,33 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
     /// given a price) need a positive one, taken from `price` or derived from
     /// `amount / shares`. Share moves and splits without a price store nil,
     /// never 0 (see `zeroPriceMessage`).
-    static func validatedPricePerShare(_ price: Double?, shares: Double, amount: Double?, baseType: Int16) throws -> Double? {
+    static func validatedPricePerShare(
+        _ price: Double?, shares: Double, amount: Double?, baseType: Int16, worthless: Bool = false
+    ) throws -> Double? {
+        if worthless {
+            // The one sanctioned zero: disposing of a worthless security. The
+            // disposal is recorded with no price, so no device writes a 0 into
+            // the security's price history. A price is never derived from the
+            // amount here: on a $0 sale the amount is only the fee.
+            guard baseType == 101, shares < 0 else {
+                throw ToolError.invalidInput("worthless applies only to a sale of shares (negative shares)")
+            }
+            guard price == nil || price == 0 else {
+                throw ToolError.invalidInput("a worthless sale has no price: omit the price or pass 0")
+            }
+            return nil
+        }
         if let price {
             guard price > 0 else { throw ToolError.invalidInput(zeroPriceMessage) }
             return price
         }
         guard baseType == 100 || baseType == 101, shares != 0 else { return nil }
         if let amount, amount != 0 { return abs(amount / shares) }
+        if baseType == 100 {
+            throw ToolError.invalidInput(
+                "A buy needs a price. For gifted or free shares, record the shares with --transaction-type move-shares-in (MCP: transaction_type \"move-shares-in\"), which stores no price. "
+                + "For a sale of a worthless security use --worthless. \(zeroPriceMessage)")
+        }
         throw ToolError.invalidInput(
             "A buy or sell needs --price-per-share (or an --amount to derive it from). \(zeroPriceMessage)")
     }
@@ -834,7 +881,8 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
         title: String? = nil,
         amount: Double? = nil,
         transactionType: String? = nil,
-        pricePerShare: Double? = nil
+        pricePerShare: Double? = nil,
+        worthless: Bool = false
     ) throws -> SecurityTradeDTO {
         // Resolved before the write closure so it can be captured as a constant:
         // a `var` here is not Sendable into the background context.
@@ -848,7 +896,7 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
         }()
         let price = try Self.validatedPricePerShare(
             pricePerShare, shares: shares, amount: amount,
-            baseType: movementBaseType ?? (shares >= 0 ? 100 : 101))
+            baseType: movementBaseType ?? (shares >= 0 ? 100 : 101), worthless: worthless)
 
         struct SecurityInfo: Sendable {
             let objectID: NSManagedObjectID
@@ -1017,10 +1065,14 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
         securitySymbol: String? = nil,
         securityId: Int? = nil,
         cashLineItemAmount: Double? = nil,
-        basisOnlyTransfer: Bool = false
+        basisOnlyTransfer: Bool = false,
+        clearPrice: Bool = false
     ) throws -> SecurityTradeDTO {
         if let pricePerShare, pricePerShare <= 0 {
             throw ToolError.invalidInput(Self.zeroPriceMessage)
+        }
+        if clearPrice, pricePerShare != nil {
+            throw ToolError.invalidInput("clear_price cannot be combined with a price")
         }
         if basisOnlyTransfer {
             guard cashLineItemAmount == nil else {
@@ -1133,11 +1185,25 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
                 sli.setValue(li, forKey: "pLineItem")
             }
 
+            let baseType = Self.relatedObject(tx, "pTransactionType").map { Self.intValue($0, "pBaseType") } ?? 0
             if let shares = shares {
                 sli.setValue(shares as NSNumber, forKey: "pShares")
             }
             if let pricePerShare = pricePerShare {
                 sli.setValue(pricePerShare as NSNumber, forKey: "pPricePerShare")
+            } else if clearPrice {
+                // A priced buy or sell needs its price (a nil price is read as 0
+                // elsewhere); only a worthless sale (no proceeds beyond the fee)
+                // or a non-trade type may drop it.
+                if baseType == 100 || baseType == 101 {
+                    let proceeds = abs(Self.doubleValue(sli, "pAmount"))
+                    let worthlessSale = baseType == 101 && Self.doubleValue(sli, "pShares") < 0
+                        && proceeds <= Self.doubleValue(sli, "pCommission") + 0.005
+                    guard worthlessSale else {
+                        throw ToolError.invalidInput("clear-price is only for a worthless sale (no proceeds) or a non-buy/sell type; a priced buy/sell needs its price")
+                    }
+                }
+                sli.setValue(nil, forKey: "pPricePerShare")
             }
             if let amount = amount {
                 sli.setValue(amount as NSNumber, forKey: "pAmount")
@@ -1166,6 +1232,13 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
                 }
                 let offsetLI = offsetCandidates.first!
                 let offsetAmount = -cashLineItemAmount
+                // On a buy/sell Banktivity counts the security line's pAmount,
+                // not the cash line's pTransactionAmount, so the cash goes there
+                // too. Income rows keep pAmount at 0 (their money is pIncome).
+                if baseType == 100 || baseType == 101 {
+                    try Self.validateTradeCashSign(cashLineItemAmount, isBuy: baseType == 100)
+                    sli.setValue(cashLineItemAmount as NSNumber, forKey: "pAmount")
+                }
                 li.setValue(cashLineItemAmount as NSNumber, forKey: "pTransactionAmount")
                 offsetLI.setValue(offsetAmount as NSNumber, forKey: "pTransactionAmount")
                 cashSync = CashSyncInfo(

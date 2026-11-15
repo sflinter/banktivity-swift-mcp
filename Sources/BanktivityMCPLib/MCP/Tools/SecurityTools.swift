@@ -67,7 +67,8 @@ func registerSecurityTools(
                 "title": ToolHelpers.property(type: "string", description: "Transaction title/memo"),
                 "amount": ToolHelpers.property(type: "number", description: "Cash amount (negative for buy outflow, positive for sell inflow)"),
                 "transaction_type": ToolHelpers.property(type: "string", description: "Movement type. Accepts: \(SecurityRepository.shareMovementTypeNames). Defaults to buy or sell by the sign of shares"),
-                "price_per_share": ToolHelpers.property(type: "number", description: "Price per share. Required for a buy or sell unless amount is given (then amount / shares). Never 0: other devices would value the security at 0"),
+                "price_per_share": ToolHelpers.property(type: "number", description: "Price per share. Required for a buy or sell unless amount is given (then amount / shares). Never 0: other devices would value the security at 0. For gifted or free shares use transaction_type move-shares-in, which needs no price"),
+                "worthless": ToolHelpers.property(type: "boolean", description: "Record a sale of a worthless security (negative shares) with no price stored, so no device writes a 0 into price history. The amount is then only the fee, never a price"),
             ],
             required: ["account_id", "shares", "date"]
         )
@@ -94,7 +95,8 @@ func registerSecurityTools(
             accountId: accountId, symbol: symbol, id: id,
             shares: shares, date: date, title: title, amount: amount,
             transactionType: ToolHelpers.getString(arguments, key: "transaction_type"),
-            pricePerShare: ToolHelpers.getDouble(arguments, key: "price_per_share")
+            pricePerShare: ToolHelpers.getDouble(arguments, key: "price_per_share"),
+            worthless: ToolHelpers.getBool(arguments, key: "worthless")
         )
         return try ToolHelpers.jsonResponse(result)
     }
@@ -247,7 +249,8 @@ func registerSecurityTools(
             properties: [
                 "transaction_id": ToolHelpers.property(type: "number", description: "Transaction ID"),
                 "shares": ToolHelpers.property(type: "number", description: "Number of shares"),
-                "price_per_share": ToolHelpers.property(type: "number", description: "Price per share"),
+                "price_per_share": ToolHelpers.property(type: "number", description: "Price per share. Must be positive"),
+                "clear_price": ToolHelpers.property(type: "boolean", description: "Clear the stored price to nil (cannot be combined with price_per_share). Refused on a buy or sell that has proceeds"),
                 "amount": ToolHelpers.property(type: "number", description: "Security cost/principal amount. This does not change investment-account cash line items."),
                 "commission": ToolHelpers.property(type: "number", description: "Commission or fee amount"),
                 "symbol": ToolHelpers.property(type: "string", description: "Security ticker symbol"),
@@ -280,7 +283,8 @@ func registerSecurityTools(
             commission: commission,
             securitySymbol: symbol,
             securityId: securityId,
-            basisOnlyTransfer: basisOnlyTransfer
+            basisOnlyTransfer: basisOnlyTransfer,
+            clearPrice: ToolHelpers.getBool(arguments, key: "clear_price")
         )
         return try ToolHelpers.jsonResponse(result)
     }
@@ -296,7 +300,8 @@ func registerSecurityTools(
                 "symbol": ToolHelpers.property(type: "string", description: "Security ticker symbol"),
                 "id": ToolHelpers.property(type: "number", description: "Security ID (alternative to symbol)"),
                 "shares": ToolHelpers.property(type: "number", description: "Number of shares. Negative creates a sell; positive creates a buy"),
-                "price_per_share": ToolHelpers.property(type: "number", description: "Price per share"),
+                "price_per_share": ToolHelpers.property(type: "number", description: "Price per share. Must be positive, or 0 together with worthless"),
+                "worthless": ToolHelpers.property(type: "boolean", description: "Record a sale (negative shares) of a worthless security: price_per_share must be 0 and no price is stored, so no device writes a 0 into price history"),
                 "amount": ToolHelpers.property(type: "number", description: "Security trade amount/cost"),
                 "commission": ToolHelpers.property(type: "number", description: "Commission or fee amount"),
                 "cash_line_amount": ToolHelpers.property(type: "number", description: "Investment account cash line amount. Positive for sell inflow, negative for buy outflow"),
@@ -343,7 +348,8 @@ func registerSecurityTools(
             date: date,
             title: ToolHelpers.getString(arguments, key: "title"),
             memo: ToolHelpers.getString(arguments, key: "memo"),
-            offsetCategoryId: ToolHelpers.getInt(arguments, key: "offset_category_id")
+            offsetCategoryId: ToolHelpers.getInt(arguments, key: "offset_category_id"),
+            worthless: ToolHelpers.getBool(arguments, key: "worthless")
         )
         return try ToolHelpers.jsonResponse(result)
     }
