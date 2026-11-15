@@ -113,4 +113,28 @@ struct ReconciliationFixesTests {
         #expect(result.isBalanced)
         #expect(result.reconciledLineItemCount == 1)
     }
+
+    @Test("Categories are created as Category entities and can be deleted once unused")
+    func categoryCreateAndDelete() throws {
+        let r = try makeRepos()
+        defer { TestVaultHelper.cleanup(r.vault) }
+
+        let checking = try r.accounts.create(name: "Checking", accountClass: AccountClass.checking)
+        let wines = try r.categories.create(name: "Wines", type: "expense")
+        let entityName = try r.categories.performRead { ctx in
+            try r.categories.fetchByPK(entityName: "Account", pk: wines.id, in: ctx)?.entity.name
+        }
+        #expect(entityName == "Category")
+
+        let tx = try r.transactions.create(date: "2026-10-01", title: "Wine shop",
+                                           lineItems: [(checking.id, -30.0, nil), (wines.id, 30.0, nil)])
+        #expect(throws: ToolError.self) { _ = try r.categories.delete(categoryId: wines.id) }
+
+        let groceries = try r.categories.create(name: "Groceries", type: "expense")
+        _ = try CategorizationRepository(container: r.vault.container, categoryRepo: r.categories, importRuleRepo: ImportRuleRepository(container: r.vault.container)).recategorize(transactionId: tx.id, categoryId: groceries.id)
+        _ = try r.categories.delete(categoryId: wines.id)
+        #expect(try r.categories.get(categoryId: wines.id) == nil)
+        #expect(throws: ToolError.self) { _ = try r.categories.delete(categoryId: checking.id) }
+    }
 }
+

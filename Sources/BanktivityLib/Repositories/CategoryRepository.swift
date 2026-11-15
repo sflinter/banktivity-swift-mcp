@@ -183,6 +183,44 @@ public final class CategoryRepository: BaseRepository, @unchecked Sendable {
 
     // MARK: - DTO Mapping
 
+    /// Delete an unused category and mark its sync record deleted so the removal reaches CloudKit.
+    /// Refuses a category that still has line items or child categories, and refuses anything that
+    /// is not an income/expense category. Also removes malformed categories that an earlier
+    /// version created as PrimaryAccount entities (see #26 / #37).
+    @discardableResult
+    public func delete(categoryId: Int, syncBlobUpdater: SyncBlobUpdater? = nil) throws -> CategoryDTO {
+        struct Deleted: Sendable { let dto: CategoryDTO; let uuid: String }
+        let deleted: Deleted = try performWriteReturning { [self] ctx in
+            guard let cat = try fetchByPK(entityName: "Account", pk: categoryId, in: ctx) else {
+                throw ToolError.notFound("Category not found: \(categoryId)")
+            }
+            let cls = Self.intValue(cat, "pAccountClass")
+            guard cls == AccountClass.income || cls == AccountClass.expense else {
+                throw ToolError.invalidInput("Account \(categoryId) is not an income/expense category")
+            }
+            let lines = NSFetchRequest<NSManagedObject>(entityName: "LineItem")
+            lines.predicate = NSPredicate(format: "pAccount == %@", cat)
+            let lineCount = try ctx.count(for: lines)
+            guard lineCount == 0 else {
+                throw ToolError.invalidInput("Category \(categoryId) still has \(lineCount) line items; move them first")
+            }
+            let children = NSFetchRequest<NSManagedObject>(entityName: "Account")
+            children.predicate = NSPredicate(format: "pParentAccount == %@", cat)
+            let childCount = try ctx.count(for: children)
+            guard childCount == 0 else {
+                throw ToolError.invalidInput("Category \(categoryId) has \(childCount) subcategories; delete or move them first")
+            }
+            let dto = mapToDTO(cat)
+            let uuid = Self.stringValue(cat, "pUniqueID")
+            ctx.delete(cat)
+            return Deleted(dto: dto, uuid: uuid)
+        }
+        if let updater = syncBlobUpdater, !deleted.uuid.isEmpty {
+            updater.deleteSyncRecord(entityUUID: deleted.uuid)
+        }
+        return deleted.dto
+    }
+
     public func mapToDTO(_ object: NSManagedObject) -> CategoryDTO {
         let accountClass = Self.intValue(object, "pAccountClass")
         let pk = Self.extractPK(from: object.objectID)

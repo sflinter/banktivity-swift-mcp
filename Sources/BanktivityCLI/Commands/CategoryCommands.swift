@@ -7,7 +7,7 @@ import Foundation
 struct Categories: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Category operations",
-        subcommands: [List.self, Get.self, Tree.self, Create.self]
+        subcommands: [List.self, Get.self, Tree.self, Create.self, Delete.self]
     )
 
     struct List: AsyncParsableCommand {
@@ -135,6 +135,26 @@ struct Categories: AsyncParsableCommand {
                 hidden: hidden,
                 currencyCode: currencyCode
             )
+            try outputJSON(result, format: parent.format)
+        }
+    }
+
+    struct Delete: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(abstract: "Delete an unused category (refuses one with line items or subcategories)")
+
+        @OptionGroup var parent: GlobalOptions
+
+        @Option(name: .long, help: "Category ID")
+        var categoryId: Int
+
+        func run() async throws {
+            let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
+            let container = try BanktivityCLI.createContainer(vaultPath: path)
+            let writeGuard = BanktivityCLI.createWriteGuard(vaultPath: path)
+            try await guardWrite(writeGuard)
+
+            let categories = CategoryRepository(container: container)
+            let result = try categories.delete(categoryId: categoryId, syncBlobUpdater: SyncBlobUpdater(container: container))
             try outputJSON(result, format: parent.format)
         }
     }
