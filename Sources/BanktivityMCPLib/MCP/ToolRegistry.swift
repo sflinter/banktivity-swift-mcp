@@ -131,7 +131,7 @@ public final class ToolRegistry: @unchecked Sendable {
         let lineItemRepo = LineItemRepository(container: container)
         let accountRepo = AccountRepository(container: container, reportingCurrency: reportingCurrency)
         let transactionRepo = TransactionRepository(container: container, lineItemRepo: lineItemRepo, syncBlobUpdater: syncBlobUpdater)
-        let tagRepo = TagRepository(container: container, syncBlobUpdater: syncBlobUpdater)
+        let tagRepo = TagRepository(container: container)
         let categoryRepo = CategoryRepository(container: container)
         let templateRepo = TemplateRepository(container: container)
         let importRuleRepo = ImportRuleRepository(container: container)
@@ -139,8 +139,7 @@ public final class ToolRegistry: @unchecked Sendable {
         let categorizationRepo = CategorizationRepository(
             container: container,
             categoryRepo: categoryRepo,
-            importRuleRepo: importRuleRepo,
-            syncBlobUpdater: syncBlobUpdater
+            importRuleRepo: importRuleRepo
         )
 
         // Account tools
@@ -186,7 +185,7 @@ public final class ToolRegistry: @unchecked Sendable {
         let statementRepo = StatementRepository(container: container, lineItemRepo: lineItemRepo, syncBlobUpdater: syncBlobUpdater)
         registerStatementTools(
             registry: self, statements: statementRepo,
-            accounts: accountRepo, lineItems: lineItemRepo, writeGuard: writeGuard
+            accounts: accountRepo, writeGuard: writeGuard
         )
 
         // Security tools (read + write)

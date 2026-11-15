@@ -34,16 +34,6 @@ public struct ExchangeRateLookupResult: Sendable, Equatable {
 public final class ExchangeRateRepository: BaseRepository, @unchecked Sendable {
     private static let pivotCurrency = "USD"
 
-    public func lookupExchangeRate(from: String, to: String) throws -> ExchangeRateLookupResult? {
-        try performRead { ctx in
-            let request = NSFetchRequest<NSManagedObject>(entityName: "ExchangeRate")
-            let objects = try ctx.fetch(request)
-            let currencyCodesById = try Self.currencyCodesByUniqueId(in: ctx)
-            let rates = objects.compactMap { Self.mapExchangeRate($0, currencyCodesById: currencyCodesById) }
-            return Self.resolve(from: from, to: to, rates: rates)
-        }
-    }
-
     public static func resolve(
         from rawFrom: String,
         to rawTo: String,
@@ -115,25 +105,6 @@ public final class ExchangeRateRepository: BaseRepository, @unchecked Sendable {
         }
     }
 
-    private static func mapExchangeRate(
-        _ object: NSManagedObject,
-        currencyCodesById: [String: String]
-    ) -> ExchangeRateRecord? {
-        guard let sourceId = object.value(forKey: "pSourceCurrencyID") as? String,
-              let destinationId = object.value(forKey: "pDestinationCurrencyID") as? String,
-              let source = currencyCodesById[sourceId] ?? (Locale.commonISOCurrencyCodes.contains(sourceId) ? sourceId : nil),
-              let destination = currencyCodesById[destinationId] ?? (Locale.commonISOCurrencyCodes.contains(destinationId) ? destinationId : nil),
-              let rate = decimalValue(object.value(forKey: "pExchangeRate"))
-        else { return nil }
-
-        return ExchangeRateRecord(
-            source: source,
-            destination: destination,
-            rate: rate,
-            effectiveDate: object.value(forKey: "pEffectiveDate") as? Date
-        )
-    }
-
     static func currencyCodesByUniqueId(in ctx: NSManagedObjectContext) throws -> [String: String] {
         let request = NSFetchRequest<NSManagedObject>(entityName: "Currency")
         let currencies = try ctx.fetch(request)
@@ -145,18 +116,4 @@ public final class ExchangeRateRepository: BaseRepository, @unchecked Sendable {
         })
     }
 
-    private static func decimalValue(_ value: Any?) -> Decimal? {
-        switch value {
-        case let decimal as Decimal:
-            return decimal
-        case let number as NSDecimalNumber:
-            return number.decimalValue
-        case let number as NSNumber:
-            return number.decimalValue
-        case let string as String:
-            return Decimal(string: string)
-        default:
-            return nil
-        }
-    }
 }

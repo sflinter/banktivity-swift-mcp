@@ -34,19 +34,6 @@ public enum DateConversion {
     /// defect this constant exists to prevent.
     public static let dateOnlyTimeZone: TimeZone = TimeZone(secondsFromGMT: -10 * 3600)!
 
-    /// Apple's reference date: January 1, 2001 00:00:00 UTC
-    private static let appleReferenceDate: Date = {
-        var components = DateComponents()
-        components.year = 2001
-        components.month = 1
-        components.day = 1
-        components.hour = 0
-        components.minute = 0
-        components.second = 0
-        components.timeZone = TimeZone(identifier: "UTC")
-        return Calendar(identifier: .gregorian).date(from: components)!
-    }()
-
     nonisolated(unsafe) private static let isoFormatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]

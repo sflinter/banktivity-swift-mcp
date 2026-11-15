@@ -96,13 +96,6 @@ enum ToolHelpers {
         return nil
     }
 
-    /// Extract an object from tool arguments
-    static func getObject(_ arguments: [String: Value]?, key: String) -> [String: Value]? {
-        guard let value = arguments?[key] else { return nil }
-        if case .object(let obj) = value { return obj }
-        return nil
-    }
-
     /// Build a JSON Schema object for tool input
     static func schema(
         properties: [String: Value],

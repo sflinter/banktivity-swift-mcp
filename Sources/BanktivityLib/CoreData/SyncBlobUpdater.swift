@@ -59,25 +59,6 @@ public final class SyncBlobUpdater: @unchecked Sendable {
 
     // MARK: - High-level API
 
-    public func updateTransactionBlob(transactionUUID: String, using transform: @Sendable (String) -> String) {
-        // Deliberately a no-op. pRemoteEntityData is Banktivity's three-way
-        // merge base: a field where base == local takes the incoming remote
-        // value (+[IGGCSyncObject mergedFieldFromBase:remote:local:...]). Patching
-        // the blob to match an edit therefore lets a remote copy of the record
-        // silently undo the edit, and uploads don't need it: they send the local
-        // values, selected by pModificationDate (set by the save hook). See #50.
-    }
-
-    /// No-op (see updateTransactionBlob): edits are signalled by pModificationDate.
-    public func updateStatementBalances(statementUUID: String, beginningBalance: Double?, endingBalance: Double?) {
-        // Deliberately a no-op. pRemoteEntityData is Banktivity's three-way
-        // merge base: a field where base == local takes the incoming remote
-        // value (+[IGGCSyncObject mergedFieldFromBase:remote:local:...]). Patching
-        // the blob to match an edit therefore lets a remote copy of the record
-        // silently undo the edit, and uploads don't need it: they send the local
-        // values, selected by pModificationDate (set by the save hook). See #50.
-    }
-
     /// Mark a sync record for deletion.
     /// Sets pSyncedState = 3 and updates pSyncedModificationDate to trigger
     /// Banktivity's sync to push the deletion to CloudKit.
@@ -175,7 +156,7 @@ public final class SyncBlobUpdater: @unchecked Sendable {
             }
             let xml = buildTransactionXML(
                 blobDate: blobDate,
-                transactionUUID: transactionUUID, currencyUUID: currencyUUID, date: date,
+                transactionUUID: transactionUUID, currencyUUID: currencyUUID,
                 title: title, note: note, adjustment: adjustment,
                 lineItems: lineItems,
                 transactionTypeBaseType: transactionTypeBaseType,
@@ -220,18 +201,9 @@ public final class SyncBlobUpdater: @unchecked Sendable {
         }
     }
 
-    public func replaceTransactionLineItems(transactionUUID: String, lineItems: [SyncLineItem]) {
-        // Deliberately a no-op. pRemoteEntityData is Banktivity's three-way
-        // merge base: a field where base == local takes the incoming remote
-        // value (+[IGGCSyncObject mergedFieldFromBase:remote:local:...]). Patching
-        // the blob to match an edit therefore lets a remote copy of the record
-        // silently undo the edit, and uploads don't need it: they send the local
-        // values, selected by pModificationDate (set by the save hook). See #50.
-    }
-
     private func buildTransactionXML(
         blobDate: String,
-        transactionUUID: String, currencyUUID: String, date: String,
+        transactionUUID: String, currencyUUID: String,
         title: String, note: String?, adjustment: Bool,
         lineItems: [SyncLineItem],
         transactionTypeBaseType: String, transactionTypeUUID: String
@@ -324,253 +296,17 @@ public final class SyncBlobUpdater: @unchecked Sendable {
 
     // MARK: - XML Patching: Reconciliation
 
-    public func patchCleared(xml: String, lineItemUUID: String, cleared: Bool) -> String {
-        guard let range = lineItemRecordRange(in: xml, lineItemUUID: lineItemUUID) else { return xml }
-        let record = String(xml[range])
-        let value = cleared ? "yes" : "no"
-
-        guard let patched = replaceField(in: record, name: "cleared", type: "bool", newContent: value) else {
-            return xml
-        }
-        return xml.replacingCharacters(in: range, with: patched)
-    }
-
-    public func patchStatement(xml: String, lineItemUUID: String, statementUUID: String?) -> String {
-        guard let range = lineItemRecordRange(in: xml, lineItemUUID: lineItemUUID) else { return xml }
-        let record = String(xml[range])
-
-        let patched: String
-        if let uuid = statementUUID {
-            // Set statement reference
-            let newValue = "Statement:\(uuid)"
-            if let result = replaceField(in: record, name: "statement", type: "reference", newContent: newValue) {
-                patched = result
-            } else if let result = replaceNullField(in: record, name: "statement", type: "reference", newContent: newValue) {
-                patched = result
-            } else {
-                return xml
-            }
-        } else {
-            // Set statement to null
-            if let result = setFieldNull(in: record, name: "statement", type: "reference") {
-                patched = result
-            } else {
-                return xml
-            }
-        }
-        return xml.replacingCharacters(in: range, with: patched)
-    }
-
-    public func patchLineItemAmounts(xml: String, lineItemUUID: String, accountAmount: Double, transactionAmount: Double) -> String {
-        guard let range = lineItemRecordRange(in: xml, lineItemUUID: lineItemUUID) else { return xml }
-        let record = String(xml[range])
-        let accountAmountValue = formatDecimal(accountAmount)
-        let transactionAmountValue = formatDecimal(transactionAmount)
-
-        guard let withAccountAmount = replaceField(in: record, name: "accountAmount", type: "decimal", newContent: accountAmountValue) else {
-            return xml
-        }
-        guard let withTransactionAmount = replaceField(in: withAccountAmount, name: "transacitonAmount", type: "decimal", newContent: transactionAmountValue) else {
-            return xml
-        }
-        return xml.replacingCharacters(in: range, with: withTransactionAmount)
-    }
-
     // MARK: - XML Patching: Recategorize
-
-    public func patchAccount(xml: String, lineItemUUID: String, accountUUID: String) -> String {
-        guard let range = lineItemRecordRange(in: xml, lineItemUUID: lineItemUUID) else { return xml }
-        let record = String(xml[range])
-        let newValue = "Account:\(accountUUID)"
-
-        guard let patched = replaceField(in: record, name: "account", type: "reference", newContent: newValue) else {
-            return xml
-        }
-        return xml.replacingCharacters(in: range, with: patched)
-    }
 
     // MARK: - XML Patching: Tags
 
-    public func patchTags(xml: String, lineItemUUID: String, tagUUIDs: [String]) -> String {
-        guard let range = lineItemRecordRange(in: xml, lineItemUUID: lineItemUUID) else { return xml }
-        let record = String(xml[range])
-
-        let patched: String
-        if tagUUIDs.isEmpty {
-            // Set tags to null collection
-            if let result = setCollectionNull(in: record, name: "tags") {
-                patched = result
-            } else {
-                return xml
-            }
-        } else {
-            // Build tags collection content
-            var elements = ""
-            for uuid in tagUUIDs {
-                elements += "\n        <field type=\"reference\" name=\"element\">Tag:\(uuid)</field>"
-            }
-            let newCollection = "<collection type=\"set\" name=\"tags\">\(elements)\n      </collection>"
-
-            if let result = replaceCollection(in: record, name: "tags", newCollection: newCollection) {
-                patched = result
-            } else if let result = replaceNullCollection(in: record, name: "tags", newCollection: newCollection) {
-                patched = result
-            } else {
-                return xml
-            }
-        }
-        return xml.replacingCharacters(in: range, with: patched)
-    }
-
     // MARK: - XML Patching: Transaction-level fields
-
-    public func patchTransactionTitle(xml: String, title: String) -> String {
-        replaceField(in: xml, name: "title", type: "string", newContent: escapeXML(title)) ?? xml
-    }
-
-    public func patchTransactionNote(xml: String, note: String?) -> String {
-        if let note = note {
-            if let result = replaceField(in: xml, name: "note", type: "string", newContent: escapeXML(note)) {
-                return result
-            }
-            return replaceNullField(in: xml, name: "note", type: "string", newContent: escapeXML(note)) ?? xml
-        } else {
-            return setFieldNull(in: xml, name: "note", type: "string") ?? xml
-        }
-    }
-
-    public func patchTransactionDate(xml: String, date: String) -> String {
-        replaceField(in: xml, name: "date", type: "date", newContent: date) ?? xml
-    }
-
-    public func patchTransactionType(xml: String, baseTypeCode: Int16, typeUUID: String) -> String {
-        // Same rule as `createTransactionSyncRecord`: no name, no patch. Leaving
-        // the record as it stands is the safer of the two wrong answers.
-        guard let baseType = Self.syncBaseTypeName(for: baseTypeCode) else { return xml }
-        // Replace the entire TransactionType record block
-        guard let recordStart = xml.range(of: "<record type=\"TransactionType\" name=\"transactionType\">"),
-              let recordEnd = xml.range(of: "</record>", range: recordStart.upperBound..<xml.endIndex) else {
-            return xml
-        }
-        let newRecord = "<record type=\"TransactionType\" name=\"transactionType\">" +
-            "<field enum=\"IGGCSyncAccountingTransactionBaseType\" name=\"baseType\">\(baseType)</field>" +
-            "<field type=\"reference\" name=\"transactionType\">TransactionTypeV2:\(typeUUID)</field>" +
-            "</record>"
-        var result = xml
-        result.replaceSubrange(recordStart.lowerBound..<recordEnd.upperBound, with: newRecord)
-        return result
-    }
 
     // MARK: - XML Patching: SecurityLineItem fields
 
-    public static func patchSecurityLineItemFieldStatic(xml: String, lineItemUUID: String, fieldName: String, fieldType: String, value: String) -> String {
-        // Find the line item record by UUID
-        let identifierPattern = "<field type=\"string\" name=\"identifier\">\(lineItemUUID)</field>"
-        guard let identifierRange = xml.range(of: identifierPattern) else { return xml }
-
-        // Find the SecurityLineItem record within this line item
-        let afterIdentifier = xml[identifierRange.upperBound...]
-        guard let sliStart = afterIdentifier.range(of: "<record type=\"SecurityLineItem\" name=\"securityLineItem\">") else { return xml }
-        guard let sliEnd = xml.range(of: "</record>", range: sliStart.upperBound..<xml.endIndex) else { return xml }
-
-        let sliRecord = String(xml[sliStart.lowerBound..<sliEnd.upperBound])
-
-        // Try replacing the field value within the SecurityLineItem record
-        let openTag = "<field type=\"\(fieldType)\" name=\"\(fieldName)\">"
-        let closeTag = "</field>"
-        var patched = sliRecord
-
-        if let openRange = patched.range(of: openTag),
-           let closeRange = patched.range(of: closeTag, range: openRange.upperBound..<patched.endIndex) {
-            let newField = "\(openTag)\(value)\(closeTag)"
-            patched.replaceSubrange(openRange.lowerBound..<closeRange.upperBound, with: newField)
-        } else {
-            // Try replacing null field
-            let nullField = "<field type=\"\(fieldType)\" name=\"\(fieldName)\" null=\"null\"/>"
-            if let nullRange = patched.range(of: nullField) {
-                let newField = "<field type=\"\(fieldType)\" name=\"\(fieldName)\">\(value)</field>"
-                patched.replaceSubrange(nullRange, with: newField)
-            } else {
-                // Also try enum fields (for cost basis method etc.)
-                let enumOpenTag = "<field enum=\"\(fieldType)\" name=\"\(fieldName)\">"
-                if let openRange = patched.range(of: enumOpenTag),
-                   let closeRange = patched.range(of: closeTag, range: openRange.upperBound..<patched.endIndex) {
-                    let newField = "\(enumOpenTag)\(value)\(closeTag)"
-                    patched.replaceSubrange(openRange.lowerBound..<closeRange.upperBound, with: newField)
-                } else {
-                    return xml
-                }
-            }
-        }
-
-        var result = xml
-        result.replaceSubrange(sliStart.lowerBound..<sliEnd.upperBound, with: patched)
-        return result
-    }
-
-    public func formatDecimalPublic(_ value: Double) -> String {
-        formatDecimal(value)
-    }
-
     // MARK: - XML Patching: Security latestSecurityPrice
 
-    public func updateSecurityLatestPrice(securityUUID: String, closePrice: Double, date: String) {
-        // Deliberately a no-op. pRemoteEntityData is Banktivity's three-way
-        // merge base: a field where base == local takes the incoming remote
-        // value (+[IGGCSyncObject mergedFieldFromBase:remote:local:...]). Patching
-        // the blob to match an edit therefore lets a remote copy of the record
-        // silently undo the edit, and uploads don't need it: they send the local
-        // values, selected by pModificationDate (set by the save hook). See #50.
-    }
-
-    /// Touch a Security so Banktivity notices the change and re-pushes it.
-    /// Shared by the price and identity patchers rather than copied into both.
-    private func touchSecurityModificationDate(securityUUID: String) {
-        do {
-            try CoreDataWriteCoordinator.perform {
-                let bgContext = container.newBackgroundContext()
-                nonisolated(unsafe) var writeError: Error?
-                bgContext.performAndWait {
-                    do {
-                        let request = NSFetchRequest<NSManagedObject>(entityName: "Security")
-                        request.predicate = NSPredicate(format: "pUniqueID == %@", securityUUID)
-                        request.fetchLimit = 1
-                        if let security = try bgContext.fetch(request).first {
-                            security.setValue(Date(), forKey: "pModificationDate")
-                            try bgContext.save()
-                        }
-                    } catch {
-                        writeError = error
-                    }
-                }
-                if let error = writeError { throw error }
-            }
-        } catch {
-            log("Failed to update Security modification date for \(securityUUID): \(error)")
-        }
-    }
-
     // MARK: - XML Patching: Security identity
-
-    /// Patch a security's `symbol` and `name` in its sync blob, and touch the
-    /// Security so Banktivity re-pushes it.
-    ///
-    /// Renaming a security is a Core Data write that CloudKit will not see on
-    /// its own: the blob keeps the old identity and the app keeps showing it.
-    /// Both fields are plain `<field type="string">` records in the Security
-    /// blob, verified against a real one before this was written.
-    ///
-    /// Non-fatal like every other blob update here -- if the record is missing
-    /// or the XML will not patch, the rename still stands locally and only the
-    /// sync push is skipped.
-    public func updateSecurityIdentity(securityUUID: String, symbol: String?, name: String?) {
-        // Deliberately a no-op. pRemoteEntityData is Banktivity's three-way
-        // merge base: a field where base == local takes the incoming remote
-        // value (+[IGGCSyncObject mergedFieldFromBase:remote:local:...]). Patching
-        // the blob to match an edit therefore lets a remote copy of the record
-        // silently undo the edit, and uploads don't need it: they send the local
-        // values, selected by pModificationDate (set by the save hook). See #50.
-    }
 
     // MARK: - Gzip
 
@@ -665,70 +401,6 @@ public final class SyncBlobUpdater: @unchecked Sendable {
 
     // MARK: - Private Implementation
 
-    private func performBlobUpdate(entityUUID: String, transform: @Sendable (String) -> String) throws {
-        try CoreDataWriteCoordinator.perform {
-            let bgContext = container.newBackgroundContext()
-            nonisolated(unsafe) var writeError: Error?
-            bgContext.performAndWait {
-                do {
-                    guard let record = try self.fetchSyncRecord(entityUUID: entityUUID, in: bgContext) else {
-                        return // No sync record — skip silently
-                    }
-
-                    guard let blobData = record.value(forKey: "pRemoteEntityData") as? Data else {
-                        return // No blob data — skip silently
-                    }
-
-                    guard let decompressed = Self.decompressGzip(blobData) else {
-                        self.log("Failed to decompress blob for \(entityUUID)")
-                        return
-                    }
-
-                    guard let xml = String(data: decompressed, encoding: .utf8) else {
-                        self.log("Failed to decode blob XML for \(entityUUID)")
-                        return
-                    }
-
-                    let patched = transform(xml)
-
-                    // Validate patch
-                    guard patched.hasPrefix("<entity") || patched.hasPrefix("<?xml") else {
-                        self.log("Patched XML has invalid start for \(entityUUID)")
-                        return
-                    }
-                    guard patched.hasSuffix("</entity>") || patched.hasSuffix("</entity>\n") else {
-                        self.log("Patched XML has invalid end for \(entityUUID)")
-                        return
-                    }
-
-                    // Size sanity check (±50% of original)
-                    let ratio = Double(patched.utf8.count) / Double(xml.utf8.count)
-                    guard ratio > 0.5 && ratio < 1.5 else {
-                        self.log("Patched XML size changed too much (\(Int(ratio * 100))%) for \(entityUUID)")
-                        return
-                    }
-
-                    guard let patchedData = patched.data(using: .utf8) else {
-                        self.log("Failed to encode patched XML for \(entityUUID)")
-                        return
-                    }
-
-                    guard let compressed = Self.compressGzip(patchedData) else {
-                        self.log("Failed to compress patched blob for \(entityUUID)")
-                        return
-                    }
-
-                    record.setValue(compressed, forKey: "pRemoteEntityData")
-                    record.setValue(nil, forKey: "pSyncedModificationDate")
-                    try bgContext.save()
-                } catch {
-                    writeError = error
-                }
-            }
-            if let error = writeError { throw error }
-        }
-    }
-
     /// Inspect a sync record for diagnostic purposes.
     /// Returns a dictionary of key fields, or nil if no record found.
     public func inspectSyncRecord(entityUUID: String) -> [String: Any]? {
@@ -778,164 +450,6 @@ public final class SyncBlobUpdater: @unchecked Sendable {
     }
 
     // MARK: - XML Field Manipulation
-
-    private func lineItemRecordRange(in xml: String, lineItemUUID: String) -> Range<String.Index>? {
-        // Find the identifier field for this line item
-        let identifierPattern = "<field type=\"string\" name=\"identifier\">\(lineItemUUID)</field>"
-        guard let identifierRange = xml.range(of: identifierPattern) else {
-            log("LineItem UUID \(lineItemUUID) not found in blob XML")
-            return nil
-        }
-
-        // Search backwards for the enclosing <record type="LineItem"
-        let beforeIdentifier = xml[xml.startIndex..<identifierRange.lowerBound]
-        guard let recordStart = beforeIdentifier.range(of: "<record type=\"LineItem\"", options: .backwards) else {
-            return nil
-        }
-
-        // LineItem records can contain nested SecurityLineItem records. Walk record
-        // tags so the returned range encloses the whole LineItem, not the nested record.
-        var depth = 0
-        var cursor = recordStart.lowerBound
-        while cursor < xml.endIndex {
-            let searchRange = cursor..<xml.endIndex
-            let nextOpen = xml.range(of: "<record", range: searchRange)
-            let nextClose = xml.range(of: "</record>", range: searchRange)
-
-            if let open = nextOpen,
-               nextClose == nil || open.lowerBound < nextClose!.lowerBound {
-                guard let tagEnd = xml.range(of: ">", range: open.lowerBound..<xml.endIndex) else {
-                    return nil
-                }
-                let slashIndex = xml.index(before: tagEnd.lowerBound)
-                if xml[slashIndex] != "/" {
-                    depth += 1
-                }
-                cursor = tagEnd.upperBound
-                continue
-            }
-
-            guard let close = nextClose else { return nil }
-            depth -= 1
-            cursor = close.upperBound
-            if depth == 0 {
-                return recordStart.lowerBound..<close.upperBound
-            }
-        }
-
-        return nil
-    }
-
-    private func lineItemsCollectionRange(in xml: String) -> Range<String.Index>? {
-        let openPattern = "<collection type=\"array\" name=\"lineItems\">"
-        guard let openRange = xml.range(of: openPattern) else { return nil }
-
-        var searchStart = openRange.upperBound
-        var depth = 1
-        while searchStart < xml.endIndex {
-            let nextOpen = xml.range(of: "<collection ", range: searchStart..<xml.endIndex)
-            let nextClose = xml.range(of: "</collection>", range: searchStart..<xml.endIndex)
-
-            guard let closeRange = nextClose else { return nil }
-
-            if let open = nextOpen, open.lowerBound < closeRange.lowerBound {
-                depth += 1
-                searchStart = open.upperBound
-            } else {
-                depth -= 1
-                if depth == 0 {
-                    return openRange.lowerBound..<closeRange.upperBound
-                }
-                searchStart = closeRange.upperBound
-            }
-        }
-
-        return nil
-    }
-
-    private func replaceField(in xml: String, name: String, type: String, newContent: String) -> String? {
-        // Match: <field type="TYPE" name="NAME">OLD_CONTENT</field>
-        let openTag = "<field type=\"\(type)\" name=\"\(name)\">"
-        let closeTag = "</field>"
-        guard let openRange = xml.range(of: openTag) else { return nil }
-        guard let closeRange = xml.range(of: closeTag, range: openRange.upperBound..<xml.endIndex) else { return nil }
-
-        let newField = "\(openTag)\(newContent)\(closeTag)"
-        var result = xml
-        result.replaceSubrange(openRange.lowerBound..<closeRange.upperBound, with: newField)
-        return result
-    }
-
-    private func replaceNullField(in xml: String, name: String, type: String, newContent: String) -> String? {
-        // Match: <field type="TYPE" name="NAME" null="null"/>
-        let nullField = "<field type=\"\(type)\" name=\"\(name)\" null=\"null\"/>"
-        guard let range = xml.range(of: nullField) else { return nil }
-
-        let newField = "<field type=\"\(type)\" name=\"\(name)\">\(newContent)</field>"
-        var result = xml
-        result.replaceSubrange(range, with: newField)
-        return result
-    }
-
-    private func setFieldNull(in xml: String, name: String, type: String) -> String? {
-        // Try replacing a non-null field with null version
-        let openTag = "<field type=\"\(type)\" name=\"\(name)\">"
-        let closeTag = "</field>"
-        let nullField = "<field type=\"\(type)\" name=\"\(name)\" null=\"null\"/>"
-
-        if let openRange = xml.range(of: openTag),
-           let closeRange = xml.range(of: closeTag, range: openRange.upperBound..<xml.endIndex)
-        {
-            var result = xml
-            result.replaceSubrange(openRange.lowerBound..<closeRange.upperBound, with: nullField)
-            return result
-        }
-
-        // Already null — return unchanged
-        if xml.contains(nullField) { return xml }
-        return nil
-    }
-
-    private func replaceCollection(in xml: String, name: String, newCollection: String) -> String? {
-        // Match: <collection type="set" name="NAME">...</collection>
-        let openPattern = "<collection type=\"set\" name=\"\(name)\">"
-        let closeTag = "</collection>"
-        guard let openRange = xml.range(of: openPattern) else { return nil }
-        guard let closeRange = xml.range(of: closeTag, range: openRange.upperBound..<xml.endIndex) else { return nil }
-
-        var result = xml
-        result.replaceSubrange(openRange.lowerBound..<closeRange.upperBound, with: newCollection)
-        return result
-    }
-
-    private func replaceNullCollection(in xml: String, name: String, newCollection: String) -> String? {
-        // Match: <collection type="set" name="NAME" null="null"/>
-        let nullCollection = "<collection type=\"set\" name=\"\(name)\" null=\"null\"/>"
-        guard let range = xml.range(of: nullCollection) else { return nil }
-
-        var result = xml
-        result.replaceSubrange(range, with: newCollection)
-        return result
-    }
-
-    private func setCollectionNull(in xml: String, name: String) -> String? {
-        let nullCollection = "<collection type=\"set\" name=\"\(name)\" null=\"null\"/>"
-
-        // Try replacing non-null collection
-        let openPattern = "<collection type=\"set\" name=\"\(name)\">"
-        let closeTag = "</collection>"
-        if let openRange = xml.range(of: openPattern),
-           let closeRange = xml.range(of: closeTag, range: openRange.upperBound..<xml.endIndex)
-        {
-            var result = xml
-            result.replaceSubrange(openRange.lowerBound..<closeRange.upperBound, with: nullCollection)
-            return result
-        }
-
-        // Already null
-        if xml.contains(nullCollection) { return xml }
-        return nil
-    }
 
     private func escapeXML(_ string: String) -> String {
         string

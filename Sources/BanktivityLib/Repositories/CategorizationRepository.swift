@@ -7,17 +7,14 @@ import Foundation
 public final class CategorizationRepository: BaseRepository, @unchecked Sendable {
     private let categoryRepo: CategoryRepository
     private let importRuleRepo: ImportRuleRepository
-    private let syncBlobUpdater: SyncBlobUpdater?
 
     public init(
         container: NSPersistentContainer,
         categoryRepo: CategoryRepository,
-        importRuleRepo: ImportRuleRepository,
-        syncBlobUpdater: SyncBlobUpdater? = nil
+        importRuleRepo: ImportRuleRepository
     ) {
         self.categoryRepo = categoryRepo
         self.importRuleRepo = importRuleRepo
-        self.syncBlobUpdater = syncBlobUpdater
         super.init(container: container)
     }
 
@@ -512,12 +509,6 @@ public final class CategorizationRepository: BaseRepository, @unchecked Sendable
             )
         }
 
-        // Patch sync blob (non-fatal)
-        if let updater = syncBlobUpdater, let info = outcome.syncInfo {
-            updater.updateTransactionBlob(transactionUUID: info.txUUID) { xml in
-                updater.patchAccount(xml: xml, lineItemUUID: info.liUUID, accountUUID: info.catUUID)
-            }
-        }
 
         return RecategorizationResultDTO(
             transactionId: transactionId,

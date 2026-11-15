@@ -13,11 +13,6 @@ open class BaseRepository: @unchecked Sendable {
         self.reportingCurrency = ReportingCurrency.resolve(reportingCurrency)
     }
 
-    /// Get the view context for read operations
-    public var context: NSManagedObjectContext {
-        container.viewContext
-    }
-
     /// Construct the Core Data object URI for a given store, entity, and PK.
     /// Format: x-coredata://<storeUUID>/<entityName>/p<pk>
     public func objectURI(store: NSPersistentStore, entityName: String, pk: Int) -> URL {
@@ -47,13 +42,6 @@ open class BaseRepository: @unchecked Sendable {
     /// reading through it could return stale objects right after a write.
     public func performRead<T: Sendable>(_ block: @escaping @Sendable (NSManagedObjectContext) throws -> T) throws -> T {
         try perform(on: container.newBackgroundContext(), save: false, block)
-    }
-
-    /// Save the context
-    public func save() throws {
-        if context.hasChanges {
-            try context.save()
-        }
     }
 
     /// Perform work on a background context and save.

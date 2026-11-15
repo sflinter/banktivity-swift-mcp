@@ -86,10 +86,6 @@ public actor WriteGuard {
         self.monitor = VaultHolderMonitor(dbPath: dbPath, probe: probe)
     }
 
-    public func holderStatus() -> VaultHolderStatus {
-        monitor.holderStatus()
-    }
-
     /// Check if Banktivity.app is currently running with the database open.
     public func isBanktivityRunning() -> Bool {
         if case .heldByBanktivity = monitor.holderStatus() { return true }

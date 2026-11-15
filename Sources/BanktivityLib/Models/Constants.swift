@@ -2,37 +2,6 @@
 
 import Foundation
 
-/// Core Data entity type constants (Z_ENT values)
-public enum ZEntityType {
-    public static let account = 1
-    public static let category = 2
-    public static let primaryAccount = 3
-    public static let lineItem = 19
-    public static let lineItemTemplate = 21
-    public static let payee = 31
-    public static let payeeInfo = 33
-    public static let recurringTransaction = 35
-    public static let tag = 47
-    public static let templateSelector = 48
-    public static let importSourceTemplateSelector = 49
-    public static let scheduledTemplateSelector = 52
-    public static let transaction = 53
-    public static let transactionTemplate = 54
-    public static let transactionType = 55
-    public static let syncedHostedEntity = 46
-}
-
-/// Maps entity Z_ENT values to sync entity type name strings
-public let syncEntityTypeNames: [Int: String] = [
-    ZEntityType.account: "Account",
-    ZEntityType.category: "Account",
-    ZEntityType.primaryAccount: "Account",
-    ZEntityType.tag: "Tag",
-    ZEntityType.transaction: "Transaction",
-    ZEntityType.transactionTemplate: "TransactionTemplate",
-    ZEntityType.recurringTransaction: "RecurringTransaction",
-]
-
 /// Account class constants from Banktivity's IGGAccounting.framework.
 ///
 /// Source: +[IGGCAccountingAccountBase displayableNameForAccountClass:]
@@ -149,7 +118,3 @@ public func accountTypeName(for accountClass: Int) -> String {
     accountClassNames[accountClass] ?? "Unknown (\(accountClass))"
 }
 
-/// Backward-compatible wrapper for older internal callers.
-public func getAccountTypeName(_ accountClass: Int) -> String {
-    accountTypeName(for: accountClass)
-}

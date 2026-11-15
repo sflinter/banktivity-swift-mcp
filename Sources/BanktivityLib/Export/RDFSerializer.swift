@@ -2,11 +2,6 @@
 
 import Foundation
 
-public enum ExportFormat: String, CaseIterable, Sendable {
-    case turtle = "turtle"
-    // Future: case jsonld = "jsonld"
-}
-
 public struct VaultExportData: Sendable {
     public let vaultName: String
     public let accounts: [AccountDTO]

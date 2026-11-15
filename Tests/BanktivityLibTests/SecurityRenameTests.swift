@@ -29,10 +29,6 @@ struct SecurityRenameTests {
         return Fixture(vault: vault, repo: SecurityRepository(container: vault.container))
     }
 
-    private func symbolOf(_ fixture: Fixture, name: String) throws -> String? {
-        try fixture.repo.listSecurities().first { $0.name == name }?.symbol
-    }
-
     // MARK: - What it changes
 
     @Test("Renames the ticker, and the read back reports it")

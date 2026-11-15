@@ -8,7 +8,6 @@ func registerStatementTools(
     registry: ToolRegistry,
     statements: StatementRepository,
     accounts: AccountRepository,
-    lineItems: LineItemRepository,
     writeGuard: WriteGuard
 ) {
     // list_statements

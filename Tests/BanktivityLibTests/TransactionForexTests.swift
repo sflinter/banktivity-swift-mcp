@@ -13,7 +13,6 @@ struct TransactionForexTests {
         let vault: TestVaultHelper.TestVault
         let accounts: AccountRepository
         let categories: CategoryRepository
-        let lineItems: LineItemRepository
         let transactions: TransactionRepository
     }
 
@@ -32,7 +31,6 @@ struct TransactionForexTests {
             vault: vault,
             accounts: accounts,
             categories: categories,
-            lineItems: lineItems,
             transactions: transactions
         )
     }

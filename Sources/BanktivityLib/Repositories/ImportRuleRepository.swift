@@ -42,7 +42,7 @@ public final class ImportRuleRepository: BaseRepository, @unchecked Sendable {
     // MARK: - Write Operations
 
     /// Create a new import rule
-    public func create(templateId: Int, pattern: String, accountId: String? = nil, payee: String? = nil) throws -> ImportRuleDTO {
+    public func create(templateId: Int, pattern: String, accountId: String? = nil) throws -> ImportRuleDTO {
         try performWrite { [self] ctx in
             guard let template = try fetchByPK(entityName: "TransactionTemplate", pk: templateId, in: ctx) else {
                 throw ToolError.notFound("Template not found: \(templateId)")

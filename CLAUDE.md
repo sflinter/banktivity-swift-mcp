@@ -83,7 +83,7 @@ Property names are prefixed with `p` (e.g., `pName`, `pDate`, `pAccountClass`, `
 
 ### Repository Pattern
 
-`BaseRepository` provides KVC helpers (`stringValue()`, `intValue()`, `doubleValue()`, `relatedObject()`, `relatedSet()`), fetch-by-PK with entity inheritance traversal, reads via a fresh background context per call (`performRead()`, so a read never sees stale view-context objects after a write), and write operations via background contexts (`performWrite()`, `performWriteReturning()`). Domain repositories inherit from it.
+`BaseRepository` provides KVC helpers (`stringValue()`, `intValue()`, `doubleValue()`, `decimalValue()`, `relatedObject()`, `relatedSet()`), Banktivity's line amount rule (`accountAmount`), fetch-by-PK with entity inheritance traversal, a save hook that marks modified owners and recalculates running balances, reads via a fresh background context per call (`performRead()`, so a read never sees stale view-context objects after a write), and write operations via background contexts (`performWrite()`, `performWriteReturning()`). Domain repositories inherit from it.
 
 ### Entity Hierarchy
 
@@ -115,7 +115,7 @@ Banktivity syncs each record through a `ZSYNCEDENTITY` (`SyncedHostedEntity`) ro
 
 - **Uploads are chosen by modification date.** A record is pushed when `pModificationDate > lastSyncDate && pCreationTime <= lastSyncDate` (`ZSYNCEDDOCUMENT.ZPLASTSYNCDATE`). What is pushed is the **local** record merged over the blob, so local values win.
 - **The blob is the three-way merge base.** For each field, when a remote copy arrives: remote == local → local; **base == local → remote**; base == remote → local; both changed → local (unless preferring remote).
-- So the CLI must **never patch the blob on an edit**. Making base == local lets an incoming remote copy of that record silently undo the edit, and uploads don't need it. `SyncBlobUpdater`'s update methods (`updateTransactionBlob`, `replaceTransactionLineItems`, `updateSecurityLatestPrice`, `updateSecurityIdentity`, `updateStatementBalances`) are deliberate no-ops (from #50's analysis).
+- So the CLI must **never patch the blob on an edit**. Making base == local lets an incoming remote copy of that record silently undo the edit, and uploads don't need it. `SyncBlobUpdater` therefore only creates records for new transactions and marks deletions; it has no edit-patching code (removed after #50's analysis). Don't reintroduce it.
 - **Edits are signalled by `pModificationDate`.** Line items, security lines and prices travel inside their Transaction or Security record, so `BaseRepository.markOwnersModified` (run on every save) stamps the owning Transaction or Security. Changes to the cached `pRunningBalance` alone don't count. Statement edits stamp the Statement directly.
 - **New rows:** the CLI still creates a sync record for a new transaction (`createTransactionSyncRecord`); there is no remote copy yet to conflict with, and Banktivity uploads it as an addition.
 - **Deletes:** set the record's `pSyncedState = 3` and `pSyncedModificationDate` to now (`deleteSyncRecord`), keeping the blob. Banktivity pushes the deletion and then removes the record (seen on 2026-11-15).

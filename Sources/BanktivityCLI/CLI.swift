@@ -124,10 +124,6 @@ func outputJSON(_ value: [[String: Any]], format: OutputFormat = .json) throws {
     print(String(data: data, encoding: .utf8) ?? "[]")
 }
 
-func emitWarning(_ message: String) {
-    writeStderr("Warning: \(message)")
-}
-
 func writeStderr(_ message: String) {
     FileHandle.standardError.write(Data((message + "\n").utf8))
 }
