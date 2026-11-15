@@ -44,7 +44,7 @@ let package = Package(
         ),
         .testTarget(
             name: "BanktivityLibTests",
-            dependencies: ["BanktivityLib"],
+            dependencies: ["BanktivityLib", "BanktivityMCPLib"],
             path: "Tests/BanktivityLibTests"
         ),
     ]

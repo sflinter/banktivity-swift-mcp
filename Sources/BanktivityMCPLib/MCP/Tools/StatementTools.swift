@@ -188,10 +188,8 @@ func registerStatementTools(
         guard let idsArray = ToolHelpers.getArray(arguments, key: "line_item_ids") else {
             return ToolHelpers.errorResponse("line_item_ids is required")
         }
-        let lineItemIds = idsArray.compactMap { v -> Int? in
-            if case .int(let i) = v { return i }
-            if case .double(let d) = v { return Int(d) }
-            return nil
+        guard let lineItemIds = ToolHelpers.intList(idsArray) else {
+            return ToolHelpers.errorResponse("line_item_ids must be whole numbers")
         }
 
         let result = try statements.reconcileLineItems(statementId: statementId, lineItemIds: lineItemIds, allowOutOfRange: ToolHelpers.getBool(arguments, key: "allow_out_of_range"))
@@ -219,10 +217,8 @@ func registerStatementTools(
         guard let idsArray = ToolHelpers.getArray(arguments, key: "line_item_ids") else {
             return ToolHelpers.errorResponse("line_item_ids is required")
         }
-        let lineItemIds = idsArray.compactMap { v -> Int? in
-            if case .int(let i) = v { return i }
-            if case .double(let d) = v { return Int(d) }
-            return nil
+        guard let lineItemIds = ToolHelpers.intList(idsArray) else {
+            return ToolHelpers.errorResponse("line_item_ids must be whole numbers")
         }
 
         guard let result = try statements.unreconcileLineItems(statementId: statementId, lineItemIds: lineItemIds) else {
