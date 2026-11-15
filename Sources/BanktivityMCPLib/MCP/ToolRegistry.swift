@@ -11,6 +11,7 @@ public final class ToolRegistry: @unchecked Sendable {
     private let container: NSPersistentContainer
     private let writeGuard: WriteGuard
     private let bankFilePath: String
+    private let reportingCurrency: String
 
     struct ToolDefinition: Sendable {
         let tool: Tool
@@ -19,10 +20,16 @@ public final class ToolRegistry: @unchecked Sendable {
 
     private var tools: [String: ToolDefinition] = [:]
 
-    public init(container: NSPersistentContainer, writeGuard: WriteGuard, bankFilePath: String) {
+    public init(
+        container: NSPersistentContainer,
+        writeGuard: WriteGuard,
+        bankFilePath: String,
+        reportingCurrency: String = ReportingCurrency.defaultCode
+    ) {
         self.container = container
         self.writeGuard = writeGuard
         self.bankFilePath = bankFilePath
+        self.reportingCurrency = ReportingCurrency.resolve(reportingCurrency)
     }
 
     /// Register a tool with its handler
@@ -102,7 +109,7 @@ public final class ToolRegistry: @unchecked Sendable {
         // Create sync blob updater and repositories
         let syncBlobUpdater = SyncBlobUpdater(container: container)
         let lineItemRepo = LineItemRepository(container: container)
-        let accountRepo = AccountRepository(container: container)
+        let accountRepo = AccountRepository(container: container, reportingCurrency: reportingCurrency)
         let transactionRepo = TransactionRepository(container: container, lineItemRepo: lineItemRepo, syncBlobUpdater: syncBlobUpdater)
         let tagRepo = TagRepository(container: container, syncBlobUpdater: syncBlobUpdater)
         let categoryRepo = CategoryRepository(container: container)

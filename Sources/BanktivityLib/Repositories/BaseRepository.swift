@@ -6,9 +6,11 @@ import Foundation
 /// Base repository providing Core Data context access and common helpers
 open class BaseRepository: @unchecked Sendable {
     public let container: NSPersistentContainer
+    public let reportingCurrency: String
 
-    public init(container: NSPersistentContainer) {
+    public init(container: NSPersistentContainer, reportingCurrency: String = ReportingCurrency.defaultCode) {
         self.container = container
+        self.reportingCurrency = ReportingCurrency.resolve(reportingCurrency)
     }
 
     /// Get the view context for read operations
