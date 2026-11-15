@@ -195,6 +195,7 @@ public final class LineItemRepository: BaseRepository, @unchecked Sendable {
             accountId: accountId,
             accountName: accountName,
             amount: Self.doubleValue(object, "pTransactionAmount"),
+            exchangeRate: Self.doubleValue(object, "pExchangeRate"),
             memo: Self.string(object, "pMemo"),
             runningBalance: Self.doubleValue(object, "pRunningBalance"),
             cleared: Self.boolValue(object, "pCleared"),

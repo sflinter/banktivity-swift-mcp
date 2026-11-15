@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### New
+- **Cross-currency transfer repair:** `transactions repair-forex` / `repair_forex_transfer` rewrites an existing transfer as source (gross), fee and target (at the rate) lines, validating that gross − fee × rate matches the amount received, editing existing lines in place and refusing transactions with other lines (from #6). The rebuilt sync record lists the lines without statement or tag references; Banktivity uploads the vault's values, so nothing is lost
 - **`securities audit-prices` / `audit_security_prices`:** lists trades stored with a price of 0 and flags those that zero a held security on other devices
 - **Security trades and income:** `securities create-trade` / `create_security_trade` writes a buy or sell with its security line, cash line and balancing line; `securities create-income` / `create_security_income` writes native dividend and other income (optionally with tax withheld), so holdings and income reports see them (#13)
 - **Security delete:** `securities delete` / `delete_security` removes a security no trade references; refuses otherwise, keeps prices unless `--with-prices`, supports `--dry-run` (#13)

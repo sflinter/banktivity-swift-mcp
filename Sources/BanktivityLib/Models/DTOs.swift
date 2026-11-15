@@ -60,15 +60,19 @@ public struct LineItemDTO: Codable, Sendable {
     public let accountId: Int
     public let accountName: String
     public let amount: Double
+    public let accountAmount: Double
+    public let exchangeRate: Double
     public let memo: String?
     public let runningBalance: Double?
     public let cleared: Bool
     public let statementId: Int?
     public let tags: [TagDTO]?
 
-    public init(id: Int, accountId: Int, accountName: String, amount: Double, memo: String?, runningBalance: Double?, cleared: Bool = false, statementId: Int? = nil, tags: [TagDTO]? = nil) {
+    public init(id: Int, accountId: Int, accountName: String, amount: Double, accountAmount: Double? = nil, exchangeRate: Double = 1.0, memo: String?, runningBalance: Double?, cleared: Bool = false, statementId: Int? = nil, tags: [TagDTO]? = nil) {
         self.id = id; self.accountId = accountId; self.accountName = accountName
-        self.amount = amount; self.memo = memo; self.runningBalance = runningBalance
+        self.amount = amount; self.accountAmount = accountAmount ?? (amount * exchangeRate)
+        self.exchangeRate = exchangeRate
+        self.memo = memo; self.runningBalance = runningBalance
         self.cleared = cleared; self.statementId = statementId; self.tags = tags
     }
 }

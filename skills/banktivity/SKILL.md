@@ -112,6 +112,25 @@ Always redirect stderr with `2>/dev/null` — CoreData prints harmless warnings 
 | `audit_category_entities` | (none) | Lists income/expense rows stored as the wrong entity (should be empty) |
 | `categories delete` | `<category_id>` (CLI only) | Deletes an unused category; refuses if any line item uses it |
 
+### Forex Repair
+
+Cross-currency transfer repair is available through MCP as `repair_forex_transfer` and through the CLI as `transactions repair-forex`. Prefer the MCP tool when operating as an assistant, and use the CLI for scripting or manual reproduction. Do not emulate forex repair with `create_transaction`, `update_transaction`, `add_line_item`, or generic line-item edits.
+
+Use forex repair only after the source account, target account, fee category, gross source amount, source-currency fee, target amount, and exchange rate are known from source evidence. The tool repairs an existing transaction. It does not create a new forex transfer. For real vault writes, make a backup first and visually inspect Banktivity after the MCP or CLI write.
+
+The Banktivity model is:
+
+- transaction currency is the source account currency
+- source line is the gross source-currency debit
+- target line keeps the source amount after fees as the transaction amount, with `pExchangeRate` set to the forex rate and `accountAmount` equal to the target-currency receipt
+- fee line is a separate source-currency category split
+
+CLI example:
+
+```sh
+banktivity-cli transactions repair-forex --transaction-id 1001 --source-account-id 2001 --target-account-id 2002 --fee-category-id 3001 --gross-source-amount 100 --source-fee-amount 1 --target-amount 74.25 --exchange-rate 0.75
+```
+
 ### Export
 
 | Tool | Key Arguments | Notes |

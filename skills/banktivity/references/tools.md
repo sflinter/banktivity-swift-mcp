@@ -378,6 +378,82 @@ Update an existing transaction's title, note, date, cleared status, or transacti
 }
 ```
 
+### repair_forex_transfer
+Rewrite an existing cross-currency transfer as one consistent transaction: the source account debited the gross amount, a fee line (source currency) against an expense category, and the target account credited the amount received at the stated rate. Validates gross > 0, 0 ≤ fee < gross, and (gross − fee) × rate ≈ target (within 0.02). Existing lines for those three accounts are edited in place (cleared state, tags and statement links kept); a transaction with any other line is refused. CLI: `transactions repair-forex`.
+
+```json
+{
+  "properties": {
+    "transaction_id": {
+      "type": "number",
+      "description": "Existing transaction ID to repair"
+    },
+    "source_account_id": {
+      "type": "number",
+      "description": "Source account ID, in the source currency"
+    },
+    "target_account_id": {
+      "type": "number",
+      "description": "Target account ID, in the target currency"
+    },
+    "fee_category_id": {
+      "type": "number",
+      "description": "Expense category/account ID for the source-currency provider fee"
+    },
+    "gross_source_amount": {
+      "type": "number",
+      "description": "Gross source amount debited from the source account"
+    },
+    "source_fee_amount": {
+      "type": "number",
+      "description": "Provider fee in the source currency"
+    },
+    "target_amount": {
+      "type": "number",
+      "description": "Amount received in the target account currency"
+    },
+    "exchange_rate": {
+      "type": "number",
+      "description": "Provider exchange rate from source-after-fee to target currency"
+    },
+    "title": {
+      "type": "string",
+      "description": "Optional replacement title"
+    },
+    "note": {
+      "type": "string",
+      "description": "Optional replacement note"
+    },
+    "date": {
+      "type": "string",
+      "description": "Optional replacement date in ISO format (YYYY-MM-DD)"
+    },
+    "source_memo": {
+      "type": "string",
+      "description": "Optional source line memo"
+    },
+    "target_memo": {
+      "type": "string",
+      "description": "Optional target line memo"
+    },
+    "fee_memo": {
+      "type": "string",
+      "description": "Optional fee line memo"
+    }
+  },
+  "required": [
+    "transaction_id",
+    "source_account_id",
+    "target_account_id",
+    "fee_category_id",
+    "gross_source_amount",
+    "source_fee_amount",
+    "target_amount",
+    "exchange_rate"
+  ]
+}
+```
+
 ### delete_transaction
 Delete a transaction and all its line items.
 
