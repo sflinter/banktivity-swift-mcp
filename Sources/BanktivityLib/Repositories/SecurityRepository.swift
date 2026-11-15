@@ -187,6 +187,9 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
             throw ToolError.invalidInput("shares must be non-zero")
         }
         _ = try Self.validatedPricePerShare(pricePerShare, shares: shares, amount: nil, baseType: shares < 0 ? 101 : 100)
+        // Cash moves the opposite way to shares: a buy pays (negative cash), a
+        // sell receives (positive).
+        try Self.validateTradeCashSign(cashLineItemAmount, isBuy: shares > 0)
         guard DateConversion.fromISO(date) != nil else {
             throw ToolError.invalidInput("date must be YYYY-MM-DD")
         }
@@ -321,7 +324,10 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
 
             let sli = Self.createObject(entityName: "SecurityLineItem", in: ctx)
             sli.setValue(shares as NSNumber, forKey: "pShares")
-            sli.setValue(amount as NSNumber, forKey: "pAmount")
+            // Banktivity ignores the cash line's pTransactionAmount for a trade
+            // and counts the security line's pAmount (see `accountAmount`), so
+            // the trade's signed cash, commission included, goes there.
+            sli.setValue(cashLineItemAmount as NSNumber, forKey: "pAmount")
             sli.setValue(pricePerShare as NSNumber, forKey: "pPricePerShare")
             sli.setValue(commission as NSNumber, forKey: "pCommission")
             sli.setValue(0.0 as NSNumber, forKey: "pIncome")
@@ -347,7 +353,7 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
 
         if let updater = syncBlobUpdater {
             let syncSLI = SyncBlobUpdater.SyncSecurityLineItem(
-                amount: amount,
+                amount: cashLineItemAmount,
                 commission: commission,
                 pricePerShare: pricePerShare,
                 priceMultiplier: 1,
@@ -399,6 +405,16 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
             accountName: info.accountName,
             accountId: accountId
         )
+    }
+
+    /// A buy's cash is negative and a sell's positive (zero is left alone).
+    static func validateTradeCashSign(_ cash: Double, isBuy: Bool) throws {
+        if isBuy, cash > 0 {
+            throw ToolError.invalidInput("cash line amount \(cash) has the wrong sign for a buy: cash must be negative")
+        }
+        if !isBuy, cash < 0 {
+            throw ToolError.invalidInput("cash line amount \(cash) has the wrong sign for a sell: cash must be positive")
+        }
     }
 
     /// The income types `ZTRANSACTIONTYPE` holds, by the slug `--income-type` takes.
@@ -1166,6 +1182,14 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
                 }
                 let offsetLI = offsetCandidates.first!
                 let offsetAmount = -cashLineItemAmount
+                // On a buy/sell Banktivity counts the security line's pAmount,
+                // not the cash line's pTransactionAmount, so the cash goes there
+                // too. Income rows keep pAmount at 0 (their money is pIncome).
+                let baseType = Self.relatedObject(tx, "pTransactionType").map { Self.intValue($0, "pBaseType") } ?? 0
+                if baseType == 100 || baseType == 101 {
+                    try Self.validateTradeCashSign(cashLineItemAmount, isBuy: baseType == 100)
+                    sli.setValue(cashLineItemAmount as NSNumber, forKey: "pAmount")
+                }
                 li.setValue(cashLineItemAmount as NSNumber, forKey: "pTransactionAmount")
                 offsetLI.setValue(offsetAmount as NSNumber, forKey: "pTransactionAmount")
                 cashSync = CashSyncInfo(

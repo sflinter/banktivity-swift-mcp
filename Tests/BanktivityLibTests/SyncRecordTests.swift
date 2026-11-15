@@ -424,7 +424,7 @@ struct SyncRecordTests {
             transactionId: txPK,
             cashLineItemAmount: 596.06
         )
-        #expect(updated.amount == 100)
+        #expect(abs(updated.amount - 596.06) < 0.000001)
 
         let lineItems = try LineItemRepository(container: vault.container).getForTransactionPK(txPK)
         let accountLine = try #require(lineItems.first { $0.accountId == accountPK })
