@@ -14,11 +14,17 @@ public struct AccountDTO: Codable, Sendable {
     public let currency: String?
     public let balance: Double?
     public let formattedBalance: String?
+    /// Market value of the account's open security positions, in the
+    /// account's currency. Reported beside `balance`, never added to it, and
+    /// present only for investment accounts.
+    public let holdingsValue: Double?
+    public let formattedHoldingsValue: String?
 
-    public init(id: Int, name: String, fullName: String, accountClass: Int, accountType: String, hidden: Bool, currency: String?, balance: Double?, formattedBalance: String?) {
+    public init(id: Int, name: String, fullName: String, accountClass: Int, accountType: String, hidden: Bool, currency: String?, balance: Double?, formattedBalance: String?, holdingsValue: Double? = nil, formattedHoldingsValue: String? = nil) {
         self.id = id; self.name = name; self.fullName = fullName; self.accountClass = accountClass
         self.accountType = accountType; self.hidden = hidden; self.currency = currency
         self.balance = balance; self.formattedBalance = formattedBalance
+        self.holdingsValue = holdingsValue; self.formattedHoldingsValue = formattedHoldingsValue
     }
 }
 

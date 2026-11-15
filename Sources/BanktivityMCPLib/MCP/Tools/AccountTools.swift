@@ -39,12 +39,17 @@ func registerAccountTools(registry: ToolRegistry, accounts: AccountRepository, t
         let balance = try accounts.getBalance(accountId: accountId)
         let account = try accounts.get(accountId: accountId)
 
-        return ToolHelpers.jsonResponse([
+        var result: [String: Any] = [
             "accountId": accountId,
             "accountName": account?.name ?? "Unknown",
             "balance": balance,
             "formattedBalance": ToolHelpers.formatCurrency(balance, currency: account?.currency ?? "EUR"),
-        ] as [String: Any])
+        ]
+        if let holdings = try accounts.holdingsValue(accountId: accountId) {
+            result["holdingsValue"] = holdings
+            result["formattedHoldingsValue"] = ToolHelpers.formatCurrency(holdings, currency: account?.currency ?? "EUR")
+        }
+        return ToolHelpers.jsonResponse(result)
     }
 
     // get_spending_by_category
