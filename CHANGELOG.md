@@ -11,9 +11,12 @@
 - **Multi-currency net worth:** `get_net_worth` / `get_summary` convert each account to the reporting currency with the vault's latest exchange rates and include holdings value; adds `breakdown.byCurrency` and `warnings` (from #20)
 - **Exit codes:** the CLI exits 64 usage, 65 validation failed, 66 not found, 70 store failure, 77 write blocked, with `Error: [category] message` on stderr (#24)
 - **Categories:** `categories delete` and `categories audit-entities` / `audit_category_entities` (#42)
+- **Statements:** `statements status` / `get_account_reconciliation_status`, `statements update` / `update_statement` (balances in place), and `statements get` lists the statement's line items (from #4)
 - **MCP tool annotations:** every tool advertises `readOnlyHint` / `destructiveHint`, so clients can tell reads from writes; unlabelled tools default to destructive, and a test refuses a read-only label on any tool that guards writes
 
 ### Fixed
+- **Line amounts follow Banktivity:** balances and statement totals use Banktivity's own per-line rule (read from IGGAccounting): for investment transactions the security line's amount + income, otherwise amount x exchange rate. 239 of 240 investment statements in a real vault now balance, against 202 before
+- **Cleared is kept:** unreconciling a line or deleting a statement no longer un-ticks its lines (from #4)
 - Reads use a fresh background context, so a read straight after a write no longer returns stale objects
 - **Investment balances:** account balances now count native trade cash (`SecurityLineItem.pAmount` when the line item amount is 0, skipping share-only adjustments), matching Banktivity's running balance; holdings market value is reported beside cash as `holdingsValue` (#51, built from #19/#33; fixes #2)
 - **Exchange rates in balances:** each line's exchange rate is applied, and a missing or zero rate counts as 1 (#51)

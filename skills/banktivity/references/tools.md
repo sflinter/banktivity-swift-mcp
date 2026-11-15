@@ -467,7 +467,7 @@ List statements for an account, sorted by start date.
 ```
 
 ### get_statement
-Get a statement with reconciliation progress (reconciled balance, difference, isBalanced).
+Get a statement with reconciliation progress (reconciled balance, difference, isBalanced) and its `lineItems`. The total follows Banktivity's own rule: for investment transactions it uses the security line's amount + income, not the line item's amount.
 
 ```json
 {
@@ -497,8 +497,34 @@ Create a new statement for an account with beginning/ending balance validation.
 }
 ```
 
+### get_account_reconciliation_status
+Where an account's reconciliation stands: `statementCount`, `unbalancedStatementIds`, the last statement's ID, end date and ending balance, `unreconciledLineItemCount`, and `unreconciledSinceLastStatement`. CLI: `statements status`.
+
+```json
+{
+  "properties": {
+    "account_id": { "type": "number", "description": "The account ID" },
+    "account_name": { "type": "string", "description": "The account name (alternative to account_id)" }
+  }
+}
+```
+
+### update_statement
+Change a statement's beginning and/or ending balance in place; also patches its sync record. CLI: `statements update <id> [--beginning-balance X] [--ending-balance Y]`.
+
+```json
+{
+  "properties": {
+    "statement_id": { "type": "number", "description": "The statement ID" },
+    "beginning_balance": { "type": "number", "description": "New beginning balance" },
+    "ending_balance": { "type": "number", "description": "New ending balance" }
+  },
+  "required": ["statement_id"]
+}
+```
+
 ### delete_statement
-Delete a statement and unreconcile all its line items.
+Delete a statement. Its line items leave it but keep their cleared state.
 
 ```json
 {
@@ -524,7 +550,7 @@ Assign line items to a statement (sets pCleared=true). Validates account ownersh
 ```
 
 ### unreconcile_line_items
-Remove line items from a statement (sets pCleared=false).
+Remove line items from a statement. They keep their cleared state, as in Banktivity.
 
 ```json
 {

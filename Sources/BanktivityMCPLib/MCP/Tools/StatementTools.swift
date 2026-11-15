@@ -30,7 +30,7 @@ func registerStatementTools(
     registry.register(
         name: "get_statement",
         access: .read,
-        description: "Get a statement with reconciliation progress (reconciled balance, difference, isBalanced)",
+        description: "Get a statement with reconciliation progress (reconciled balance, difference, isBalanced) and its line items",
         inputSchema: ToolHelpers.schema(
             properties: [
                 "statement_id": ToolHelpers.property(type: "number", description: "The statement ID"),
@@ -47,6 +47,46 @@ func registerStatementTools(
         }
 
         return try ToolHelpers.jsonResponse(statement)
+    }
+
+    // get_account_reconciliation_status
+    registry.register(
+        name: "get_account_reconciliation_status",
+        access: .read,
+        description: "Where an account's reconciliation stands: statement count, unbalanced statement IDs, the last statement's end date and balance, and how many line items are on no statement",
+        inputSchema: ToolHelpers.schema(properties: [
+            "account_id": ToolHelpers.property(type: "number", description: "The account ID"),
+            "account_name": ToolHelpers.property(type: "string", description: "The account name (alternative to account_id)"),
+        ])
+    ) { arguments in
+        let accountId = try resolveAccountId(accounts: accounts, arguments: arguments)
+        return try ToolHelpers.jsonResponse(try statements.status(accountId: accountId))
+    }
+
+    // update_statement
+    registry.register(
+        name: "update_statement",
+        description: "Change a statement's beginning and/or ending balance in place (also updates its sync record)",
+        inputSchema: ToolHelpers.schema(
+            properties: [
+                "statement_id": ToolHelpers.property(type: "number", description: "The statement ID"),
+                "beginning_balance": ToolHelpers.property(type: "number", description: "New beginning balance"),
+                "ending_balance": ToolHelpers.property(type: "number", description: "New ending balance"),
+            ],
+            required: ["statement_id"]
+        )
+    ) { arguments in
+        if let msg = await writeGuard.guardWriteAccess() {
+            return ToolHelpers.errorResponse(msg)
+        }
+        guard let statementId = ToolHelpers.getInt(arguments, key: "statement_id") else {
+            return ToolHelpers.errorResponse("statement_id is required")
+        }
+        let result = try statements.update(
+            statementId: statementId,
+            beginningBalance: ToolHelpers.getDouble(arguments, key: "beginning_balance"),
+            endingBalance: ToolHelpers.getDouble(arguments, key: "ending_balance"))
+        return try ToolHelpers.jsonResponse(result)
     }
 
     // create_statement
@@ -105,7 +145,7 @@ func registerStatementTools(
     // delete_statement
     registry.register(
         name: "delete_statement",
-        description: "Delete a statement and unreconcile all its line items",
+        description: "Delete a statement; its line items leave it but keep their cleared state",
         inputSchema: ToolHelpers.schema(
             properties: [
                 "statement_id": ToolHelpers.property(type: "number", description: "The statement ID to delete"),
@@ -122,7 +162,7 @@ func registerStatementTools(
 
         let deleted = try statements.delete(statementId: statementId)
         if deleted {
-            return ToolHelpers.successResponse("Statement \(statementId) deleted, line items unreconciled")
+            return ToolHelpers.successResponse("Statement \(statementId) deleted; its line items keep their cleared state")
         }
         return ToolHelpers.errorResponse("Statement not found: \(statementId)")
     }

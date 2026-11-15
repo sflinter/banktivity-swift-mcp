@@ -35,7 +35,46 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
             guard let statement = try fetchByPK(entityName: "Statement", pk: statementId, in: ctx) else {
                 return nil
             }
-            return self.mapToDTO(statement)
+            return self.mapToDTO(statement, includeLineItems: true)
+        }
+    }
+
+    /// Where an account's reconciliation stands: its statements, which of them
+    /// don't add up, and how many line items are not on any statement.
+    public func status(accountId: Int) throws -> AccountReconciliationStatusDTO {
+        try performRead { [self] ctx in
+            guard let account = try fetchByPK(entityName: "Account", pk: accountId, in: ctx) else {
+                throw ToolError.notFound("Account not found: \(accountId)")
+            }
+            let request = NSFetchRequest<NSManagedObject>(entityName: "Statement")
+            request.predicate = NSPredicate(format: "pAccount == %@", account)
+            request.sortDescriptors = [NSSortDescriptor(key: "pEndDate", ascending: true)]
+            let statements = try ctx.fetch(request)
+            let summaries = statements.map { self.mapToSummaryDTO($0) }
+            let last = statements.last
+
+            let unreconciled = NSFetchRequest<NSManagedObject>(entityName: "LineItem")
+            unreconciled.predicate = NSPredicate(format: "pAccount == %@ AND pStatement == nil", account)
+            let unreconciledCount = try ctx.count(for: unreconciled)
+            var sinceLast = unreconciledCount
+            if let lastEnd = last.flatMap({ Self.dateValue($0, "pEndDate") }) {
+                unreconciled.predicate = NSPredicate(
+                    format: "pAccount == %@ AND pStatement == nil AND pTransaction.pDate > %@",
+                    account, DateConversion.toDate(lastEnd) as NSDate)
+                sinceLast = try ctx.count(for: unreconciled)
+            }
+
+            return AccountReconciliationStatusDTO(
+                accountId: accountId,
+                accountName: Self.stringValue(account, "pName"),
+                statementCount: statements.count,
+                unbalancedStatementIds: summaries.filter { !$0.isBalanced }.map(\.id),
+                lastStatementId: last.map { Self.extractPK(from: $0.objectID) },
+                lastStatementEndDate: last.flatMap { Self.dateValue($0, "pEndDate") }.map { DateConversion.toISO($0) },
+                lastStatementEndingBalance: last.map { Self.doubleValue($0, "pEndingBalance") },
+                unreconciledLineItemCount: unreconciledCount,
+                unreconciledSinceLastStatement: sinceLast
+            )
         }
     }
 
@@ -90,6 +129,33 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
         return result
     }
 
+    /// Change a statement's beginning and/or ending balance in place.
+    public func update(statementId: Int, beginningBalance: Double? = nil, endingBalance: Double? = nil) throws -> StatementDTO {
+        guard beginningBalance != nil || endingBalance != nil else {
+            throw ToolError.missingParameter("Give a beginning balance, an ending balance, or both")
+        }
+        let uuid: String = try performWriteReturning { [self] ctx in
+            guard let statement = try fetchByPK(entityName: "Statement", pk: statementId, in: ctx) else {
+                throw ToolError.notFound("Statement not found: \(statementId)")
+            }
+            if let beginningBalance {
+                statement.setValue(beginningBalance as NSNumber, forKey: "pBeginningBalance")
+            }
+            if let endingBalance {
+                statement.setValue(endingBalance as NSNumber, forKey: "pEndingBalance")
+            }
+            Self.setNow(statement, "pModificationDate")
+            return Self.stringValue(statement, "pUniqueID")
+        }
+        syncBlobUpdater?.updateStatementBalances(
+            statementUUID: uuid, beginningBalance: beginningBalance, endingBalance: endingBalance)
+
+        guard let result = try get(statementId: statementId) else {
+            throw ToolError.notFound("Statement not found after update: \(statementId)")
+        }
+        return result
+    }
+
     public func delete(statementId: Int) throws -> Bool {
         // Gather UUID and blob-patch info on the context's thread
         struct PreReadData: Sendable {
@@ -123,8 +189,8 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
             try performWrite { ctx in
                 for objectID in ids {
                     let liInCtx = try ctx.existingObject(with: objectID)
+                    // Leaving a statement does not un-tick the line: cleared is kept.
                     liInCtx.setValue(nil, forKey: "pStatement")
-                    liInCtx.setValue(false, forKey: "pCleared")
                 }
             }
         }
@@ -145,7 +211,6 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
                 updater.updateTransactionBlob(transactionUUID: txUUID) { xml in
                     var result = xml
                     for liUUID in liUUIDs {
-                        result = updater.patchCleared(xml: result, lineItemUUID: liUUID, cleared: false)
                         result = updater.patchStatement(xml: result, lineItemUUID: liUUID, statementUUID: nil)
                     }
                     return result
@@ -233,6 +298,7 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
 
                 li.setValue(stmtInCtx, forKey: "pStatement")
                 li.setValue(true, forKey: "pCleared")
+                Self.setNow(stmtInCtx, "pModificationDate")
 
                 // Gather info for blob patching and mark transaction modified
                 let liUUID = Self.stringValue(li, "pUniqueID")
@@ -303,8 +369,11 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
                     result[txUUID, default: []].append(liUUID)
                 }
 
+                // Leaving a statement does not un-tick the line: cleared is kept.
                 li.setValue(nil, forKey: "pStatement")
-                li.setValue(false, forKey: "pCleared")
+                if let statement = try fetchByPK(entityName: "Statement", pk: statementId, in: ctx) {
+                    Self.setNow(statement, "pModificationDate")
+                }
             }
 
             return result
@@ -316,7 +385,6 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
                 updater.updateTransactionBlob(transactionUUID: txUUID) { xml in
                     var result = xml
                     for liUUID in liUUIDs {
-                        result = updater.patchCleared(xml: result, lineItemUUID: liUUID, cleared: false)
                         result = updater.patchStatement(xml: result, lineItemUUID: liUUID, statementUUID: nil)
                     }
                     return result
@@ -400,7 +468,7 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
 
     // MARK: - DTO Mapping
 
-    private func mapToDTO(_ object: NSManagedObject) -> StatementDTO {
+    private func mapToDTO(_ object: NSManagedObject, includeLineItems: Bool = false) -> StatementDTO {
         let pk = Self.extractPK(from: object.objectID)
 
         let accountId: Int
@@ -417,13 +485,8 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
         let endingBalance = Self.doubleValue(object, "pEndingBalance")
 
         let lineItems = Self.relatedSet(object, "pLineItems")
-        let reconciledBalance = lineItems.reduce(0.0) { sum, li in
-            var amount = Self.doubleValue(li, "pTransactionAmount")
-            if let sli = Self.relatedObject(li, "pSecurityLineItem") {
-                amount += Self.doubleValue(sli, "pAmount")
-            }
-            return sum + amount
-        }
+        // Banktivity's statement total: the sum of each line's account amount.
+        let reconciledBalance = lineItems.reduce(0.0) { $0 + Self.accountAmount($1) }
         let expectedChange = endingBalance - beginningBalance
         let difference = expectedChange - reconciledBalance
 
@@ -470,7 +533,14 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
             difference: difference,
             isBalanced: abs(difference) < 0.005,
             createdAt: createdAt,
-            modifiedAt: modifiedAt
+            modifiedAt: modifiedAt,
+            lineItems: includeLineItems ? lineItems
+                .sorted {
+                    let l = Self.relatedObject($0, "pTransaction").flatMap { Self.dateValue($0, "pDate") } ?? 0
+                    let r = Self.relatedObject($1, "pTransaction").flatMap { Self.dateValue($0, "pDate") } ?? 0
+                    return l != r ? l < r : Self.extractPK(from: $0.objectID) < Self.extractPK(from: $1.objectID)
+                }
+                .map { lineItemRepo.mapToDTO($0) } : nil
         )
     }
 
@@ -480,13 +550,8 @@ public final class StatementRepository: BaseRepository, @unchecked Sendable {
         let endingBalance = Self.doubleValue(object, "pEndingBalance")
 
         let lineItems = Self.relatedSet(object, "pLineItems")
-        let reconciledBalance = lineItems.reduce(0.0) { sum, li in
-            var amount = Self.doubleValue(li, "pTransactionAmount")
-            if let sli = Self.relatedObject(li, "pSecurityLineItem") {
-                amount += Self.doubleValue(sli, "pAmount")
-            }
-            return sum + amount
-        }
+        // Banktivity's statement total: the sum of each line's account amount.
+        let reconciledBalance = lineItems.reduce(0.0) { $0 + Self.accountAmount($1) }
         let expectedChange = endingBalance - beginningBalance
         let difference = expectedChange - reconciledBalance
 

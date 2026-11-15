@@ -3,7 +3,7 @@
 A Swift library, [MCP](https://modelcontextprotocol.io/) server, and CLI for [Banktivity](https://www.iggsoftware.com/banktivity/) personal finance files. Provides full read/write access to `.bank8` vaults — accounts, transactions, categories, tags, templates, import rules, scheduled transactions, statements, securities, and RDF export.
 
 - **BanktivityLib** — pure domain library with Core Data repositories and RDF export, no server dependencies
-- **banktivity-mcp** — MCP server exposing 72 tools over stdio, for AI assistants like Claude
+- **banktivity-mcp** — MCP server exposing 74 tools over stdio, for AI assistants like Claude
 - **banktivity-cli** — standalone CLI for scripting and automation
 
 Inspired by [banktivity-mcp](https://github.com/mhriemers/banktivity-mcp) (TypeScript/Node.js), this is a ground-up rewrite in Swift. The original uses `better-sqlite3` to read and write Core Data's SQLite store directly, bypassing Core Data's internal change tracking. This works for reads, but direct SQL writes are invisible to CloudKit sync — Banktivity doesn't know the data changed, and the vault can become corrupted or fail to sync. This Swift version uses `NSPersistentContainer` so all mutations go through Core Data's API, ensuring proper change tracking and CloudKit compatibility.
@@ -188,11 +188,13 @@ warning.
 
 ### Statements (Reconciliation)
 - `list_statements` — List statements for an account
-- `get_statement` — Get a statement with reconciliation progress
+- `get_statement` — Get a statement with reconciliation progress and its line items
+- `get_account_reconciliation_status` — Statement count, unbalanced statements, last statement, and line items on no statement
+- `update_statement` — Change a statement's beginning and/or ending balance
 - `create_statement` — Create a new statement with balance validation
-- `delete_statement` — Delete a statement and unreconcile its line items
+- `delete_statement` — Delete a statement; its line items keep their cleared state
 - `reconcile_line_items` — Assign line items to a statement
-- `unreconcile_line_items` — Remove line items from a statement
+- `unreconcile_line_items` — Remove line items from a statement (they stay cleared)
 - `get_unreconciled_line_items` — List unreconciled line items for an account
 
 ### Securities
@@ -244,7 +246,7 @@ banktivity-cli export turtle --output vault.ttl
 - `templates list`, `templates get`, `templates create`, `templates update`, `templates delete`
 - `import-rules list`, `import-rules get`, `import-rules match`, `import-rules create`, `import-rules update`, `import-rules delete`
 - `scheduled list`, `scheduled get`, `scheduled create`, `scheduled update`, `scheduled delete`
-- `statements list`, `statements get`, `statements create`, `statements delete`, `statements reconcile`, `statements unreconcile`, `statements unreconciled`
+- `statements list`, `statements status`, `statements get`, `statements create`, `statements update`, `statements delete`, `statements reconcile`, `statements unreconcile`, `statements unreconciled`
 - `securities list`, `securities create`, `securities delete`, `securities rename`, `securities prices`, `securities holdings`, `securities trades`, `securities realized-gains`, `securities income`, `securities create-trade`, `securities create-income`, `securities adjust`, `securities update-trade`, `securities import-prices`, `securities delete-prices`, `securities reset-price-range`, `securities fix-prices`
   - `securities delete` refuses while any trade still references the security, because deleting it would orphan the line items carrying its cost basis and realized gain. Merge those trades onto the surviving security with `securities update-trade --security-id` first. Price history is kept unless `--with-prices` is given.
 - `export turtle`
@@ -297,7 +299,7 @@ Banktivity's `.bank8` bundle is a directory containing compiled Core Data models
 
 1. Loads and merges all `.momd` model bundles from the vault
 2. Opens the SQLite store via `NSPersistentContainer` (no history tracking)
-3. Exposes 72 MCP tools over stdio transport
+3. Exposes 74 MCP tools over stdio transport
 4. Uses KVC (`value(forKey:)`) to access entities since we load Banktivity's own compiled models at runtime
 
 ## License

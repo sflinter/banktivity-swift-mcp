@@ -418,14 +418,37 @@ public struct StatementDTO: Codable, Sendable {
     public let isBalanced: Bool
     public let createdAt: String?
     public let modifiedAt: String?
+    /// The statement's line items, on `get` only; omitted from JSON otherwise.
+    public let lineItems: [LineItemDTO]?
 
-    public init(id: Int, accountId: Int, accountName: String, name: String?, note: String?, startDate: String, endDate: String, beginningBalance: Double, endingBalance: Double, reconciledLineItemCount: Int, reconciledBalance: Double, difference: Double, isBalanced: Bool, createdAt: String?, modifiedAt: String?) {
+    public init(id: Int, accountId: Int, accountName: String, name: String?, note: String?, startDate: String, endDate: String, beginningBalance: Double, endingBalance: Double, reconciledLineItemCount: Int, reconciledBalance: Double, difference: Double, isBalanced: Bool, createdAt: String?, modifiedAt: String?, lineItems: [LineItemDTO]? = nil) {
         self.id = id; self.accountId = accountId; self.accountName = accountName
         self.name = name; self.note = note; self.startDate = startDate; self.endDate = endDate
         self.beginningBalance = beginningBalance; self.endingBalance = endingBalance
         self.reconciledLineItemCount = reconciledLineItemCount; self.reconciledBalance = reconciledBalance
         self.difference = difference; self.isBalanced = isBalanced
         self.createdAt = createdAt; self.modifiedAt = modifiedAt
+        self.lineItems = lineItems
+    }
+}
+
+/// Where an account's reconciliation stands.
+public struct AccountReconciliationStatusDTO: Codable, Sendable {
+    public let accountId: Int
+    public let accountName: String
+    public let statementCount: Int
+    public let unbalancedStatementIds: [Int]
+    public let lastStatementId: Int?
+    public let lastStatementEndDate: String?
+    public let lastStatementEndingBalance: Double?
+    public let unreconciledLineItemCount: Int
+    public let unreconciledSinceLastStatement: Int
+
+    public init(accountId: Int, accountName: String, statementCount: Int, unbalancedStatementIds: [Int], lastStatementId: Int?, lastStatementEndDate: String?, lastStatementEndingBalance: Double?, unreconciledLineItemCount: Int, unreconciledSinceLastStatement: Int) {
+        self.accountId = accountId; self.accountName = accountName; self.statementCount = statementCount
+        self.unbalancedStatementIds = unbalancedStatementIds; self.lastStatementId = lastStatementId
+        self.lastStatementEndDate = lastStatementEndDate; self.lastStatementEndingBalance = lastStatementEndingBalance
+        self.unreconciledLineItemCount = unreconciledLineItemCount; self.unreconciledSinceLastStatement = unreconciledSinceLastStatement
     }
 }
 

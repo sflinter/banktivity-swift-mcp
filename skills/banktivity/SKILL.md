@@ -69,9 +69,11 @@ Always redirect stderr with `2>/dev/null` — CoreData prints harmless warnings 
 | `list_statements` | `--account_id N` or `--account_name "name"` | List statements for an account |
 | `get_statement` | `--statement_id N` | Full details with reconciliation progress |
 | `create_statement` | `--account_id N --start_date --end_date --beginning_balance --ending_balance` | Validates balance continuity |
-| `delete_statement` | `--statement_id N` | Cascade-unreconciles line items |
+| `delete_statement` | `--statement_id N` | Removes its line items from it; they stay cleared |
+| `update_statement` | `--statement_id N [--beginning_balance X] [--ending_balance Y]` | Fix a statement's balances in place (prefer this to delete + recreate) |
+| `get_account_reconciliation_status` | `--account_id N` | Unbalanced statements, last statement end, unreconciled line items |
 | `reconcile_line_items` | `--statement_id N --line_item_ids 1,2,3 [--allow_out_of_range true]` | Sets pCleared=true; validates account/date (allow_out_of_range for late-posted card charges) |
-| `unreconcile_line_items` | `--statement_id N --line_item_ids 1,2,3` | Sets pCleared=false |
+| `unreconcile_line_items` | `--statement_id N --line_item_ids 1,2,3` | Removes them from the statement; cleared is kept |
 | `get_unreconciled_line_items` | `--account_id N --start_date --end_date` | Unreconciled line items for date range |
 
 ### Securities

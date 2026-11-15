@@ -65,6 +65,26 @@ public final class SyncBlobUpdater: @unchecked Sendable {
         }
     }
 
+    /// Patch a statement's `startBalance` / `endBalance` in its sync blob.
+    public func updateStatementBalances(statementUUID: String, beginningBalance: Double?, endingBalance: Double?) {
+        do {
+            try performBlobUpdate(entityUUID: statementUUID) { [self] xml in
+                var result = xml
+                if let beginningBalance {
+                    result = replaceField(in: result, name: "startBalance", type: "decimal",
+                                          newContent: formatDecimalPublic(beginningBalance)) ?? result
+                }
+                if let endingBalance {
+                    result = replaceField(in: result, name: "endBalance", type: "decimal",
+                                          newContent: formatDecimalPublic(endingBalance)) ?? result
+                }
+                return result
+            }
+        } catch {
+            log("Failed to update sync blob for statement \(statementUUID): \(error)")
+        }
+    }
+
     /// Mark a sync record for deletion.
     /// Sets pSyncedState = 3 and updates pSyncedModificationDate to trigger
     /// Banktivity's sync to push the deletion to CloudKit.

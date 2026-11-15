@@ -7,7 +7,7 @@ import Foundation
 struct Statements: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Statement reconciliation operations",
-        subcommands: [List.self, Get.self, Create.self, Delete.self, Reconcile.self, Unreconcile.self, Unreconciled.self]
+        subcommands: [List.self, Status.self, Get.self, Create.self, Update.self, Delete.self, Reconcile.self, Unreconcile.self, Unreconciled.self]
     )
 
     struct List: AsyncParsableCommand {
@@ -34,8 +34,59 @@ struct Statements: AsyncParsableCommand {
         }
     }
 
+    struct Status: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Where an account's reconciliation stands: statements, unbalanced ones, unreconciled line items")
+
+        @OptionGroup var parent: GlobalOptions
+
+        @Option(name: .long, help: "Account ID")
+        var accountId: Int?
+
+        @Option(name: .long, help: "Account name (alternative to --account-id)")
+        var accountName: String?
+
+        func run() async throws {
+            let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
+            let container = try BanktivityCLI.createContainer(vaultPath: path)
+            let accountRepo = AccountRepository(container: container)
+            let statements = StatementRepository(container: container, lineItemRepo: LineItemRepository(container: container))
+            let resolvedId = try accountRepo.resolveAccountId(id: accountId, name: accountName)
+            try outputJSON(try statements.status(accountId: resolvedId), format: parent.format)
+        }
+    }
+
+    struct Update: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(abstract: "Change a statement's beginning and/or ending balance")
+
+        @OptionGroup var parent: GlobalOptions
+
+        @Argument(help: "Statement ID")
+        var statementId: Int
+
+        @Option(name: .long, parsing: .unconditional, help: "New beginning balance")
+        var beginningBalance: Double?
+
+        @Option(name: .long, parsing: .unconditional, help: "New ending balance")
+        var endingBalance: Double?
+
+        func run() async throws {
+            let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
+            let container = try BanktivityCLI.createContainer(vaultPath: path)
+            let writeGuard = BanktivityCLI.createWriteGuard(vaultPath: path)
+            try await guardWrite(writeGuard)
+
+            let statements = StatementRepository(
+                container: container, lineItemRepo: LineItemRepository(container: container),
+                syncBlobUpdater: SyncBlobUpdater(container: container))
+            let result = try statements.update(
+                statementId: statementId, beginningBalance: beginningBalance, endingBalance: endingBalance)
+            try outputJSON(result, format: parent.format)
+        }
+    }
+
     struct Get: AsyncParsableCommand {
-        static let configuration = CommandConfiguration(abstract: "Get a statement with reconciliation progress")
+        static let configuration = CommandConfiguration(abstract: "Get a statement with reconciliation progress and its line items")
 
         @OptionGroup var parent: GlobalOptions
 
@@ -128,7 +179,7 @@ struct Statements: AsyncParsableCommand {
 
             let deleted = try statements.delete(statementId: statementId)
             if deleted {
-                try outputJSON(["message": "Statement \(statementId) deleted, line items unreconciled"] as [String: Any], format: parent.format)
+                try outputJSON(["message": "Statement \(statementId) deleted; its line items keep their cleared state"] as [String: Any], format: parent.format)
             } else {
                 throw ToolError.notFound("Statement not found: \(statementId)")
             }

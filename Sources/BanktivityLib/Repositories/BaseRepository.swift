@@ -222,6 +222,36 @@ open class BaseRepository: @unchecked Sendable {
         return rate == 0 ? 1.0 : rate
     }
 
+    /// A line item's amount in its account's currency, as Banktivity computes it
+    /// for balances and statement totals (`-[IGGCAccountingLineItem accountAmount]`
+    /// in IGGAccounting).
+    ///
+    /// For an investment transaction (base type 100-310) with a security line,
+    /// Banktivity ignores `pTransactionAmount` and takes the security line's
+    /// figure: `pAmount` (0 for share moves, 210-212) plus `pIncome`, counted
+    /// only when the distribution type resolves to cash (1). An unset or 0
+    /// distribution type is cash, except for share adjustments (210-212, 250).
+    /// Types 2 and 3 (transfer, reinvest) count as non-cash here; Banktivity
+    /// falls back to cash when the transaction type cannot transfer or reinvest,
+    /// which this does not model. Every other line is amount x exchange rate.
+    public static func accountAmount(_ lineItem: NSManagedObject) -> Double {
+        let baseType = relatedObject(lineItem, "pTransaction")
+            .flatMap { relatedObject($0, "pTransactionType") }
+            .map { intValue($0, "pBaseType") }
+        if let baseType, (100...310).contains(baseType),
+           let sli = relatedObject(lineItem, "pSecurityLineItem") {
+            let raw = intValue(sli, "pDistributionType")
+            let distribution = raw == 0 ? (shareAdjustmentBaseTypes.contains(baseType) ? 0 : 1) : raw
+            guard distribution == 1 else { return 0 }
+            let amount = (210...212).contains(baseType) ? 0 : doubleValue(sli, "pAmount")
+            return amount + doubleValue(sli, "pIncome")
+        }
+        return doubleValue(lineItem, "pTransactionAmount") * effectiveExchangeRate(lineItem)
+    }
+
+    /// Move Shares In / Out, Transfer Shares, Split Shares: they move shares, not cash.
+    public static let shareAdjustmentBaseTypes: Set<Int> = [210, 211, 212, 250]
+
     /// Safely get a boolean value from a managed object
     public static func boolValue(_ object: NSManagedObject, _ key: String) -> Bool {
         (object.value(forKey: key) as? Bool) ?? false
