@@ -38,11 +38,15 @@ open class BaseRepository: @unchecked Sendable {
         }
     }
 
-    /// Perform a read on the view context's thread, returning a Sendable value.
+    /// Perform a read on a fresh background context, returning a Sendable value.
     /// Use this for all reads to avoid Core Data threading violations when called
     /// from Swift concurrency cooperative threads.
+    ///
+    /// A fresh context reads what is saved in the store. The view context only
+    /// catches up with background saves when the main queue runs its merge, so
+    /// reading through it could return stale objects right after a write.
     public func performRead<T: Sendable>(_ block: @escaping @Sendable (NSManagedObjectContext) throws -> T) throws -> T {
-        try perform(on: context, save: false, block)
+        try perform(on: container.newBackgroundContext(), save: false, block)
     }
 
     /// Save the context
