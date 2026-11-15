@@ -92,21 +92,68 @@ open class BaseRepository: @unchecked Sendable {
                     // which is what makes Banktivity upload them.
                     try Self.markOwnersModified(in: ctx)
                     // Keep the desktop's cached running balances (its account cash) current.
+                    // They are recalculated in this context before the single save, so
+                    // the write and its balances commit together (fetches see the pending
+                    // changes). The recalculation only rewrites the per-device
+                    // pRunningBalance cache, so it runs after the owners were stamped
+                    // and stamps nothing itself. If it fails, the balances are put back
+                    // and the write is still committed: reporting it as failed would
+                    // make a retrying client duplicate it. `accounts recalc-balances`
+                    // repairs an account left stale.
                     let stale = Self.accountsNeedingRunningBalance(in: ctx)
-                    try ctx.save()
                     if !stale.isEmpty {
-                        for (id, from) in stale {
-                            if let account = try? ctx.existingObject(with: id), !account.isDeleted {
-                                _ = try Self.recalculateRunningBalances(account: account, force: true, from: from, in: ctx)
+                        do {
+                            // Real primary keys, so the recalculation's tie-break matches a later one.
+                            try ctx.obtainPermanentIDs(for: Array(ctx.insertedObjects))
+                            // Every line the recalculation may rewrite, so a failure can put them all back.
+                            let snapshot = Self.runningBalanceSnapshot(accounts: Array(stale.keys), in: ctx)
+                            do {
+                                for (id, from) in stale {
+                                    if let account = try? ctx.existingObject(with: id), !account.isDeleted {
+                                        _ = try Self.recalculateRunningBalances(account: account, force: true, from: from, in: ctx)
+                                        try Self.runningBalanceAfterRecalcHook?(ctx)
+                                    }
+                                }
+                            } catch {
+                                Self.restoreRunningBalances(snapshot)
+                                throw error
                             }
+                        } catch {
+                            FileHandle.standardError.write(Data("warning: write committed but running balances were not updated (\(error)); run `accounts recalc-balances`\n".utf8))
                         }
-                        if ctx.hasChanges { try ctx.save() }
                     }
+                    try ctx.save()
                 }
                 return value
             }
         }
         return try outcome.get()
+    }
+
+    /// Test seam: when set, throws after a recalculation has rewritten balances.
+    nonisolated(unsafe) static var runningBalanceAfterRecalcHook: ((NSManagedObjectContext) throws -> Void)?
+
+    /// Each line of the given accounts with its current `pRunningBalance`.
+    private static func runningBalanceSnapshot(
+        accounts: [NSManagedObjectID], in ctx: NSManagedObjectContext
+    ) -> [(line: NSManagedObject, balance: Any?)] {
+        var snapshot: [(NSManagedObject, Any?)] = []
+        for id in accounts {
+            guard let account = try? ctx.existingObject(with: id), !account.isDeleted else { continue }
+            let request = NSFetchRequest<NSManagedObject>(entityName: "LineItem")
+            request.predicate = NSPredicate(format: "pAccount == %@", account)
+            for line in (try? ctx.fetch(request)) ?? [] {
+                snapshot.append((line, line.value(forKey: "pRunningBalance")))
+            }
+        }
+        return snapshot
+    }
+
+    /// Put every snapshotted line's `pRunningBalance` back as it was.
+    private static func restoreRunningBalances(_ snapshot: [(line: NSManagedObject, balance: Any?)]) {
+        for (line, balance) in snapshot where !line.isDeleted {
+            line.setValue(balance, forKey: "pRunningBalance")
+        }
     }
 
     /// Create a new managed object in the given context
