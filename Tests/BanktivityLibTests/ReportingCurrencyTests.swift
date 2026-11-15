@@ -5,6 +5,9 @@ import Foundation
 import Testing
 @testable import BanktivityLib
 
+// Runs on the main actor: see TestVaultHelper for why every suite that
+// touches a view context has to.
+@MainActor
 @Suite("Reporting currency")
 struct ReportingCurrencyTests {
 
@@ -36,13 +39,14 @@ struct ReportingCurrencyTests {
         lineItem.setValue(account, forKey: "pAccount")
         lineItem.setValue(NSDecimalNumber(value: 12_345.67), forKey: "pTransactionAmount")
         lineItem.setValue(Date(), forKey: "pCreationTime")
-        lineItem.setValue(Date(), forKey: "pModificationDate")
         try ctx.save()
 
         let accounts = AccountRepository(container: vault.container, reportingCurrency: "KZT")
         let netWorth = try accounts.getNetWorth()
 
-        #expect(netWorth.formattedAssets.contains("₸") || netWorth.formattedAssets.contains("KZT"))
-        #expect(netWorth.formattedNetWorth.contains("₸") || netWorth.formattedNetWorth.contains("KZT"))
+        let assets = try #require(netWorth.formattedAssets)
+        let total = try #require(netWorth.formattedNetWorth)
+        #expect(assets.contains("₸") || assets.contains("KZT"))
+        #expect(total.contains("₸") || total.contains("KZT"))
     }
 }
