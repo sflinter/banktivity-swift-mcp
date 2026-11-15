@@ -110,6 +110,16 @@ open class BaseRepository: @unchecked Sendable {
         object.setValue(Date(), forKey: key)
     }
 
+    /// Transactions with a line item on this account. An unknown ID throws rather than
+    /// matching nothing: an empty answer would say the account has no such rows when the
+    /// question itself was wrong.
+    func accountPredicate(accountId: Int, in ctx: NSManagedObjectContext) throws -> NSPredicate {
+        guard let account = try fetchByPK(entityName: "Account", pk: accountId, in: ctx) else {
+            throw ToolError.notFound("Account not found: \(accountId)")
+        }
+        return NSPredicate(format: "ANY lineItems.pAccount == %@", account)
+    }
+
     /// Fetch an object by PK in a specific context (for write operations on background contexts)
     public func fetchByPK(entityName: String, pk: Int, in ctx: NSManagedObjectContext) throws -> NSManagedObject? {
         let coordinator = container.persistentStoreCoordinator
