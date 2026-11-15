@@ -124,10 +124,8 @@ func registerTagTools(
         guard let idsArray = ToolHelpers.getArray(arguments, key: "transaction_ids") else {
             return ToolHelpers.errorResponse("transaction_ids is required")
         }
-        let transactionIds = idsArray.compactMap { v -> Int? in
-            if case .int(let i) = v { return i }
-            if case .double(let d) = v { return Int(d) }
-            return nil
+        guard let transactionIds = ToolHelpers.intList(idsArray) else {
+            return ToolHelpers.errorResponse("transaction_ids must be whole numbers")
         }
 
         let tagId = try tags.resolveTagId(
