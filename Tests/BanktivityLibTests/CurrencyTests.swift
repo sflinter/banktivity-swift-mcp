@@ -39,7 +39,7 @@ struct CurrencyTests {
         let secRepo = SecurityRepository(container: vault.container)
         let symbol = BaseRepository.stringValue(sec, "pSymbol")
         let result = try secRepo.createShareAdjustment(
-            accountId: accountPK, symbol: symbol, shares: 10, date: "2026-01-15"
+            accountId: accountPK, symbol: symbol, shares: 10, date: "2026-01-15", pricePerShare: 12.5
         )
         #expect(result.shares == 10)
 

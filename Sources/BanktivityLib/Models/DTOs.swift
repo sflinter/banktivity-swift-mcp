@@ -432,6 +432,18 @@ public struct StatementDTO: Codable, Sendable {
     }
 }
 
+public struct ZeroPriceTradeDTO: Codable, Sendable {
+    public let transactionId: Int
+    public let date: String
+    public let title: String
+    public let symbol: String
+    public let accountId: Int
+    public let shares: Double
+    public let latestQuoteDate: String?
+    /// Held security, trade on or after its latest price: other devices value it at 0.
+    public let zeroesHolding: Bool
+}
+
 public struct RunningBalanceRecalcDTO: Codable, Sendable {
     public let accountId: Int
     public let accountName: String

@@ -84,56 +84,15 @@ public final class AccountRepository: BaseRepository, @unchecked Sendable {
             guard let account = try fetchByPK(entityName: "Account", pk: accountId, in: ctx) else {
                 throw ToolError.notFound("Account not found: \(accountId)")
             }
-            let request = NSFetchRequest<NSManagedObject>(entityName: "LineItem")
-            request.predicate = NSPredicate(format: "pAccount == %@", account)
-            request.relationshipKeyPathsForPrefetching = ["pSecurityLineItem", "pTransaction.pTransactionType"]
-            let lines = try ctx.fetch(request)
-
-            func cents(_ value: Double) -> Decimal { Decimal(string: String(format: "%.2f", value)) ?? 0 }
-            let amounts = Dictionary(uniqueKeysWithValues: lines.map { ($0.objectID, cents(Self.accountAmount($0))) })
-            let date = { (li: NSManagedObject) in Self.relatedObject(li, "pTransaction").flatMap { Self.dateValue($0, "pDate") } ?? 0 }
-            let created = { (li: NSManagedObject) in Self.dateValue(li, "pCreationTime") ?? 0 }
-            let pk = { (li: NSManagedObject) in Self.extractPK(from: li.objectID) }
-            let intraday = { (li: NSManagedObject) in Self.intValue(li, "pIntraDaySortIndex") }
-            let byCreation = lines.sorted {
-                (date($0), created($0), intraday($0), pk($0)) < (date($1), created($1), intraday($1), pk($1))
-            }
-            let byRow = lines.sorted { (date($0), intraday($0), pk($0)) < (date($1), intraday($1), pk($1)) }
-
-            func balances(_ ordered: [NSManagedObject]) -> [Decimal] {
-                var running = Decimal(0)
-                return ordered.map { running += amounts[$0.objectID] ?? 0; return running }
-            }
-            func matches(_ ordered: [NSManagedObject], _ values: [Decimal]) -> Int {
-                zip(ordered, values).filter { Self.decimalValue($0.0, "pRunningBalance") == $0.1 }.count
-            }
-            let creationValues = balances(byCreation), rowValues = balances(byRow)
-            let (ordered, values) = matches(byCreation, creationValues) >= matches(byRow, rowValues)
-                ? (byCreation, creationValues) : (byRow, rowValues)
-
-            let total = values.last ?? 0
-            // Banktivity's last row (in either order) already holds the total: not stale.
-            let lastDate = ordered.last.map(date)
-            let finalIsRight = lines.isEmpty || ordered.contains {
-                date($0) == lastDate && Self.decimalValue($0, "pRunningBalance") == total
-            }
-            let previous = byRow.last.map { Self.doubleValue($0, "pRunningBalance") } ?? 0
-
-            var changed = 0
-            if force || !finalIsRight {
-                for (line, value) in zip(ordered, values) where Self.decimalValue(line, "pRunningBalance") != value {
-                    line.setValue(NSDecimalNumber(decimal: value), forKey: "pRunningBalance")
-                    changed += 1
-                }
-            }
+            let r = try Self.recalculateRunningBalances(account: account, force: force, in: ctx)
             return RunningBalanceRecalcDTO(
                 accountId: accountId,
                 accountName: Self.stringValue(account, "pName"),
-                lineItemCount: lines.count,
-                changedCount: changed,
-                previousBalance: previous,
-                balance: NSDecimalNumber(decimal: total).doubleValue,
-                wasStale: !finalIsRight
+                lineItemCount: r.lineItemCount,
+                changedCount: r.changedCount,
+                previousBalance: r.previousBalance,
+                balance: r.balance,
+                wasStale: r.wasStale
             )
         }
     }

@@ -67,6 +67,7 @@ func registerSecurityTools(
                 "title": ToolHelpers.property(type: "string", description: "Transaction title/memo"),
                 "amount": ToolHelpers.property(type: "number", description: "Cash amount (negative for buy outflow, positive for sell inflow)"),
                 "transaction_type": ToolHelpers.property(type: "string", description: "Movement type. Accepts: \(SecurityRepository.shareMovementTypeNames). Defaults to buy or sell by the sign of shares"),
+                "price_per_share": ToolHelpers.property(type: "number", description: "Price per share. Required for a buy or sell unless amount is given (then amount / shares). Never 0: other devices would value the security at 0"),
             ],
             required: ["account_id", "shares", "date"]
         )
@@ -92,7 +93,8 @@ func registerSecurityTools(
         let result = try securities.createShareAdjustment(
             accountId: accountId, symbol: symbol, id: id,
             shares: shares, date: date, title: title, amount: amount,
-            transactionType: ToolHelpers.getString(arguments, key: "transaction_type")
+            transactionType: ToolHelpers.getString(arguments, key: "transaction_type"),
+            pricePerShare: ToolHelpers.getDouble(arguments, key: "price_per_share")
         )
         return try ToolHelpers.jsonResponse(result)
     }
@@ -467,6 +469,19 @@ func registerSecurityTools(
             return ToolHelpers.errorResponse("No price item for that security; there is no known range to forget")
         }
         return try ToolHelpers.jsonResponse(result)
+    }
+
+    // audit_security_prices
+    registry.register(
+        name: "audit_security_prices",
+        access: .read,
+        description: "List trades stored with a price per share of 0. zeroesHolding=true marks those that make other devices (e.g. the mobile app) value a held security at 0",
+        inputSchema: ToolHelpers.schema(properties: [
+            "at_risk_only": ToolHelpers.property(type: "boolean", description: "Only trades that zero a held security"),
+        ])
+    ) { arguments in
+        let results = try securities.auditZeroPrices()
+        return try ToolHelpers.jsonResponse(ToolHelpers.getBool(arguments, key: "at_risk_only") ? results.filter(\.zeroesHolding) : results)
     }
 
     // rename_security

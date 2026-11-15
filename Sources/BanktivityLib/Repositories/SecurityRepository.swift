@@ -186,6 +186,7 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
         guard shares != 0 else {
             throw ToolError.invalidInput("shares must be non-zero")
         }
+        _ = try Self.validatedPricePerShare(pricePerShare, shares: shares, amount: nil, baseType: shares < 0 ? 101 : 100)
         guard DateConversion.fromISO(date) != nil else {
             throw ToolError.invalidInput("date must be YYYY-MM-DD")
         }
@@ -666,7 +667,9 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
             let sli = Self.createObject(entityName: "SecurityLineItem", in: ctx)
             sli.setValue(0.0 as NSNumber, forKey: "pShares")
             sli.setValue(0.0 as NSNumber, forKey: "pAmount")
-            sli.setValue(0.0 as NSNumber, forKey: "pPricePerShare")
+            // No price: income moves no shares, and a 0 would be written into
+            // the security's price history on every device that receives it.
+            sli.setValue(nil, forKey: "pPricePerShare")
             sli.setValue(0.0 as NSNumber, forKey: "pCommission")
             sli.setValue(amount as NSNumber, forKey: "pIncome")
             sli.setValue(1.0 as NSNumber, forKey: "pPriceMultiplier")
@@ -699,7 +702,7 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
             let syncSLI = SyncBlobUpdater.SyncSecurityLineItem(
                 amount: 0,
                 commission: 0,
-                pricePerShare: 0,
+                pricePerShare: nil,
                 priceMultiplier: 1,
                 securityUUID: secInfo.uuid,
                 shares: 0,
@@ -761,6 +764,74 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
         )
     }
 
+    /// Every trade stored with a price per share of 0 (nil prices are fine).
+    /// `zeroesHolding` marks the ones that make other devices value a held
+    /// security at 0: dated on or after that security's latest price.
+    public func auditZeroPrices() throws -> [ZeroPriceTradeDTO] {
+        try performRead { [self] ctx in
+            let request = NSFetchRequest<NSManagedObject>(entityName: "SecurityLineItem")
+            request.predicate = NSPredicate(format: "pPricePerShare == 0 AND pShares != 0")
+            request.relationshipKeyPathsForPrefetching = ["pSecurity", "pLineItem.pTransaction", "pLineItem.pAccount"]
+            var held: [NSManagedObjectID: Double] = [:]
+            let all = NSFetchRequest<NSManagedObject>(entityName: "SecurityLineItem")
+            for sli in try ctx.fetch(all) {
+                if let sec = Self.relatedObject(sli, "pSecurity") {
+                    held[sec.objectID, default: 0] += Self.doubleValue(sli, "pShares")
+                }
+            }
+            var latestQuote: [NSManagedObjectID: String] = [:]
+            return try ctx.fetch(request).compactMap { sli -> ZeroPriceTradeDTO? in
+                guard let sec = Self.relatedObject(sli, "pSecurity"),
+                      let li = Self.relatedObject(sli, "pLineItem"),
+                      let tx = Self.relatedObject(li, "pTransaction") else { return nil }
+                if latestQuote[sec.objectID] == nil {
+                    let items = NSFetchRequest<NSManagedObject>(entityName: "SecurityPriceItem")
+                    items.predicate = NSPredicate(format: "pSecurityID == %@", Self.stringValue(sec, "pUniqueID"))
+                    if let item = try ctx.fetch(items).first {
+                        let prices = NSFetchRequest<NSManagedObject>(entityName: "SecurityPrice")
+                        prices.predicate = NSPredicate(format: "pSecurityPriceItem == %@", item)
+                        prices.sortDescriptors = [NSSortDescriptor(key: "pDate", ascending: false)]
+                        prices.fetchLimit = 1
+                        if let p = try ctx.fetch(prices).first {
+                            latestQuote[sec.objectID] = Self.daysSinceEpochToISO((p.value(forKey: "pDate") as? Int32) ?? 0)
+                        }
+                    }
+                }
+                let date = Self.dateValue(tx, "pDate").map { DateConversion.toISO($0) } ?? ""
+                let quote = latestQuote[sec.objectID]
+                let isHeld = abs(held[sec.objectID] ?? 0) > 0.0001
+                return ZeroPriceTradeDTO(
+                    transactionId: Self.extractPK(from: tx.objectID),
+                    date: date,
+                    title: Self.stringValue(tx, "pTitle"),
+                    symbol: Self.stringValue(sec, "pSymbol"),
+                    accountId: Self.relatedObject(li, "pAccount").map { Self.extractPK(from: $0.objectID) } ?? 0,
+                    shares: Self.doubleValue(sli, "pShares"),
+                    latestQuoteDate: quote,
+                    zeroesHolding: isHeld && (quote.map { date >= $0 } ?? true)
+                )
+            }
+            .sorted { ($0.zeroesHolding ? 0 : 1, $0.symbol, $0.date) < ($1.zeroesHolding ? 0 : 1, $1.symbol, $1.date) }
+        }
+    }
+
+    static let zeroPriceMessage = "Price per share must be positive. A trade priced at 0 is written into the security's price history on every other device that receives it, which values the holding at 0 there."
+
+    /// The price to store on a share trade. Buys and sells (and any trade
+    /// given a price) need a positive one, taken from `price` or derived from
+    /// `amount / shares`. Share moves and splits without a price store nil,
+    /// never 0 (see `zeroPriceMessage`).
+    static func validatedPricePerShare(_ price: Double?, shares: Double, amount: Double?, baseType: Int16) throws -> Double? {
+        if let price {
+            guard price > 0 else { throw ToolError.invalidInput(zeroPriceMessage) }
+            return price
+        }
+        guard baseType == 100 || baseType == 101, shares != 0 else { return nil }
+        if let amount, amount != 0 { return abs(amount / shares) }
+        throw ToolError.invalidInput(
+            "A buy or sell needs --price-per-share (or an --amount to derive it from). \(zeroPriceMessage)")
+    }
+
     public func createShareAdjustment(
         accountId: Int,
         symbol: String? = nil,
@@ -769,7 +840,8 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
         date: String,
         title: String? = nil,
         amount: Double? = nil,
-        transactionType: String? = nil
+        transactionType: String? = nil,
+        pricePerShare: Double? = nil
     ) throws -> SecurityTradeDTO {
         // Resolved before the write closure so it can be captured as a constant:
         // a `var` here is not Sendable into the background context.
@@ -781,6 +853,9 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
             }
             return code
         }()
+        let price = try Self.validatedPricePerShare(
+            pricePerShare, shares: shares, amount: amount,
+            baseType: movementBaseType ?? (shares >= 0 ? 100 : 101))
 
         struct SecurityInfo: Sendable {
             let objectID: NSManagedObjectID
@@ -887,7 +962,7 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
             sli.setValue(shares as NSNumber, forKey: "pShares")
             let sliAmount = amount ?? 0.0
             sli.setValue(sliAmount as NSNumber, forKey: "pAmount")
-            sli.setValue(0.0 as NSNumber, forKey: "pPricePerShare")
+            sli.setValue(price.map { $0 as NSNumber }, forKey: "pPricePerShare")
             sli.setValue(0.0 as NSNumber, forKey: "pCommission")
             sli.setValue(0.0 as NSNumber, forKey: "pIncome")
             sli.setValue(1.0 as NSNumber, forKey: "pPriceMultiplier")
@@ -907,7 +982,7 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
         if let updater = syncBlobUpdater {
             let sliAmount = amount ?? 0.0
             let syncSLI = SyncBlobUpdater.SyncSecurityLineItem(
-                amount: sliAmount, commission: 0, pricePerShare: 0,
+                amount: sliAmount, commission: 0, pricePerShare: price,
                 priceMultiplier: 1, securityUUID: secUUID,
                 shares: shares, hasDistributionType: false
             )
@@ -932,7 +1007,7 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
             symbol: secSymbol,
             securityName: secName,
             shares: shares,
-            pricePerShare: 0,
+            pricePerShare: price ?? 0,
             amount: amount ?? 0,
             commission: 0,
             accountName: "",
@@ -951,6 +1026,9 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
         cashLineItemAmount: Double? = nil,
         basisOnlyTransfer: Bool = false
     ) throws -> SecurityTradeDTO {
+        if let pricePerShare, pricePerShare <= 0 {
+            throw ToolError.invalidInput(Self.zeroPriceMessage)
+        }
         if basisOnlyTransfer {
             guard cashLineItemAmount == nil else {
                 throw ToolError.invalidInput("basis-only transfer repair cannot also set a cash line amount")
@@ -1056,7 +1134,7 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
                 sli = Self.createObject(entityName: "SecurityLineItem", in: ctx)
                 sli.setValue(0.0 as NSNumber, forKey: "pShares")
                 sli.setValue(0.0 as NSNumber, forKey: "pAmount")
-                sli.setValue(0.0 as NSNumber, forKey: "pPricePerShare")
+                sli.setValue(nil, forKey: "pPricePerShare")
                 sli.setValue(0.0 as NSNumber, forKey: "pCommission")
                 sli.setValue(0.0 as NSNumber, forKey: "pIncome")
                 sli.setValue(1.0 as NSNumber, forKey: "pPriceMultiplier")

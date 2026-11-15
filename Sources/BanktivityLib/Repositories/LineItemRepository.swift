@@ -120,28 +120,18 @@ public final class LineItemRepository: BaseRepository, @unchecked Sendable {
     }
 
     /// Recalculate running balances for all line items in an account
+    /// Bring the account's cached running balances up to date. Every write
+    /// already recalculates the accounts it touched from the earliest changed
+    /// date (see `BaseRepository.accountsNeedingRunningBalance`), so this only
+    /// acts if the final balance is still wrong. It used to sum raw
+    /// pTransactionAmount over the whole account, which ignores Banktivity's
+    /// security-line rule and is what left investment accounts' desktop cash
+    /// wrong.
     public func recalculateRunningBalances(accountId: Int) throws {
         try performWrite { [self] ctx in
-            guard let account = try fetchByPK(entityName: "Account", pk: accountId, in: ctx) else {
-                return
-            }
-
-            // Fetch all line items for this account, ordered by transaction date then PK
-            let request = NSFetchRequest<NSManagedObject>(entityName: "LineItem")
-            request.predicate = NSPredicate(format: "pAccount == %@", account)
-            request.sortDescriptors = [
-                NSSortDescriptor(key: "pTransaction.pDate", ascending: true),
-                NSSortDescriptor(key: "pIntraDaySortIndex", ascending: true),
-            ]
-
-            let lineItems = try ctx.fetch(request)
-            var runningBalance = 0.0
-
-            for li in lineItems {
-                let amount = Self.doubleValue(li, "pTransactionAmount")
-                runningBalance += amount
-                li.setValue(runningBalance as NSNumber, forKey: "pRunningBalance")
-            }
+            guard let account = try fetchByPK(entityName: "Account", pk: accountId, in: ctx),
+                  Self.intValue(account, "pAccountClass") < AccountClass.income else { return }
+            _ = try Self.recalculateRunningBalances(account: account, force: false, in: ctx)
         }
     }
 

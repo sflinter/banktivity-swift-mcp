@@ -7,8 +7,34 @@ import Foundation
 struct Securities: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Security and price history operations",
-        subcommands: [List.self, Create.self, Delete.self, Rename.self, Prices.self, ImportPrices.self, DeletePrices.self, ResetPriceRange.self, FixPrices.self, Holdings.self, Trades.self, RealizedGains.self, Income.self, CreateTrade.self, CreateIncome.self, Adjust.self, UpdateTrade.self]
+        subcommands: [List.self, Create.self, Delete.self, Rename.self, AuditPrices.self, Prices.self, ImportPrices.self, DeletePrices.self, ResetPriceRange.self, FixPrices.self, Holdings.self, Trades.self, RealizedGains.self, Income.self, CreateTrade.self, CreateIncome.self, Adjust.self, UpdateTrade.self]
     )
+
+    struct AuditPrices: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "audit-prices",
+            abstract: "List trades stored with a price per share of 0",
+            discussion: """
+            Other devices write a received trade's price into the security's price
+            history for its date, zero included. zeroesHolding=true marks trades that
+            make them value a held security at 0. Fix with 'securities update-trade
+            <id> --price-per-share <price>' and, if needed, a later-dated price via
+            'securities import-prices'.
+            """
+        )
+
+        @OptionGroup var parent: GlobalOptions
+
+        @Flag(name: .long, help: "Only trades that zero a held security")
+        var atRiskOnly = false
+
+        func run() async throws {
+            let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
+            let container = try BanktivityCLI.createContainer(vaultPath: path)
+            let results = try SecurityRepository(container: container).auditZeroPrices()
+            try outputJSON(atRiskOnly ? results.filter(\.zeroesHolding) : results, format: parent.format)
+        }
+    }
 
     struct Rename: AsyncParsableCommand {
         static let configuration = CommandConfiguration(
@@ -653,6 +679,9 @@ struct Securities: AsyncParsableCommand {
         @Option(name: .long, help: "Movement type. Accepts: \(SecurityRepository.shareMovementTypeNames). Defaults to buy or sell by the sign of --shares")
         var transactionType: String?
 
+        @Option(name: .long, help: "Price per share. Required for a buy or sell unless --amount is given (it is then amount / shares); never 0")
+        var pricePerShare: Double?
+
         func run() async throws {
             let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
             let container = try BanktivityCLI.createContainer(vaultPath: path)
@@ -664,7 +693,7 @@ struct Securities: AsyncParsableCommand {
             let result = try securities.createShareAdjustment(
                 accountId: accountId, symbol: symbol, id: id,
                 shares: shares, date: date, title: title, amount: amount,
-                transactionType: transactionType
+                transactionType: transactionType, pricePerShare: pricePerShare
             )
             try outputJSON(result, format: parent.format)
         }

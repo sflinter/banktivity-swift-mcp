@@ -174,6 +174,31 @@ struct StatementReconciliationTests {
         #expect(try r.accounts.recalculateRunningBalances(accountId: checking.id).changedCount == 0)
     }
 
+    @Test("Writes keep the account's running balance current")
+    func writesKeepRunningBalance() throws {
+        let r = try makeRepos()
+        defer { TestVaultHelper.cleanup(r.vault) }
+        let checking = try r.accounts.create(name: "Checking", accountClass: AccountClass.checking)
+        let food = try r.categories.create(name: "Food", type: "expense")
+        _ = try r.transactions.create(date: "2026-05-01", title: "A", lineItems: [(checking.id, 100, nil), (food.id, -100, nil)])
+        let b = try r.transactions.create(date: "2026-05-03", title: "B", lineItems: [(checking.id, -10, nil), (food.id, 10, nil)])
+        func last() throws -> Double {
+            try r.accounts.performRead { ctx in
+                let req = NSFetchRequest<NSManagedObject>(entityName: "LineItem")
+                req.predicate = NSPredicate(format: "pAccount == %@", try #require(try r.accounts.fetchByPK(entityName: "Account", pk: checking.id, in: ctx)))
+                req.sortDescriptors = [NSSortDescriptor(key: "pTransaction.pDate", ascending: false)]
+                req.fetchLimit = 1
+                return BaseRepository.doubleValue(try #require(try ctx.fetch(req).first), "pRunningBalance")
+            }
+        }
+        #expect(try last() == 90)
+        let liB = try #require(b.lineItems.first { $0.accountId == checking.id }).id
+        _ = try r.lineItems.update(lineItemId: liB, amount: -25)
+        #expect(try last() == 75)
+        _ = try r.transactions.delete(transactionId: b.id)
+        #expect(try last() == 100)
+    }
+
     @Test("Update changes a statement's balances in place")
     func updateBalances() throws {
         let r = try makeRepos()

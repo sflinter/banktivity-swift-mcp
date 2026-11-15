@@ -164,6 +164,9 @@ struct SecurityUpdateTests {
         let accountLine = try #require(lineItems.first { $0.accountId == BaseRepository.extractPK(from: account.objectID) })
         #expect(abs(accountLine.amount) < 0.005)
 
+        // The repository's write updated this line's running balance; drop the
+        // view context's stale copy before editing it here.
+        ctx.refresh(lineItem, mergeChanges: false)
         lineItem.setValue(1.0 as NSNumber, forKey: "pTransactionAmount")
         try ctx.save()
 

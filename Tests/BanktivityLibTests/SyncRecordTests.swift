@@ -123,7 +123,7 @@ struct SyncRecordTests {
         let updater = SyncBlobUpdater(container: vault.container)
         let secRepo = SecurityRepository(container: vault.container, syncBlobUpdater: updater)
         _ = try secRepo.createShareAdjustment(
-            accountId: accountPK, symbol: symbol, shares: 5.0, date: "2026-02-15"
+            accountId: accountPK, symbol: symbol, shares: 5.0, date: "2026-02-15", pricePerShare: 20
         )
 
         // Should have created exactly one sync record

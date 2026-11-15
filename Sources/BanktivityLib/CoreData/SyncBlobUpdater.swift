@@ -37,13 +37,15 @@ public final class SyncBlobUpdater: @unchecked Sendable {
         public let amount: Double
         public let commission: Double
         public let income: Double?
-        public let pricePerShare: Double
+        /// nil is written as a null field. Never 0: a receiving device writes a
+        /// trade's price into price history for its date, zero included.
+        public let pricePerShare: Double?
         public let priceMultiplier: Double
         public let securityUUID: String
         public let shares: Double
         public let hasDistributionType: Bool
 
-        public init(amount: Double, commission: Double, pricePerShare: Double, priceMultiplier: Double, securityUUID: String, shares: Double, hasDistributionType: Bool, income: Double? = nil) {
+        public init(amount: Double, commission: Double, pricePerShare: Double?, priceMultiplier: Double, securityUUID: String, shares: Double, hasDistributionType: Bool, income: Double? = nil) {
             self.amount = amount
             self.commission = commission
             self.income = income
@@ -273,7 +275,11 @@ public final class SyncBlobUpdater: @unchecked Sendable {
                 }
                 xml += "<collection type=\"array\" name=\"openingLots\" null=\"null\"/>"
                 xml += "<field type=\"date\" name=\"overrideDate\" null=\"null\"/>"
-                xml += "<field type=\"decimal\" name=\"pricePerShare\">\(formatDecimal(sli.pricePerShare))</field>"
+                if let price = sli.pricePerShare {
+                    xml += "<field type=\"decimal\" name=\"pricePerShare\">\(formatDecimal(price))</field>"
+                } else {
+                    xml += "<field type=\"decimal\" name=\"pricePerShare\" null=\"null\"/>"
+                }
                 xml += "<field type=\"reference\" name=\"security\">Security:\(sli.securityUUID)</field>"
                 xml += "<field type=\"decimal\" name=\"shares\">\(formatDecimal(sli.shares))</field>"
                 xml += "<field type=\"decimal\" name=\"valueMultiplier\">\(formatDecimal(sli.priceMultiplier))</field>"

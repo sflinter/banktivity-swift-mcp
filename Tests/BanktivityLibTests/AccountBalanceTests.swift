@@ -218,6 +218,42 @@ struct AccountBalanceTests {
         #expect(abs(balance - 1462.5) < 0.000001)
     }
 
+    @Test("A buy or sell needs a positive price; share moves store none; the audit finds zero prices")
+    func zeroPriceGuard() throws {
+        let vault = try TestVaultHelper.createFreshVault()
+        defer { TestVaultHelper.cleanup(vault) }
+        let (usd, _) = try TestVaultHelper.seedCurrencies(in: vault.container)
+        _ = try TestVaultHelper.seedTransactionTypes(in: vault.container)
+        let account = try TestVaultHelper.seedInvestmentAccount(in: vault.container, currency: usd)
+        let security = try TestVaultHelper.seedSecurity(in: vault.container, symbol: "ZP", currency: usd)
+        account.setValue(Int16(AccountClass.investment), forKey: "pAccountClass")
+        try vault.container.viewContext.save()
+        let accountId = BaseRepository.extractPK(from: account.objectID)
+        let repo = SecurityRepository(container: vault.container)
+
+        #expect(throws: ToolError.self) {
+            _ = try repo.createShareAdjustment(accountId: accountId, symbol: "ZP", shares: 3, date: "2026-03-01")
+        }
+        #expect(throws: ToolError.self) {
+            _ = try repo.createShareAdjustment(accountId: accountId, symbol: "ZP", shares: 3, date: "2026-03-01", pricePerShare: 0)
+        }
+        let derived = try repo.createShareAdjustment(accountId: accountId, symbol: "ZP", shares: -4, date: "2026-03-02", amount: 10)
+        #expect(abs(derived.pricePerShare - 2.5) < 1e-9)
+        #expect(throws: ToolError.self) { _ = try repo.updateSecurityLineItem(transactionId: derived.id, pricePerShare: 0) }
+
+        // Seed a legacy zero-price trade after the latest quote: the audit flags it.
+        let base = BaseRepository(container: vault.container)
+        let securityID = security.objectID, accountID = account.objectID
+        try base.performWrite { ctx in
+            Self.insertTrade(ctx: ctx, account: try ctx.existingObject(with: accountID), security: try ctx.existingObject(with: securityID),
+                             date: "2026-03-05", cash: -30, shares: 3, multiplier: 1)
+            Self.insertClose(ctx: ctx, security: try ctx.existingObject(with: securityID), day: 20_500, close: 9)
+        }
+        let audit = try repo.auditZeroPrices()
+        #expect(audit.count == 1)
+        #expect(audit.first?.zeroesHolding == true)
+    }
+
     @Test("A non-investment account reports no holdings value and its JSON gains no field")
     func nonInvestmentAccountHasNoHoldingsField() throws {
         let vault = try TestVaultHelper.createFreshVault()
