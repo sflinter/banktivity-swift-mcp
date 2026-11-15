@@ -7,7 +7,7 @@ import Foundation
 struct Statements: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Statement reconciliation operations",
-        subcommands: [List.self, Status.self, Get.self, Create.self, Update.self, Delete.self, Reconcile.self, Unreconcile.self, Unreconciled.self]
+        subcommands: [List.self, Status.self, Get.self, SyncInfo.self, Create.self, Update.self, Delete.self, Reconcile.self, Unreconcile.self, Unreconciled.self]
     )
 
     struct List: AsyncParsableCommand {
@@ -82,6 +82,34 @@ struct Statements: AsyncParsableCommand {
             let result = try statements.update(
                 statementId: statementId, beginningBalance: beginningBalance, endingBalance: endingBalance)
             try outputJSON(result, format: parent.format)
+        }
+    }
+
+    struct SyncInfo: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "sync-info",
+            abstract: "Show a statement's sync record (read-only)"
+        )
+
+        @OptionGroup var parent: GlobalOptions
+
+        @Argument(help: "Statement ID")
+        var id: Int
+
+        func run() async throws {
+            let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
+            let container = try BanktivityCLI.createContainer(vaultPath: path)
+            let statements = StatementRepository(
+                container: container, lineItemRepo: LineItemRepository(container: container))
+            let uuid = try statements.uniqueId(statementId: id)
+            var output: [String: Any] = ["statementId": id, "statementUUID": uuid]
+            if !uuid.isEmpty, let record = SyncBlobUpdater(container: container).inspectSyncRecord(entityUUID: uuid) {
+                output["syncRecord"] = record
+            } else {
+                output["syncRecord"] = "NOT FOUND — no SyncedHostedEntity for this statement"
+            }
+            let data = try JSONSerialization.data(withJSONObject: output, options: [.prettyPrinted, .sortedKeys])
+            print(String(data: data, encoding: .utf8)!)
         }
     }
 

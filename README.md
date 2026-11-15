@@ -125,7 +125,7 @@ banktivity-cli export turtle --output vault.ttl
 | `categories` | `list`, `get`, `tree`, `create`, `delete`, `audit-entities` |
 | `uncategorized` | `list`, `suggest`, `recategorize`, `bulk-recategorize`, `review`, `payee-summary` |
 | `tags` | `list`, `create`, `tag-transaction`, `get-by-tag`, `bulk-tag` |
-| `statements` | `list`, `status`, `get`, `create`, `update`, `delete`, `reconcile`, `unreconcile`, `unreconciled` |
+| `statements` | `list`, `status`, `get`, `sync-info`, `create`, `update`, `delete`, `reconcile`, `unreconcile`, `unreconciled` |
 | `securities` | `list`, `create`, `delete`, `rename`, `prices`, `holdings`, `trades`, `realized-gains`, `income`, `create-trade`, `create-income`, `adjust`, `update-trade`, `import-prices`, `delete-prices`, `reset-price-range`, `fix-prices`, `audit-prices` |
 | `templates` | `list`, `get`, `create`, `update`, `delete` |
 | `import-rules` | `list`, `get`, `match`, `create`, `update`, `delete` |
