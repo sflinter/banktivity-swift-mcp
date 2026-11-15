@@ -256,15 +256,35 @@ public final class AccountRepository: BaseRepository, @unchecked Sendable {
 
     /// Sum account-currency amounts (amount x exchange rate) for LineItems
     /// matching a predicate. A missing or zero rate counts as 1.
+    ///
+    /// A security trade in Banktivity's native form leaves pTransactionAmount
+    /// at 0 and carries its cash on SecurityLineItem.pAmount. Banktivity's own
+    /// running balance uses that amount only when the line item's amount is 0,
+    /// and share-only adjustments move no cash. (From #19 and #33.)
     private func sumLineItemAmounts(predicate: NSPredicate, in ctx: NSManagedObjectContext) throws -> Double {
         let request = NSFetchRequest<NSManagedObject>(entityName: "LineItem")
         request.predicate = predicate
+        request.relationshipKeyPathsForPrefetching = ["pSecurityLineItem", "pTransaction.pTransactionType"]
 
         var total = 0.0
         for lineItem in try ctx.fetch(request) {
-            total += Self.doubleValue(lineItem, "pTransactionAmount") * Self.effectiveExchangeRate(lineItem)
+            let amount = Self.doubleValue(lineItem, "pTransactionAmount")
+            if amount != 0 {
+                total += amount * Self.effectiveExchangeRate(lineItem)
+            } else if let sli = Self.relatedObject(lineItem, "pSecurityLineItem"),
+                      !Self.shareAdjustmentBaseTypes.contains(Self.transactionBaseType(lineItem)) {
+                total += Self.doubleValue(sli, "pAmount")
+            }
         }
         return total
+    }
+
+    private static let shareAdjustmentBaseTypes: Set<Int> = [210, 211, 212, 250]
+
+    private static func transactionBaseType(_ lineItem: NSManagedObject) -> Int {
+        relatedObject(lineItem, "pTransaction")
+            .flatMap { relatedObject($0, "pTransactionType") }
+            .map { intValue($0, "pBaseType") } ?? 0
     }
 
     /// Banktivity's investment account classes (2000 investment to 2010).

@@ -77,7 +77,9 @@ struct AccountBalanceTests {
         date: String,
         cash: Double,
         shares: Double,
-        multiplier: Double
+        multiplier: Double,
+        lineAmount: Double? = nil,
+        baseType: Int16? = nil
     ) {
         let transaction = NSEntityDescription.insertNewObject(forEntityName: "Transaction", into: ctx)
         transaction.setValue("Trade \(date)", forKey: "pTitle")
@@ -88,9 +90,18 @@ struct AccountBalanceTests {
         BaseRepository.setNow(transaction, "pCreationTime")
         BaseRepository.setNow(transaction, "pModificationDate")
         BaseRepository.setDate(transaction, "pDate", isoString: date)
+        if let baseType {
+            let type = NSEntityDescription.insertNewObject(forEntityName: "TransactionType", into: ctx)
+            type.setValue(baseType, forKey: "pBaseType")
+            type.setValue("Type \(baseType)", forKey: "pName")
+            type.setValue(UUID().uuidString, forKey: "pUniqueID")
+            BaseRepository.setNow(type, "pCreationTime")
+            BaseRepository.setNow(type, "pModificationDate")
+            transaction.setValue(type, forKey: "pTransactionType")
+        }
 
         let lineItem = NSEntityDescription.insertNewObject(forEntityName: "LineItem", into: ctx)
-        lineItem.setValue(NSDecimalNumber(value: cash), forKey: "pTransactionAmount")
+        lineItem.setValue(NSDecimalNumber(value: lineAmount ?? cash), forKey: "pTransactionAmount")
         lineItem.setValue(NSDecimalNumber.one, forKey: "pExchangeRate")
         lineItem.setValue(NSDecimalNumber.zero, forKey: "pRunningBalance")
         lineItem.setValue(false, forKey: "pCleared")
@@ -174,6 +185,36 @@ struct AccountBalanceTests {
         #expect(abs((listed.balance ?? 0) - (-1160.0)) < 0.000001)
         #expect(abs((listed.holdingsValue ?? 0) - 2646.0) < 0.000001)
         #expect(listed.formattedHoldingsValue != nil)
+    }
+
+    @Test("Trades with a zero line amount take their cash from the security line, except share adjustments")
+    func nativeTradeCashComesFromSecurityLine() throws {
+        let vault = try TestVaultHelper.createFreshVault()
+        defer { TestVaultHelper.cleanup(vault) }
+
+        let (usd, _) = try TestVaultHelper.seedCurrencies(in: vault.container)
+        let account = try TestVaultHelper.seedInvestmentAccount(in: vault.container, currency: usd)
+        let security = try TestVaultHelper.seedSecurity(in: vault.container, symbol: "NATV", currency: usd)
+        account.setValue(Int16(AccountClass.investment), forKey: "pAccountClass")
+        try vault.container.viewContext.save()
+
+        let accountID = account.objectID, securityID = security.objectID
+        let base = BaseRepository(container: vault.container)
+        try base.performWrite { ctx in
+            let account = try ctx.existingObject(with: accountID)
+            let security = try ctx.existingObject(with: securityID)
+            // Native form: line amount 0, cash on the security line.
+            Self.insertTrade(ctx: ctx, account: account, security: security, date: "2026-01-02", cash: 2000, shares: -20, multiplier: 1, lineAmount: 0, baseType: 101)
+            Self.insertTrade(ctx: ctx, account: account, security: security, date: "2026-01-03", cash: -500, shares: 5, multiplier: 1, lineAmount: 0, baseType: 100)
+            // Cash already on the line item: not counted twice.
+            Self.insertTrade(ctx: ctx, account: account, security: security, date: "2026-01-04", cash: -37.5, shares: 0.4, multiplier: 1, baseType: 100)
+            // Share-only adjustment: no cash.
+            Self.insertTrade(ctx: ctx, account: account, security: security, date: "2026-01-05", cash: 999, shares: 1, multiplier: 1, lineAmount: 0, baseType: 210)
+        }
+
+        let accounts = AccountRepository(container: vault.container)
+        let balance = try accounts.getBalance(accountId: BaseRepository.extractPK(from: account.objectID))
+        #expect(abs(balance - 1462.5) < 0.000001)
     }
 
     @Test("A non-investment account reports no holdings value and its JSON gains no field")
