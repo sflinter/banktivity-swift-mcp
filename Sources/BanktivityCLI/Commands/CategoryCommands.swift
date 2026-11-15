@@ -158,7 +158,7 @@ struct Categories: AsyncParsableCommand {
     }
 
     struct Delete: AsyncParsableCommand {
-        static let configuration = CommandConfiguration(abstract: "Delete an unused category (refuses one with line items or subcategories)")
+        static let configuration = CommandConfiguration(abstract: "Delete an unused category (refuses one with line items or subcategories, or one still used by a template, scheduled transaction or import rule)")
 
         @OptionGroup var parent: GlobalOptions
 

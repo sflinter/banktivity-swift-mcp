@@ -254,8 +254,39 @@ public final class CategoryRepository: BaseRepository, @unchecked Sendable {
             guard childCount == 0 else {
                 throw ToolError.invalidInput("Category \(categoryId) has \(childCount) subcategories; delete or move them first")
             }
-            let dto = mapToDTO(cat)
+            // Templates, schedules and import rules name their accounts by ID string
+            // (the account's unique ID, or its primary key); deleting the category
+            // would leave them pointing at nothing, so refuse and name them.
             let uuid = Self.stringValue(cat, "pUniqueID")
+            let keys = [uuid, String(categoryId)].filter { !$0.isEmpty }
+            func matching(_ entity: String, _ key: String) throws -> [NSManagedObject] {
+                let request = NSFetchRequest<NSManagedObject>(entityName: entity)
+                request.predicate = NSPredicate(format: "%K IN %@", key, keys)
+                return try ctx.fetch(request)
+            }
+            var references: [String] = []
+            var templates: [NSManagedObject] = []
+            for line in try matching("LineItemTemplate", "pAccountID") {
+                if let t = Self.relatedObject(line, "pTransactionTemplate"), !templates.contains(t) { templates.append(t) }
+            }
+            if !templates.isEmpty {
+                let names = templates.map { "\"\(Self.stringValue($0, "pTitle"))\" (id \(Self.extractPK(from: $0.objectID)))" }
+                references.append("\(templates.count) transaction template(s): \(names.joined(separator: ", "))")
+            }
+            let schedules = try matching("ScheduledTemplateSelector", "pAccountID")
+            if !schedules.isEmpty {
+                let names = schedules.map { "schedule id \(Self.extractPK(from: $0.objectID))" }
+                references.append("\(schedules.count) scheduled transaction(s): \(names.joined(separator: ", "))")
+            }
+            let rules = try matching("ImportSourceTemplateSelector", "pAccountID")
+            if !rules.isEmpty {
+                let names = rules.map { "rule id \(Self.extractPK(from: $0.objectID)) \"\(Self.stringValue($0, "pDetailsExpression"))\"" }
+                references.append("\(rules.count) import rule(s): \(names.joined(separator: ", "))")
+            }
+            guard references.isEmpty else {
+                throw ToolError.invalidInput("Category \(categoryId) is still used by \(references.joined(separator: "; ")); remove or repoint them first")
+            }
+            let dto = mapToDTO(cat)
             ctx.delete(cat)
             return Deleted(dto: dto, uuid: uuid)
         }
