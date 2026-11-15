@@ -87,7 +87,7 @@ Property names are prefixed with `p` (e.g., `pName`, `pDate`, `pAccountClass`, `
 
 ### Entity Hierarchy
 
-`Account` (Z_ENT=1) is the base entity. `Category` (Z_ENT=2) and `PrimaryAccount` (Z_ENT=3) are sibling subentities. `pAccountClass` lives on the base: 6000=income, 7000=expense. All income/expense categories are `Category` entities.
+`Account` (Z_ENT=1) is the base entity. `Category` (Z_ENT=2) and `PrimaryAccount` (Z_ENT=3) are sibling subentities. `pAccountClass` lives on the base: 6000=income, 7000=expense. All income/expense categories must be `Category` entities. A category stored as `PrimaryAccount` can freeze Banktivity reports or crash bank sync. `categories audit-entities` lists any such rows, and `categories delete` removes an unused one.
 
 ## Critical Constraints
 
@@ -98,6 +98,8 @@ Property names are prefixed with `p` (e.g., `pName`, `pDate`, `pAccountClass`, `
 **Transactions require balancing offset line items.** Every transaction must have line items that sum to zero (double-entry). When `TransactionRepository.create()` receives line items that don't sum to zero, it automatically creates a balancing offset line item with no account (uncategorized). Without this, Opening Balance transactions won't affect the account's running cash balance in Banktivity.
 
 **Security prices must set `pClosePrice`.** Some price records (from older imports or Banktivity itself) have `pClosePrice=0` with the actual value only in `pAdjustedClosePrice`. The sync blob embeds only `closePrice`, so the mobile app shows 0. Security price history does **not** sync via CloudKit — only the `latestSecurityPrice` embedded in the Security entity's sync blob propagates. Use `securities fix-prices` to repair broken records and update sync blobs.
+
+**Investment account balances are cash only.** A trade in Banktivity's native form leaves `LineItem.pTransactionAmount` at 0 and carries its cash on `SecurityLineItem.pAmount`. Banktivity's running balance uses the security amount only when the line item amount is 0, and share-only adjustments (base types 210–212, 250) move no cash; `AccountRepository.sumLineItemAmounts` follows the same rule. Don't use `pRunningBalance`: rows the CLI writes keep 0 there until Banktivity recalculates. Holdings market value is reported beside cash as `holdingsValue`.
 
 **WriteGuard before mutations.** All write tools check `WriteGuard.guardWriteAccess()` first. If Banktivity.app has the SQLite file open (detected via `lsof`), writes are blocked to prevent corruption.
 
@@ -118,8 +120,8 @@ Banktivity's CloudKit sync uses `ZSYNCEDENTITY` records with gzipped XML blobs (
 
 **Non-fatal by design**: All blob updates are wrapped in try/catch. If a sync record is missing, decompression fails, or the XML can't be patched, the Core Data write still succeeds — only the sync push is skipped. Failures log to stderr.
 
-**`pSyncedModificationDate` must be NULL** for Banktivity to check a sync record during sync. Non-NULL means "already synced, skip". All blob patches must null this field after saving, otherwise changes made after the initial sync won't propagate to CloudKit.
+**`pSyncedModificationDate` on normal records is NULL.** Blob patches null it after saving. The older rule here ("non-NULL means already synced, skip") is not supported by a live vault: on 2026-11-15, all 27,368 state-0 records had it NULL, and only state-3 tombstones carried a date. Banktivity removed those tombstones after its next sync. What actually triggers an upload of a modified record is unverified. PR #50 argues it is the entity's `pModificationDate`, and that rewriting `pRemoteEntityData` (the three-way merge base) can let an older server copy win. Until a controlled round trip settles it, keep the current blob patching, which has been seen to sync, and always set `pModificationDate` on the entity you change.
 
 **LineItems have no separate sync records** — they're serialized inside the parent Transaction's blob. The `identifier` field in the XML maps to `pUniqueID` in Core Data. **Statements DO have their own sync records** in `ZSYNCEDENTITY` with `pHostedEntityType = "Statement"`.
 
-**`pSyncedState` values**: 0 = normal/synced, 3 = deleted. For deletions, set state to 3 and `pSyncedModificationDate` to the current timestamp (preserving the blob). For modifications, null `pSyncedModificationDate` (keeping state at 0).
+**`pSyncedState` values**: 0 = normal/synced, 3 = deleted. For deletions, set state to 3 and `pSyncedModificationDate` to the current timestamp (preserving the blob); Banktivity pushes the deletion and removes the record on its next sync. For modifications, null `pSyncedModificationDate` (keeping state at 0).

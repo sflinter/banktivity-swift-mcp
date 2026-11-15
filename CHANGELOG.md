@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **Investment balances:** account balances now count native trade cash (`SecurityLineItem.pAmount` when the line item amount is 0, skipping share-only adjustments), matching Banktivity's running balance; holdings market value is reported beside cash as `holdingsValue` (#51, built from #19/#33; fixes #2)
+- **Exchange rates in balances:** each line's exchange rate is applied, and a missing or zero rate counts as 1 (#51)
+- **Categories:** created as `Category` entities, not `PrimaryAccount`, which could crash bank sync (#37); `categories create` returns the new row, not an older one with the same name; parents must be categories, and the class is validated (#42)
+- **New:** `categories delete` removes an unused category and tombstones its sync record; `categories audit-entities` / MCP `audit_category_entities` lists category rows stored under the wrong entity (#42)
+- **Categorization reads** apply the account and category filters (#54)
+- **Transaction types:** the CLI's transaction-type vocabulary is kept separate from sync's (#43)
+- **Serialized writes:** Core Data writes are serialized through one gate, refused at the vault level while Banktivity has it open (#7)
+- **Account classes:** complete `AccountClass` values from the Banktivity framework (#18)
+- **Reporting currency:** `BANKTIVITY_REPORTING_CURRENCY` sets the currency for net worth and summary formatting (#17)
+- **Tests:** `make test` runs in release configuration against the built CLI (#39)
 - Anchor date-only writes to a fixed offset (10:00 UTC) so a calendar day reads
   back as the same day wherever the vault is opened; previously a date-only value
   was stored at the writer's local midnight, so the rendered day depended on the

@@ -121,7 +121,7 @@ warning.
 
 ### Accounts
 - `list_accounts` — List all accounts with balances
-- `get_account_balance` — Get balance for a specific account
+- `get_account_balance` — Get balance for a specific account (investment accounts: cash balance, with `holdingsValue` beside it)
 - `get_net_worth` — Calculate total net worth
 - `get_spending_by_category` — Spending breakdown by category for a date range
 - `get_income_by_category` — Income breakdown by category for a date range
@@ -146,6 +146,7 @@ warning.
 - `get_category` — Get a specific category
 - `get_category_tree` — Get the full category hierarchy
 - `create_category` — Create a new category
+- `audit_category_entities` — Find income/expense categories stored under the wrong Core Data entity
 
 ### Categorization
 - `get_uncategorized_transactions` — Find transactions without categories
@@ -203,6 +204,7 @@ warning.
 - `create_share_adjustment` — Create a share adjustment (e.g. charges, stock splits, position corrections)
 - `import_security_prices` — Import prices from a CSV file (Yahoo Finance, OHLCV, or Date/Close)
 - `delete_security_prices` — Delete price history for a security (optional date range)
+- `reset_security_price_range` — Forget a security's known price range without deleting any prices
 
 ### Export
 - `export_turtle` — Export the entire vault as RDF/Turtle (.ttl), optionally to a file
@@ -228,7 +230,7 @@ banktivity-cli export turtle --output vault.ttl
 
 - `accounts list`, `accounts balance`, `accounts net-worth`, `accounts spending`, `accounts income`, `accounts summary`
 - `transactions list`, `transactions search`, `transactions get`, `transactions create`, `transactions update`, `transactions delete`
-- `categories list`, `categories get`, `categories tree`, `categories create`
+- `categories list`, `categories get`, `categories tree`, `categories audit-entities`, `categories create`, `categories delete`
 - `tags list`, `tags create`, `tags tag-transaction`, `tags get-by-tag`, `tags bulk-tag`
 - `uncategorized list`, `uncategorized suggest`, `uncategorized recategorize`, `uncategorized bulk-recategorize`, `uncategorized review`, `uncategorized payee-summary`
 - `line-items get`, `line-items add`, `line-items update`, `line-items delete`

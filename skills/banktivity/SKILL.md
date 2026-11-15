@@ -55,7 +55,7 @@ Always redirect stderr with `2>/dev/null` — CoreData prints harmless warnings 
 | `get_income_by_category` | `--start_date --end_date` | Income breakdown by income category |
 | `get_uncategorized_transactions` | `--account_id N --limit N` | Transactions without a category |
 | `get_net_worth` | (none) | Assets minus liabilities |
-| `get_account_balance` | `--account_id N` or `--account_name "name"` | Balance for one account |
+| `get_account_balance` | `--account_id N` or `--account_name "name"` | Balance for one account. Investment accounts: `balance` is cash, `holdingsValue` is market value (add them for Banktivity's total) |
 | `get_summary` | (none) | Database overview with account counts and totals |
 | `get_payee_category_summary` | `--account_id N --min_transactions N` | Per-payee category breakdown; surfaces inconsistencies |
 | `review_categorizations` | `--account_id N --category_name "name" --payee_pattern "pat" --limit N` | Review transactions by category for spotting errors |
@@ -87,6 +87,7 @@ Always redirect stderr with `2>/dev/null` — CoreData prints harmless warnings 
 | `create_share_adjustment` | `--account_id N --symbol SYM --shares=-10 --date YYYY-MM-DD` | Share adjustment (charges, splits); `--amount` for cash |
 | `import_security_prices` | `--file_path /path/to/csv --symbol AAPL` | Supports Yahoo Finance, OHLCV, or Date/Close CSV |
 | `delete_security_prices` | `--symbol AAPL --start_date --end_date` | Delete prices; date range optional |
+| `reset_security_price_range` | `--symbol AAPL` or `--id N` | Clears the known price range and last import date; deletes no prices |
 | `securities update-trade` | `<transaction_id> [--shares N] [--price_per_share N] [--amount N] [--symbol SYM]` | Update SecurityLineItem fields on an existing trade transaction |
 
 ### Modifying
@@ -99,7 +100,9 @@ Always redirect stderr with `2>/dev/null` — CoreData prints harmless warnings 
 | `tag_transaction` | `--transaction_id N --tag_name "name" --action add\|remove` | Add or remove a tag |
 | `bulk_tag_transactions` | `--transaction_ids [1,2,3] --tag_name "name" --action add\|remove` | Bulk tag/untag |
 | `create_tag` | `--name "name"` | Create a new tag |
-| `create_category` | `--name "name" --type expense\|income --parent_path "Parent"` | Create category or subcategory |
+| `create_category` | `--name "name" --type expense\|income --parent_path "Parent"` | Create category or subcategory; parent must be a category |
+| `audit_category_entities` | (none) | Lists income/expense rows stored as the wrong entity (should be empty) |
+| `categories delete` | `<category_id>` (CLI only) | Deletes an unused category; refuses if any line item uses it |
 
 ### Export
 
@@ -116,7 +119,7 @@ Run `banktivity-cli <tool> --help 2>/dev/null` to see any tool's input schema. S
 1. **Category names are exact**: `"Gift Given"` not `"Gifts Given"`, `"Motor:Tolls"` not `"Motor:Tools"`
 2. **Use `--category_id` for subcategories**: `--category_name "Vacation:Entertainment"` may resolve to the top-level `"Entertainment"` instead. Look up the ID with `list_categories` first and use `--category_id`
 3. **`search_transactions` does not search tags**: Use `get_transactions_by_tag` for tag-based queries
-4. **Transaction dates may differ by a day**: Posting date vs transaction date. Search by reference/payee text is more reliable than exact dates
+4. **Transaction dates may differ by a day**: Posting date vs transaction date on bank statements. (Date-only values are now anchored at 10:00 UTC, so the CLI no longer shifts dates by time zone.) Search by reference/payee text is more reliable than exact dates
 5. **`bulk_recategorize_by_payee` affects all history**: Not just recent transactions. `--uncategorized_only true` limits scope to uncategorized ones
 6. **Always dry-run first**: When recategorizing across history, use `--dry_run true` and show the user the count before applying
 7. **Tags live on line items**: Tags are stored on individual line items, not the transaction itself

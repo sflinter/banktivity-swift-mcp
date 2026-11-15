@@ -22,7 +22,7 @@ List all accounts in Banktivity with their types and current balances.
 ```
 
 ### get_account_balance
-Get the current balance for a specific account.
+Get the current balance for a specific account. For investment accounts `balance` is the cash balance (a trade's cash comes from its security line when the line item amount is 0, matching Banktivity's running balance) and `holdingsValue` is the market value of open positions, reported beside it.
 
 ```json
 {
@@ -177,6 +177,13 @@ Create a new income or expense category.
   },
   "required": ["name", "type"]
 }
+```
+
+### audit_category_entities
+Find income/expense category rows stored under the wrong Core Data entity (e.g. created as `PrimaryAccount` instead of `Category`). Returns an empty array on a healthy vault. CLI: `categories audit-entities`. Remove a bad, unused row with `categories delete <id>` (CLI only).
+
+```json
+{ "properties": {} }
 ```
 
 ### get_spending_by_category
@@ -908,6 +915,18 @@ Delete price history for a security, optionally filtered by date range.
     "id": { "type": "number", "description": "Security ID (alternative to symbol)" },
     "start_date": { "type": "string", "description": "Start date in YYYY-MM-DD format (optional)" },
     "end_date": { "type": "string", "description": "End date in YYYY-MM-DD format (optional)" }
+  }
+}
+```
+
+### reset_security_price_range
+Forget which price history is known for a security without deleting any of it. Clears the known date range and last import date; every price row is left in place.
+
+```json
+{
+  "properties": {
+    "symbol": { "type": "string", "description": "Security ticker symbol (e.g. AAPL)" },
+    "id": { "type": "number", "description": "Security ID (alternative to symbol)" }
   }
 }
 ```
