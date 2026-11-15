@@ -2,16 +2,26 @@
 
 ## Unreleased
 
-- Add `securities realized-gains` CLI command and `get_security_realized_gains` MCP tool: realised capital gains per closed lot, with acquisition date, holding period and term. Banktivity computes gains at render time and persists nothing (`SecurityLot` ships empty), so this recomputes them by FIFO lot matching; it refuses rather than guessing when a security uses a cost-basis method other than FIFO
+### New
+- **Security trades and income:** `securities create-trade` / `create_security_trade` writes a buy or sell with its security line, cash line and balancing line; `securities create-income` / `create_security_income` writes native dividend and other income (optionally with tax withheld), so holdings and income reports see them (#13)
+- **Security delete:** `securities delete` / `delete_security` removes a security no trade references; refuses otherwise, keeps prices unless `--with-prices`, supports `--dry-run` (#13)
+- **Security rename:** `securities rename` / `rename_security` changes a ticker or name and updates the sync record (#48)
+- **Trade corrections:** `update-trade` / `update_security_trade` can set commission, and `--basis-only-transfer` records a zero-cash transfer-in (#8)
+- **Realised gains:** `securities realized-gains` / `get_security_realized_gains`: realised capital gains per closed lot, with acquisition date, holding period and term. Banktivity computes gains at render time and persists nothing (`SecurityLot` ships empty), so this recomputes them by FIFO lot matching; it refuses rather than guessing when a security uses a cost-basis method other than FIFO (exit 65) (#46)
+- **Multi-currency net worth:** `get_net_worth` / `get_summary` convert each account to the reporting currency with the vault's latest exchange rates and include holdings value; adds `breakdown.byCurrency` and `warnings` (from #20)
+- **Exit codes:** the CLI exits 64 usage, 65 validation failed, 66 not found, 70 store failure, 77 write blocked, with `Error: [category] message` on stderr (#24)
+- **Categories:** `categories delete` and `categories audit-entities` / `audit_category_entities` (#42)
+
+### Fixed
+- Reads use a fresh background context, so a read straight after a write no longer returns stale objects
 - **Investment balances:** account balances now count native trade cash (`SecurityLineItem.pAmount` when the line item amount is 0, skipping share-only adjustments), matching Banktivity's running balance; holdings market value is reported beside cash as `holdingsValue` (#51, built from #19/#33; fixes #2)
 - **Exchange rates in balances:** each line's exchange rate is applied, and a missing or zero rate counts as 1 (#51)
 - **Categories:** created as `Category` entities, not `PrimaryAccount`, which could crash bank sync (#37); `categories create` returns the new row, not an older one with the same name; parents must be categories, and the class is validated (#42)
-- **New:** `categories delete` removes an unused category and tombstones its sync record; `categories audit-entities` / MCP `audit_category_entities` lists category rows stored under the wrong entity (#42)
 - **Categorization reads** apply the account and category filters (#54)
 - **Transaction types:** the CLI's transaction-type vocabulary is kept separate from sync's (#43)
 - **Serialized writes:** Core Data writes are serialized through one gate, refused at the vault level while Banktivity has it open (#7)
 - **Account classes:** complete `AccountClass` values from the Banktivity framework (#18)
-- **Reporting currency:** `BANKTIVITY_REPORTING_CURRENCY` sets the currency for net worth and summary formatting (#17)
+- **Reporting currency:** `BANKTIVITY_REPORTING_CURRENCY` sets the currency for net worth and summary (#17)
 - **Tests:** `make test` runs in release configuration against the built CLI (#39)
 - Anchor date-only writes to a fixed offset (10:00 UTC) so a calendar day reads
   back as the same day wherever the vault is opened; previously a date-only value

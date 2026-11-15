@@ -54,7 +54,7 @@ Always redirect stderr with `2>/dev/null` — CoreData prints harmless warnings 
 | `get_spending_by_category` | `--start_date --end_date` | Spending breakdown by expense category |
 | `get_income_by_category` | `--start_date --end_date` | Income breakdown by income category |
 | `get_uncategorized_transactions` | `--account_id N --limit N` | Transactions without a category |
-| `get_net_worth` | (none) | Assets minus liabilities |
+| `get_net_worth` | (none) | Assets minus liabilities in the reporting currency (cash + holdings, converted at the vault's latest rates); check `warnings` |
 | `get_account_balance` | `--account_id N` or `--account_name "name"` | Balance for one account. Investment accounts: `balance` is cash, `holdingsValue` is market value (add them for Banktivity's total) |
 | `get_summary` | (none) | Database overview with account counts and totals |
 | `get_payee_category_summary` | `--account_id N --min_transactions N` | Per-payee category breakdown; surfaces inconsistencies |
@@ -92,7 +92,8 @@ Always redirect stderr with `2>/dev/null` — CoreData prints harmless warnings 
 | `delete_security_prices` | `--symbol AAPL --start_date --end_date` | Delete prices; date range optional |
 | `reset_security_price_range` | `--symbol AAPL` or `--id N` | Clears the known price range and last import date; deletes no prices |
 | `delete_security` | `--symbol AAPL [--with_prices] [--dry_run]` | Delete a security no trade references; refuses while trades point at it |
-| `securities update-trade` | `<transaction_id> [--shares N] [--price_per_share N] [--amount N] [--symbol SYM]` | Update SecurityLineItem fields on an existing trade transaction |
+| `update_security_trade` | `--transaction_id N [--shares N] [--price_per_share N] [--amount N] [--commission N] [--symbol SYM] [--basis_only_transfer true]` | Correct an existing trade; `--amount` is the security cost, not the cash line |
+| `rename_security` | `--symbol OLD [--new_symbol NEW] [--new_name "Name"]` | Fix a security's ticker or name; refuses a ticker another security holds |
 
 ### Modifying
 

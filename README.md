@@ -3,7 +3,7 @@
 A Swift library, [MCP](https://modelcontextprotocol.io/) server, and CLI for [Banktivity](https://www.iggsoftware.com/banktivity/) personal finance files. Provides full read/write access to `.bank8` vaults — accounts, transactions, categories, tags, templates, import rules, scheduled transactions, statements, securities, and RDF export.
 
 - **BanktivityLib** — pure domain library with Core Data repositories and RDF export, no server dependencies
-- **banktivity-mcp** — MCP server exposing 71 tools over stdio, for AI assistants like Claude
+- **banktivity-mcp** — MCP server exposing 72 tools over stdio, for AI assistants like Claude
 - **banktivity-cli** — standalone CLI for scripting and automation
 
 Inspired by [banktivity-mcp](https://github.com/mhriemers/banktivity-mcp) (TypeScript/Node.js), this is a ground-up rewrite in Swift. The original uses `better-sqlite3` to read and write Core Data's SQLite store directly, bypassing Core Data's internal change tracking. This works for reads, but direct SQL writes are invisible to CloudKit sync — Banktivity doesn't know the data changed, and the vault can become corrupted or fail to sync. This Swift version uses `NSPersistentContainer` so all mutations go through Core Data's API, ensuring proper change tracking and CloudKit compatibility.
@@ -112,9 +112,10 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 }
 ```
 
-`BANKTIVITY_REPORTING_CURRENCY` is optional. It controls aggregate formatting for
-tools such as `get_net_worth` and `get_summary`. If unset, aggregate values keep
-the previous default of EUR. Unknown currency codes fall back to EUR with a
+`BANKTIVITY_REPORTING_CURRENCY` is optional. It sets the currency that
+`get_net_worth` and `get_summary` convert every account into, using the vault's
+own exchange rates; an account with no usable rate is left out and named in the
+response's warnings. If unset, the default is EUR. Unknown currency codes fall back to EUR with a
 warning.
 
 ## Available Tools
@@ -122,7 +123,7 @@ warning.
 ### Accounts
 - `list_accounts` — List all accounts with balances
 - `get_account_balance` — Get balance for a specific account (investment accounts: cash balance, with `holdingsValue` beside it)
-- `get_net_worth` — Calculate total net worth
+- `get_net_worth` — Net worth in the reporting currency: cash plus holdings, each account converted at the vault's latest exchange rate, with a per-currency breakdown and warnings for missing or stale rates
 - `get_spending_by_category` — Spending breakdown by category for a date range
 - `get_income_by_category` — Income breakdown by category for a date range
 - `get_summary` — Overall financial summary
@@ -203,6 +204,8 @@ warning.
 - `get_security_realized_gains` — Get realised capital gains per closed lot (acquisition date, proceeds, cost basis, gain, short/long term)
 - `get_security_income` — Get investment income (dividends, interest, capital gains distributions)
 - `create_security_trade` — Create a buy or sell with its cash and balancing line items
+- `update_security_trade` — Correct an existing trade's shares, price, amount, commission or security; `basis_only_transfer` for a zero-cash transfer-in
+- `rename_security` — Change a security's ticker, display name, or both (refuses a ticker another security holds)
 - `create_security_income` — Create native security income, currently dividend income
 - `create_share_adjustment` — Create a share adjustment (e.g. charges, stock splits, position corrections)
 - `import_security_prices` — Import prices from a CSV file (Yahoo Finance, OHLCV, or Date/Close)
@@ -294,7 +297,7 @@ Banktivity's `.bank8` bundle is a directory containing compiled Core Data models
 
 1. Loads and merges all `.momd` model bundles from the vault
 2. Opens the SQLite store via `NSPersistentContainer` (no history tracking)
-3. Exposes 67 MCP tools over stdio transport
+3. Exposes 72 MCP tools over stdio transport
 4. Uses KVC (`value(forKey:)`) to access entities since we load Banktivity's own compiled models at runtime
 
 ## License

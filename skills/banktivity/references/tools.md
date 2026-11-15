@@ -105,7 +105,7 @@ Find transactions without any category assigned.
 ```
 
 ### get_net_worth
-Calculate current net worth (assets minus liabilities).
+Calculate current net worth (assets minus liabilities) in the reporting currency (`BANKTIVITY_REPORTING_CURRENCY`, default EUR). Each account's cash balance plus holdings value is converted with the vault's latest exchange rate (direct, reverse, or via USD). The response includes `breakdown.byCurrency` and `warnings` for stale or missing rates; an account with no usable rate is left out.
 
 ```json
 {
@@ -870,6 +870,39 @@ Get investment income history (dividends, interest, capital gains distributions)
     "account_id": { "type": "number", "description": "Filter to a specific account" },
     "start_date": { "type": "string", "description": "Start date in YYYY-MM-DD format" },
     "end_date": { "type": "string", "description": "End date in YYYY-MM-DD format" }
+  }
+}
+```
+
+### update_security_trade
+Correct security fields on an existing trade transaction. `amount` is the security cost/principal and does not change the investment account's cash line. `basis_only_transfer` validates a zero-cash transfer-in (a SECURITY ADJUSTMENT whose cash line is 0) and updates only its basis fields. CLI: `securities update-trade`.
+
+```json
+{
+  "properties": {
+    "transaction_id": { "type": "number", "description": "Transaction ID" },
+    "shares": { "type": "number", "description": "Number of shares" },
+    "price_per_share": { "type": "number", "description": "Price per share" },
+    "amount": { "type": "number", "description": "Security cost/principal amount. This does not change investment-account cash line items." },
+    "commission": { "type": "number", "description": "Commission or fee amount" },
+    "symbol": { "type": "string", "description": "Security ticker symbol" },
+    "security_id": { "type": "number", "description": "Security ID (alternative to symbol)" },
+    "basis_only_transfer": { "type": "boolean", "description": "Validate a zero-cash transfer-in row and update security basis fields without changing cash line items" }
+  },
+  "required": ["transaction_id"]
+}
+```
+
+### rename_security
+Rename a security's ticker symbol, display name, or both. Refuses a symbol another security already holds (that is a merge, not a rename) and refuses blank values. Also updates the security's sync record. CLI: `securities rename`.
+
+```json
+{
+  "properties": {
+    "symbol": { "type": "string", "description": "Current ticker symbol" },
+    "id": { "type": "number", "description": "Security ID (alternative to symbol)" },
+    "new_symbol": { "type": "string", "description": "New ticker symbol" },
+    "new_name": { "type": "string", "description": "New display name" }
   }
 }
 ```

@@ -83,7 +83,7 @@ Property names are prefixed with `p` (e.g., `pName`, `pDate`, `pAccountClass`, `
 
 ### Repository Pattern
 
-`BaseRepository` provides KVC helpers (`stringValue()`, `intValue()`, `doubleValue()`, `relatedObject()`, `relatedSet()`), fetch-by-PK with entity inheritance traversal, and write operations via background contexts (`performWrite()`, `performWriteReturning()`). Domain repositories inherit from it.
+`BaseRepository` provides KVC helpers (`stringValue()`, `intValue()`, `doubleValue()`, `relatedObject()`, `relatedSet()`), fetch-by-PK with entity inheritance traversal, reads via a fresh background context per call (`performRead()`, so a read never sees stale view-context objects after a write), and write operations via background contexts (`performWrite()`, `performWriteReturning()`). Domain repositories inherit from it.
 
 ### Entity Hierarchy
 
