@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add `securities realized-gains` CLI command and `get_security_realized_gains` MCP tool: realised capital gains per closed lot, with acquisition date, holding period and term. Banktivity computes gains at render time and persists nothing (`SecurityLot` ships empty), so this recomputes them by FIFO lot matching; it refuses rather than guessing when a security uses a cost-basis method other than FIFO
 - **Investment balances:** account balances now count native trade cash (`SecurityLineItem.pAmount` when the line item amount is 0, skipping share-only adjustments), matching Banktivity's running balance; holdings market value is reported beside cash as `holdingsValue` (#51, built from #19/#33; fixes #2)
 - **Exchange rates in balances:** each line's exchange rate is applied, and a missing or zero rate counts as 1 (#51)
 - **Categories:** created as `Category` entities, not `PrimaryAccount`, which could crash bank sync (#37); `categories create` returns the new row, not an older one with the same name; parents must be categories, and the class is validated (#42)

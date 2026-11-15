@@ -90,6 +90,8 @@ enum BanktivityCLIEntrypoint {
             exitWithBanktivityError(error.description, category: error.cliExitCategory)
         } catch let error as RepositoryError {
             exitWithBanktivityError(error.description, category: error.cliExitCategory)
+        } catch let error as SecurityRepository.RealizedGainError {
+            exitWithBanktivityError(error.description, category: error.cliExitCategory)
         } catch {
             BanktivityCLI.exit(withError: error)
         }
