@@ -197,6 +197,16 @@ struct StatementReconciliationTests {
         #expect(try last() == 75)
         _ = try r.transactions.delete(transactionId: b.id)
         #expect(try last() == 100)
+
+        // Moving a transaction's date re-sequences the running balances.
+        let c = try r.transactions.create(date: "2026-05-05", title: "C", lineItems: [(checking.id, -10, nil), (food.id, 10, nil)])
+        _ = try r.transactions.update(transactionId: c.id, date: "2026-04-28")
+        let liC = try #require(c.lineItems.first { $0.accountId == checking.id }).id
+        let cBalance: Double = try r.accounts.performRead { ctx in
+            BaseRepository.doubleValue(try #require(try r.accounts.fetchByPK(entityName: "LineItem", pk: liC, in: ctx)), "pRunningBalance")
+        }
+        #expect(cBalance == -10)
+        #expect(try last() == 90)
     }
 
     @Test("Update changes a statement's balances in place")

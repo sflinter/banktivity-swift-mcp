@@ -339,7 +339,8 @@ open class BaseRepository: @unchecked Sendable {
                     lineAccounts(li)
                 }
             case "Transaction" where !changed.isDisjoint(with: transactionKeys):
-                for li in relatedSet(object, "pLineItems") { lineAccounts(li) }
+                // Transaction -> lines is `lineItems` (no p prefix) in Banktivity's model.
+                for li in relatedSet(object, "lineItems") { lineAccounts(li) }
             default:
                 break
             }
