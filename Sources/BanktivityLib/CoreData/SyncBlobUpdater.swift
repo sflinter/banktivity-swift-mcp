@@ -140,6 +140,14 @@ public final class SyncBlobUpdater: @unchecked Sendable {
         lineItems: [SyncLineItem],
         transactionTypeBaseTypeCode: Int16, transactionTypeUUID: String
     ) {
+        // No timestamp, no record. `create` does not validate its date -- `setDate`
+        // silently leaves `pDate` unset for one it cannot parse -- so an
+        // unparseable label reaches here, and writing it into the blob's `date`
+        // field would describe the row as dated when the row itself is not.
+        guard let blobDate = DateConversion.syncBlobTimestamp(dateOnly: date) else {
+            log("Unparseable date \(date); skipping sync record for \(transactionUUID)")
+            return
+        }
         do {
             // A base type the enum cannot name would otherwise be written as some
             // caller's guess. Skip the record instead: an absent sync record is a
@@ -149,6 +157,7 @@ public final class SyncBlobUpdater: @unchecked Sendable {
                 return
             }
             let xml = buildTransactionXML(
+                blobDate: blobDate,
                 transactionUUID: transactionUUID, currencyUUID: currencyUUID, date: date,
                 title: title, note: note, adjustment: adjustment,
                 lineItems: lineItems,
@@ -193,6 +202,7 @@ public final class SyncBlobUpdater: @unchecked Sendable {
     }
 
     private func buildTransactionXML(
+        blobDate: String,
         transactionUUID: String, currencyUUID: String, date: String,
         title: String, note: String?, adjustment: Bool,
         lineItems: [SyncLineItem],
@@ -202,7 +212,7 @@ public final class SyncBlobUpdater: @unchecked Sendable {
         xml += "<field type=\"bool\" name=\"adjustment\">\(adjustment ? "yes" : "no")</field>"
         xml += "<field type=\"int\" name=\"checkNumber\" null=\"null\"/>"
         xml += "<field type=\"reference\" name=\"currency\">Currency:\(currencyUUID)</field>"
-        xml += "<field type=\"date\" name=\"date\">\(date)T00:00:00+0000</field>"
+        xml += "<field type=\"date\" name=\"date\">\(blobDate)</field>"
         xml += "<collection type=\"array\" name=\"lineItems\">"
 
         for li in lineItems {

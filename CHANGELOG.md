@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- Anchor date-only writes to a fixed offset (10:00 UTC) so a calendar day reads
+  back as the same day wherever the vault is opened; previously a date-only value
+  was stored at the writer's local midnight, so the rendered day depended on the
+  reader's time zone
+- Keep the sync blob's `date` field in step with the anchored Core Data write, so
+  CloudKit and the local store describe the same instant
+- Close the end bound on date windows: `endDate` is now an exclusive
+  next-midnight bound (`pDate <`), so transactions later in the end day are no
+  longer silently dropped from `transactions list`, account activity, statement
+  membership, tag and categorization queries
+
 ## v0.17.0
 
 - **Transaction type inference:** `transactions create` picks the transaction type from the accounts and sign (Charge/Refund/Payment on credit cards, Transfer between real accounts, otherwise Withdrawal/Deposit) instead of the first type in the vault; adds `charge`, `refund` and `payment` to `transactions update --transaction-type`
