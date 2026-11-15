@@ -137,11 +137,7 @@ public final class TransactionRepository: BaseRepository, @unchecked Sendable {
             // Pick the transaction type from what is being created: a transfer between two
             // real accounts, a card charge/payment/refund, or a plain withdrawal/deposit.
             let baseCode = try inferBaseTypeCode(lineItems: lineItems, in: ctx)
-            let typeRequest = NSFetchRequest<NSManagedObject>(entityName: "TransactionType")
-            typeRequest.predicate = NSPredicate(format: "pBaseType == %d", baseCode)
-            let candidates = try ctx.fetch(typeRequest)
-            let canonicalName = SyncBlobUpdater.syncBaseTypeName(for: Int16(baseCode)) ?? ""
-            let txType = candidates.first { Self.stringValue($0, "pName").lowercased() == canonicalName } ?? candidates.first
+            let txType = try Self.fetchTransactionType(baseType: Int16(baseCode), in: ctx)
             if let txType = txType {
                 tx.setValue(txType, forKey: "pTransactionType")
             }
@@ -267,10 +263,7 @@ public final class TransactionRepository: BaseRepository, @unchecked Sendable {
                 guard let baseType = baseType else {
                     throw ToolError.invalidInput("Unknown transaction type: \(transactionType). Valid types: \(Self.transactionTypeNames)")
                 }
-                let typeRequest = NSFetchRequest<NSManagedObject>(entityName: "TransactionType")
-                typeRequest.predicate = NSPredicate(format: "pBaseType == %d", baseType)
-                typeRequest.fetchLimit = 1
-                guard let txType = try ctx.fetch(typeRequest).first else {
+                guard let txType = try Self.fetchTransactionType(baseType: Int16(baseType), in: ctx) else {
                     throw ToolError.notFound("TransactionType entity not found for base type \(baseType)")
                 }
                 tx.setValue(txType, forKey: "pTransactionType")
@@ -336,10 +329,8 @@ public final class TransactionRepository: BaseRepository, @unchecked Sendable {
                 tx.setValue(currency, forKey: "pCurrency")
             }
 
-            let typeRequest = NSFetchRequest<NSManagedObject>(entityName: "TransactionType")
-            typeRequest.predicate = NSPredicate(format: "pBaseType == %d", Self.transactionTypeBaseTypeCode("transfer") ?? 3)
-            typeRequest.fetchLimit = 1
-            if let transferType = try ctx.fetch(typeRequest).first {
+            if let transferType = try Self.fetchTransactionType(
+                baseType: Int16(Self.transactionTypeBaseTypeCode("transfer") ?? 3), in: ctx) {
                 tx.setValue(transferType, forKey: "pTransactionType")
             }
             Self.setNow(tx, "pModificationDate")
@@ -561,5 +552,22 @@ public final class TransactionRepository: BaseRepository, @unchecked Sendable {
 
     static func transactionTypeBaseTypeCode(_ name: String) -> Int? {
         transactionTypeBaseTypes[name.lowercased()]
+    }
+
+    /// The vault's TransactionType row for a base type, chosen deterministically.
+    /// A vault can hold several rows with one base type (base 2 can be both
+    /// "Withdrawal" and "POS"). The row named like the base type's canonical name
+    /// wins, then the lowest primary key, so the same input always writes the same row.
+    static func fetchTransactionType(baseType: Int16, in ctx: NSManagedObjectContext) throws -> NSManagedObject? {
+        let request = NSFetchRequest<NSManagedObject>(entityName: "TransactionType")
+        request.predicate = NSPredicate(format: "pBaseType == %d", baseType)
+        let canonical = (SyncBlobUpdater.syncBaseTypeName(for: baseType) ?? "").replacingOccurrences(of: "-", with: " ")
+        func isCanonical(_ row: NSManagedObject) -> Bool {
+            !canonical.isEmpty && stringValue(row, "pName").lowercased() == canonical
+        }
+        return try ctx.fetch(request).min { a, b in
+            if isCanonical(a) != isCanonical(b) { return isCanonical(a) }
+            return extractPK(from: a.objectID) < extractPK(from: b.objectID)
+        }
     }
 }

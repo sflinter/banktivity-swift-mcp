@@ -266,10 +266,7 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
                 offsetAccount = nil
             }
 
-            let typeRequest = NSFetchRequest<NSManagedObject>(entityName: "TransactionType")
-            typeRequest.predicate = NSPredicate(format: "pBaseType == %d", transactionTypeCode)
-            typeRequest.fetchLimit = 1
-            guard let txType = try ctx.fetch(typeRequest).first else {
+            guard let txType = try TransactionRepository.fetchTransactionType(baseType: transactionTypeCode, in: ctx) else {
                 throw ToolError.notFound("Transaction type not found for \(tradeTypeName)")
             }
 
@@ -584,10 +581,7 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
                 withholdingAccount = category
             }
 
-            let typeRequest = NSFetchRequest<NSManagedObject>(entityName: "TransactionType")
-            typeRequest.predicate = NSPredicate(format: "pBaseType == %d", incomeBaseType)
-            typeRequest.fetchLimit = 1
-            guard let txType = try ctx.fetch(typeRequest).first else {
+            guard let txType = try TransactionRepository.fetchTransactionType(baseType: incomeBaseType, in: ctx) else {
                 throw ToolError.notFound(
                     "Transaction type not found for base type \(incomeBaseType) (\(incomeType))")
             }
@@ -911,10 +905,7 @@ public final class SecurityRepository: BaseRepository, @unchecked Sendable {
             // type. The default is unchanged; what changes is that a split, a
             // merger leg or a transfer can now be said at all.
             let baseType: Int16 = movementBaseType ?? (shares >= 0 ? 100 : 101)
-            let typeRequest = NSFetchRequest<NSManagedObject>(entityName: "TransactionType")
-            typeRequest.predicate = NSPredicate(format: "pBaseType == %d", baseType)
-            typeRequest.fetchLimit = 1
-            let txType = try ctx.fetch(typeRequest).first
+            let txType = try TransactionRepository.fetchTransactionType(baseType: baseType, in: ctx)
 
             // Use the account's currency (Account uses "currency" not "pCurrency")
             let currency = Self.relatedObject(account, "currency")
