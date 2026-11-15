@@ -120,6 +120,10 @@ struct Accounts: AsyncParsableCommand {
             let accounts = AccountRepository(container: container)
 
             let netWorth = try accounts.getNetWorth()
+            if !netWorth.complete {
+                let names = netWorth.excludedAccounts.map { "\($0.name) (\($0.currency))" }.joined(separator: ", ")
+                FileHandle.standardError.write(Data("warning: net worth is INCOMPLETE: \(netWorth.excludedAccounts.count) account(s) left out for lack of an exchange rate: \(names)\n".utf8))
+            }
             try outputJSON(netWorth, format: parent.format)
         }
     }
