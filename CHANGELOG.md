@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+- **README rewritten:** safety notes up front, how to find a Banktivity 10 vault and grant Full Disk Access, configuration table, CLI and MCP tool tables checked against the code, exit codes, and a section on how the tool works with Banktivity's sync, amounts and running balances
+- **Removed dead and obsolete code (about 1,000 lines):** the sync-blob patching machinery made obsolete in v0.18.0, explicit running-balance recalculation now done by the save hook, and unused helpers and parameters (found with Periphery). `TagRepository` and `CategorizationRepository` no longer take a `SyncBlobUpdater`
+
 ## v0.18.0 (2026-11-15)
 
 ### New
