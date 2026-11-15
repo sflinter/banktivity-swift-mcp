@@ -281,6 +281,106 @@ struct SecurityTradeCreationTests {
         }
     }
 
+    // MARK: - Worthless sales and clearing a price
+
+    private func zeroPriceFixture() throws -> (TestVaultHelper.TestVault, SecurityRepository, Int) {
+        let vault = try TestVaultHelper.createFreshVault()
+        let (_, eur) = try TestVaultHelper.seedCurrencies(in: vault.container)
+        _ = try TestVaultHelper.seedTransactionTypes(in: vault.container)
+        let account = try TestVaultHelper.seedInvestmentAccount(in: vault.container, currency: eur)
+        _ = try TestVaultHelper.seedSecurity(in: vault.container, symbol: "DEAD", currency: eur)
+        let repo = SecurityRepository(container: vault.container)
+        return (vault, repo, BaseRepository.extractPK(from: account.objectID))
+    }
+
+    private func storedPrice(_ vault: TestVaultHelper.TestVault) throws -> Double? {
+        let ctx = vault.container.viewContext
+        ctx.refreshAllObjects()
+        let slis = try ctx.fetch(NSFetchRequest<NSManagedObject>(entityName: "SecurityLineItem"))
+        let sli = try #require(slis.first)
+        return (sli.value(forKey: "pPricePerShare") as? NSNumber)?.doubleValue
+    }
+
+    @Test("a worthless sale is recorded with no stored price, and a zero price without the option is still refused")
+    func worthlessSaleStoresNoPrice() throws {
+        let (vault, repo, accountPK) = try zeroPriceFixture()
+        defer { TestVaultHelper.cleanup(vault) }
+
+        #expect(throws: ToolError.self) {
+            try repo.createSecurityTrade(
+                accountId: accountPK, symbol: "DEAD", shares: -10, pricePerShare: 0,
+                amount: 0, cashLineItemAmount: 0, date: "2026-06-01")
+        }
+        // worthless is for sales only, and a worthless sale cannot carry a price.
+        #expect(throws: ToolError.self) {
+            try repo.createSecurityTrade(
+                accountId: accountPK, symbol: "DEAD", shares: 10, pricePerShare: 0,
+                amount: 0, cashLineItemAmount: 0, date: "2026-06-01", worthless: true)
+        }
+        #expect(throws: ToolError.self) {
+            try repo.createSecurityTrade(
+                accountId: accountPK, symbol: "DEAD", shares: -10, pricePerShare: 1.5,
+                amount: 0, cashLineItemAmount: 0, date: "2026-06-01", worthless: true)
+        }
+
+        let sale = try repo.createSecurityTrade(
+            accountId: accountPK, symbol: "DEAD", shares: -10, pricePerShare: 0,
+            amount: 0, commission: 5, cashLineItemAmount: -5, date: "2026-06-01", worthless: true)
+        #expect(sale.type == "Sell")
+        #expect(try storedPrice(vault) == nil)
+        #expect(abs(try AccountRepository(container: vault.container).getBalance(accountId: accountPK) + 5) < 0.000001)
+    }
+
+    @Test("a worthless share adjustment stores no price and never derives one from the fee")
+    func worthlessAdjustmentStoresNoPrice() throws {
+        let (vault, repo, accountPK) = try zeroPriceFixture()
+        defer { TestVaultHelper.cleanup(vault) }
+
+        _ = try repo.createShareAdjustment(
+            accountId: accountPK, symbol: "DEAD", shares: -10, date: "2026-06-01", amount: -5, worthless: true)
+        #expect(try storedPrice(vault) == nil)
+    }
+
+    @Test("a buy without a price is refused with a pointer to move-shares-in")
+    func buyWithoutPricePointsToMoveSharesIn() throws {
+        let (vault, repo, accountPK) = try zeroPriceFixture()
+        defer { TestVaultHelper.cleanup(vault) }
+
+        do {
+            _ = try repo.createShareAdjustment(accountId: accountPK, symbol: "DEAD", shares: 3, date: "2026-06-01")
+            Issue.record("expected a buy without a price to be refused")
+        } catch {
+            #expect("\(error)".contains("move-shares-in"))
+        }
+    }
+
+    @Test("update-trade can clear a price on a worthless sale or a share move, but not on a priced buy or sell")
+    func clearPriceRules() throws {
+        let (vault, repo, accountPK) = try zeroPriceFixture()
+        defer { TestVaultHelper.cleanup(vault) }
+
+        let buy = try repo.createSecurityTrade(
+            accountId: accountPK, symbol: "DEAD", shares: 10, pricePerShare: 2,
+            amount: 20, cashLineItemAmount: -20, date: "2026-06-01")
+        #expect(throws: ToolError.self) { try repo.updateSecurityLineItem(transactionId: buy.id, clearPrice: true) }
+        #expect(throws: ToolError.self) {
+            try repo.updateSecurityLineItem(transactionId: buy.id, pricePerShare: 2, clearPrice: true)
+        }
+        #expect(try storedPrice(vault) == 2)
+
+        // A sale with no proceeds (a worthless sale recorded with a price earlier).
+        let sale = try repo.createSecurityTrade(
+            accountId: accountPK, symbol: "DEAD", shares: -10, pricePerShare: 2,
+            amount: 0, cashLineItemAmount: 0, date: "2026-06-02")
+        _ = try repo.updateSecurityLineItem(transactionId: sale.id, clearPrice: true)
+        let ctx = vault.container.viewContext
+        ctx.refreshAllObjects()
+        let slis = try ctx.fetch(NSFetchRequest<NSManagedObject>(entityName: "SecurityLineItem"))
+        let prices = slis.map { ($0.value(forKey: "pPricePerShare") as? NSNumber)?.doubleValue }
+        #expect(prices.filter { $0 == nil }.count == 1)
+        #expect(prices.filter { $0 == 2 }.count == 1)
+    }
+
     @Test("createSecurityIncome creates native dividend income")
     func createSecurityIncomeDividend() throws {
         let vault = try TestVaultHelper.createFreshVault()

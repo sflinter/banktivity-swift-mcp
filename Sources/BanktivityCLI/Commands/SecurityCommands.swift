@@ -534,8 +534,11 @@ struct Securities: AsyncParsableCommand {
         @Option(name: .long, parsing: .unconditional, help: "Number of shares. Negative creates a sell; positive creates a buy")
         var shares: Double
 
-        @Option(name: .long, help: "Price per share")
+        @Option(name: .long, help: "Price per share. Must be positive, or 0 together with --worthless")
         var pricePerShare: Double
+
+        @Flag(name: .long, help: "Record a sale (negative --shares) of a worthless security: --price-per-share must be 0 and no price is stored, so no device writes a 0 into price history")
+        var worthless: Bool = false
 
         @Option(name: .long, parsing: .unconditional, help: "Security trade amount/cost")
         var amount: Double
@@ -578,7 +581,8 @@ struct Securities: AsyncParsableCommand {
                 date: date,
                 title: title,
                 memo: memo,
-                offsetCategoryId: offsetCategoryId
+                offsetCategoryId: offsetCategoryId,
+                worthless: worthless
             )
             try outputJSON(result, format: parent.format)
         }
@@ -679,8 +683,11 @@ struct Securities: AsyncParsableCommand {
         @Option(name: .long, help: "Movement type. Accepts: \(SecurityRepository.shareMovementTypeNames). Defaults to buy or sell by the sign of --shares")
         var transactionType: String?
 
-        @Option(name: .long, help: "Price per share. Required for a buy or sell unless --amount is given (it is then amount / shares); never 0")
+        @Option(name: .long, help: "Price per share. Required for a buy or sell unless --amount is given (it is then amount / shares); never 0. For gifted or free shares use --transaction-type move-shares-in, which needs no price")
         var pricePerShare: Double?
+
+        @Flag(name: .long, help: "Record a sale of a worthless security (negative --shares) with no price stored, so no device writes a 0 into price history. --amount is then only the fee, never a price")
+        var worthless: Bool = false
 
         func run() async throws {
             let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
@@ -693,7 +700,8 @@ struct Securities: AsyncParsableCommand {
             let result = try securities.createShareAdjustment(
                 accountId: accountId, symbol: symbol, id: id,
                 shares: shares, date: date, title: title, amount: amount,
-                transactionType: transactionType, pricePerShare: pricePerShare
+                transactionType: transactionType, pricePerShare: pricePerShare,
+                worthless: worthless
             )
             try outputJSON(result, format: parent.format)
         }
@@ -713,8 +721,11 @@ struct Securities: AsyncParsableCommand {
         @Option(name: .long, parsing: .unconditional, help: "Number of shares")
         var shares: Double?
 
-        @Option(name: .long, help: "Price per share")
+        @Option(name: .long, help: "Price per share. Must be positive")
         var pricePerShare: Double?
+
+        @Flag(name: .long, help: "Clear the stored price to nil (cannot be combined with --price-per-share). Refused on a buy or sell that has proceeds")
+        var clearPrice: Bool = false
 
         @Option(name: .long, parsing: .unconditional, help: "Security cost/principal amount. This does not change investment-account cash line items unless --cash-line-amount is also supplied")
         var amount: Double?
@@ -748,7 +759,8 @@ struct Securities: AsyncParsableCommand {
                 commission: commission,
                 securitySymbol: symbol, securityId: securityId,
                 cashLineItemAmount: cashLineAmount,
-                basisOnlyTransfer: basisOnlyTransfer
+                basisOnlyTransfer: basisOnlyTransfer,
+                clearPrice: clearPrice
             )
             try outputJSON(result, format: parent.format)
         }
