@@ -129,7 +129,7 @@ struct SecurityTradeCreationTests {
         let createdSLI = try #require(securityLineItems.first)
         #expect(abs(BaseRepository.doubleValue(createdSLI, "pShares") + 2.5) < 0.000001)
         #expect(abs(BaseRepository.doubleValue(createdSLI, "pPricePerShare") - 12.34) < 0.000001)
-        #expect(abs(BaseRepository.doubleValue(createdSLI, "pAmount") - 30.85) < 0.000001)
+        #expect(abs(BaseRepository.doubleValue(createdSLI, "pAmount") - 596.06) < 0.000001)
         #expect(abs(BaseRepository.doubleValue(createdSLI, "pCommission") - 1.23) < 0.000001)
 
         let txRequest = NSFetchRequest<NSManagedObject>(entityName: "Transaction")
@@ -146,7 +146,7 @@ struct SecurityTradeCreationTests {
         #expect(xml.contains("<field enum=\"IGGCSyncAccountingTransactionBaseType\" name=\"baseType\">sell</field>"))
         #expect(xml.contains("<field type=\"decimal\" name=\"shares\">-2.5</field>"))
         #expect(xml.contains("<field type=\"decimal\" name=\"pricePerShare\">12.34</field>"))
-        #expect(xml.contains("<field type=\"decimal\" name=\"cost\">30.85</field>"))
+        #expect(xml.contains("<field type=\"decimal\" name=\"cost\">596.06</field>"))
         #expect(xml.contains("<field type=\"decimal\" name=\"commission\">1.23</field>"))
         #expect(xml.contains("<field type=\"decimal\" name=\"accountAmount\">596.06</field>"))
         #expect(xml.contains("<field type=\"decimal\" name=\"accountAmount\">-596.06</field>"))
@@ -204,7 +204,7 @@ struct SecurityTradeCreationTests {
         let trade = try #require(trades.first { $0.id == result.id })
         #expect(trade.type == "Buy")
         #expect(abs(trade.shares - 250000) < 0.000001)
-        #expect(abs(trade.amount - 250000) < 0.000001)
+        #expect(abs(trade.amount + 250000) < 0.000001)
 
         let ctx = vault.container.viewContext
         let txRequest = NSFetchRequest<NSManagedObject>(entityName: "Transaction")
@@ -221,9 +221,64 @@ struct SecurityTradeCreationTests {
         #expect(xml.contains("<field enum=\"IGGCSyncAccountingTransactionBaseType\" name=\"baseType\">buy</field>"))
         #expect(xml.contains("<field type=\"decimal\" name=\"shares\">250000</field>"))
         #expect(xml.contains("<field type=\"decimal\" name=\"pricePerShare\">1</field>"))
-        #expect(xml.contains("<field type=\"decimal\" name=\"cost\">250000</field>"))
+        #expect(xml.contains("<field type=\"decimal\" name=\"cost\">-250000</field>"))
         #expect(xml.contains("<field type=\"decimal\" name=\"accountAmount\">-250000</field>"))
         #expect(xml.contains("<field type=\"decimal\" name=\"accountAmount\">250000</field>"))
+    }
+
+    @Test("a created buy and sell move the account balance by their signed cash")
+    func tradeCashReachesAccountBalance() throws {
+        let vault = try TestVaultHelper.createFreshVault()
+        defer { TestVaultHelper.cleanup(vault) }
+
+        let (_, eur) = try TestVaultHelper.seedCurrencies(in: vault.container)
+        _ = try TestVaultHelper.seedTransactionTypes(in: vault.container)
+        let account = try TestVaultHelper.seedInvestmentAccount(in: vault.container, currency: eur)
+        _ = try TestVaultHelper.seedSecurity(in: vault.container, symbol: "CASH", currency: eur)
+
+        let repo = SecurityRepository(container: vault.container)
+        let accounts = AccountRepository(container: vault.container)
+        let accountPK = BaseRepository.extractPK(from: account.objectID)
+
+        // Buy 10 at 10 plus 1 commission: cash out is 101.
+        let buy = try repo.createSecurityTrade(
+            accountId: accountPK, symbol: "CASH", shares: 10, pricePerShare: 10,
+            amount: 100, commission: 1, cashLineItemAmount: -101, date: "2026-06-01")
+        #expect(abs(try accounts.getBalance(accountId: accountPK) + 101) < 0.000001)
+
+        // Sell 4 at 12 less 1 commission: cash in is 47.
+        _ = try repo.createSecurityTrade(
+            accountId: accountPK, symbol: "CASH", shares: -4, pricePerShare: 12,
+            amount: 48, commission: 1, cashLineItemAmount: 47, date: "2026-06-02")
+        #expect(abs(try accounts.getBalance(accountId: accountPK) + 54) < 0.000001)
+
+        // Changing the buy's cash through update-trade moves the balance too.
+        _ = try repo.updateSecurityLineItem(transactionId: buy.id, cashLineItemAmount: -121)
+        #expect(abs(try accounts.getBalance(accountId: accountPK) + 74) < 0.000001)
+    }
+
+    @Test("a trade's cash must be negative for a buy and positive for a sell")
+    func tradeCashSignIsChecked() throws {
+        let vault = try TestVaultHelper.createFreshVault()
+        defer { TestVaultHelper.cleanup(vault) }
+
+        let (_, eur) = try TestVaultHelper.seedCurrencies(in: vault.container)
+        _ = try TestVaultHelper.seedTransactionTypes(in: vault.container)
+        let account = try TestVaultHelper.seedInvestmentAccount(in: vault.container, currency: eur)
+        _ = try TestVaultHelper.seedSecurity(in: vault.container, symbol: "SIGN", currency: eur)
+
+        let repo = SecurityRepository(container: vault.container)
+        let accountPK = BaseRepository.extractPK(from: account.objectID)
+        #expect(throws: ToolError.self) {
+            try repo.createSecurityTrade(
+                accountId: accountPK, symbol: "SIGN", shares: 10, pricePerShare: 2,
+                amount: 20, cashLineItemAmount: 20, date: "2026-06-01")
+        }
+        #expect(throws: ToolError.self) {
+            try repo.createSecurityTrade(
+                accountId: accountPK, symbol: "SIGN", shares: -10, pricePerShare: 2,
+                amount: 20, cashLineItemAmount: -20, date: "2026-06-01")
+        }
     }
 
     @Test("createSecurityIncome creates native dividend income")
