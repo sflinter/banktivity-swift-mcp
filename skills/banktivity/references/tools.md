@@ -919,6 +919,13 @@ Correct security fields on an existing trade transaction. `amount` is the securi
 }
 ```
 
+### audit_security_prices
+List trades stored with a price per share of 0. A device that receives a trade writes its price into the security's price history for that date, zero included, so `zeroesHolding: true` marks trades that make other devices (e.g. the mobile app) value a held security at 0. Fix with `update_security_trade --price_per_share`, plus a later-dated price via `import_security_prices` if the phone has already taken the 0. CLI: `securities audit-prices [--at-risk-only]`.
+
+```json
+{ "properties": { "at_risk_only": { "type": "boolean", "description": "Only trades that zero a held security" } } }
+```
+
 ### rename_security
 Rename a security's ticker symbol, display name, or both. Refuses a symbol another security already holds (that is a merge, not a rename) and refuses blank values. Also updates the security's sync record. CLI: `securities rename`.
 

@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### New
+- **`securities audit-prices` / `audit_security_prices`:** lists trades stored with a price of 0 and flags those that zero a held security on other devices
 - **Security trades and income:** `securities create-trade` / `create_security_trade` writes a buy or sell with its security line, cash line and balancing line; `securities create-income` / `create_security_income` writes native dividend and other income (optionally with tax withheld), so holdings and income reports see them (#13)
 - **Security delete:** `securities delete` / `delete_security` removes a security no trade references; refuses otherwise, keeps prices unless `--with-prices`, supports `--dry-run` (#13)
 - **Security rename:** `securities rename` / `rename_security` changes a ticker or name and updates the sync record (#48)
@@ -15,6 +16,8 @@
 - **MCP tool annotations:** every tool advertises `readOnlyHint` / `destructiveHint`, so clients can tell reads from writes; unlabelled tools default to destructive, and a test refuses a read-only label on any tool that guards writes
 
 ### Fixed
+- **No more zero-price trades:** a device that receives a trade writes its price per share into the security's price history for that date, zero included (read from Banktivity's IGGAccounting), so a 0 made the phone value the whole holding at 0. `securities adjust` / `create_share_adjustment` take `--price-per-share` and require a positive price for a buy or sell (or derive it from `--amount`); `create-trade` and `update-trade` refuse a price ≤ 0; income and share moves store no price instead of 0, written as null in the sync record
+- **Running balances kept current:** every write recalculates the cached running balance (the desktop app's account cash) of the accounts it touched, from the earliest changed date, with Banktivity's own line-amount rule. The old recalculation summed raw `pTransactionAmount` over the whole account, which is what left investment accounts' desktop cash wrong
 - **Desktop cash out of date:** `accounts recalc-balances` recomputes the cached `LineItem.pRunningBalance` that Banktivity's desktop app shows as an account's cash, which rows written by the CLI leave stale. It follows Banktivity's own rule and order, only touches accounts whose final balance is wrong, and marks nothing modified (the cache is not synced)
 - **Line amounts follow Banktivity:** balances and statement totals use Banktivity's own per-line rule (read from IGGAccounting): for investment transactions the security line's amount + income, otherwise amount x exchange rate. 239 of 240 investment statements in a real vault now balance, against 202 before
 - **Cleared is kept:** unreconciling a line or deleting a statement no longer un-ticks its lines (from #4)

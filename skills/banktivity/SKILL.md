@@ -89,12 +89,13 @@ Always redirect stderr with `2>/dev/null` — CoreData prints harmless warnings 
 | `get_security_income` | `--symbol AAPL --account_id N --start_date --end_date` | Dividends, interest, capital gains distributions |
 | `create_security_trade` | `--account_id N --symbol AAPL --shares N --price_per_share N --amount N --cash_line_amount N --date YYYY-MM-DD` | Create a buy (positive shares) or sell (negative shares) |
 | `create_security_income` | `--account_id N --symbol AAPL --amount 12.34 --date YYYY-MM-DD --offset_category_id N` | Create native dividend income |
-| `create_share_adjustment` | `--account_id N --symbol SYM --shares=-10 --date YYYY-MM-DD` | Share adjustment (charges, splits); `--amount` for cash |
+| `create_share_adjustment` | `--account_id N --symbol SYM --shares=-10 --date YYYY-MM-DD --price_per_share P` | Share adjustment (charges, splits). Buys/sells need a positive price (or `--amount`, then amount/shares): a 0 price makes the phone value the holding at 0 |
 | `import_security_prices` | `--file_path /path/to/csv --symbol AAPL` | Supports Yahoo Finance, OHLCV, or Date/Close CSV |
 | `delete_security_prices` | `--symbol AAPL --start_date --end_date` | Delete prices; date range optional |
 | `reset_security_price_range` | `--symbol AAPL` or `--id N` | Clears the known price range and last import date; deletes no prices |
 | `delete_security` | `--symbol AAPL [--with_prices] [--dry_run]` | Delete a security no trade references; refuses while trades point at it |
 | `update_security_trade` | `--transaction_id N [--shares N] [--price_per_share N] [--amount N] [--commission N] [--symbol SYM] [--basis_only_transfer true]` | Correct an existing trade; `--amount` is the security cost, not the cash line |
+| `audit_security_prices` | `--at_risk_only true` | Trades priced at 0; `zeroesHolding` ones make the phone value the holding at 0 |
 | `rename_security` | `--symbol OLD [--new_symbol NEW] [--new_name "Name"]` | Fix a security's ticker or name; refuses a ticker another security holds |
 
 ### Modifying

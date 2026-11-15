@@ -207,6 +207,7 @@ warning.
 - `get_security_income` — Get investment income (dividends, interest, capital gains distributions)
 - `create_security_trade` — Create a buy or sell with its cash and balancing line items
 - `update_security_trade` — Correct an existing trade's shares, price, amount, commission or security; `basis_only_transfer` for a zero-cash transfer-in
+- `audit_security_prices` — List trades stored with a price per share of 0, flagging those that make other devices value a holding at 0
 - `rename_security` — Change a security's ticker, display name, or both (refuses a ticker another security holds)
 - `create_security_income` — Create native security income, currently dividend income
 - `create_share_adjustment` — Create a share adjustment (e.g. charges, stock splits, position corrections)
@@ -237,7 +238,7 @@ banktivity-cli export turtle --output vault.ttl
 
 ### CLI Subcommands
 
-- `accounts list`, `accounts balance`, `accounts net-worth`, `accounts spending`, `accounts income`, `accounts summary`, `accounts recalc-balances`
+- `accounts list`, `accounts balance`, `accounts net-worth`, `accounts spending`, `accounts income`, `accounts summary`, `accounts recalc-balances` (writes also keep running balances current)
 - `transactions list`, `transactions search`, `transactions get`, `transactions create`, `transactions update`, `transactions delete`
 - `categories list`, `categories get`, `categories tree`, `categories audit-entities`, `categories create`, `categories delete`
 - `tags list`, `tags create`, `tags tag-transaction`, `tags get-by-tag`, `tags bulk-tag`
@@ -247,7 +248,7 @@ banktivity-cli export turtle --output vault.ttl
 - `import-rules list`, `import-rules get`, `import-rules match`, `import-rules create`, `import-rules update`, `import-rules delete`
 - `scheduled list`, `scheduled get`, `scheduled create`, `scheduled update`, `scheduled delete`
 - `statements list`, `statements status`, `statements get`, `statements create`, `statements update`, `statements delete`, `statements reconcile`, `statements unreconcile`, `statements unreconciled`
-- `securities list`, `securities create`, `securities delete`, `securities rename`, `securities prices`, `securities holdings`, `securities trades`, `securities realized-gains`, `securities income`, `securities create-trade`, `securities create-income`, `securities adjust`, `securities update-trade`, `securities import-prices`, `securities delete-prices`, `securities reset-price-range`, `securities fix-prices`
+- `securities list`, `securities create`, `securities delete`, `securities rename`, `securities audit-prices`, `securities prices`, `securities holdings`, `securities trades`, `securities realized-gains`, `securities income`, `securities create-trade`, `securities create-income`, `securities adjust`, `securities update-trade`, `securities import-prices`, `securities delete-prices`, `securities reset-price-range`, `securities fix-prices`
   - `securities delete` refuses while any trade still references the security, because deleting it would orphan the line items carrying its cost basis and realized gain. Merge those trades onto the surviving security with `securities update-trade --security-id` first. Price history is kept unless `--with-prices` is given.
 - `export turtle`
 - `schema`
