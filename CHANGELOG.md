@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.18.0 (2026-11-15)
 
 ### New
 - **Cross-currency transfer repair:** `transactions repair-forex` / `repair_forex_transfer` rewrites an existing transfer as source (gross), fee and target (at the rate) lines, validating that gross − fee × rate matches the amount received, editing existing lines in place and refusing transactions with other lines (from #6). The rebuilt sync record lists the lines without statement or tag references; Banktivity uploads the vault's values, so nothing is lost
