@@ -151,6 +151,29 @@ struct StatementReconciliationTests {
         #expect(status.unreconciledSinceLastStatement == 1)
     }
 
+    @Test("Running balances are recomputed in date order and only changed rows are written")
+    func recalcRunningBalances() throws {
+        let r = try makeRepos()
+        defer { TestVaultHelper.cleanup(r.vault) }
+        let checking = try r.accounts.create(name: "Checking", accountClass: AccountClass.checking)
+        let food = try r.categories.create(name: "Food", type: "expense")
+        _ = try r.transactions.create(date: "2026-05-03", title: "B", lineItems: [(checking.id, -10, nil), (food.id, 10, nil)])
+        _ = try r.transactions.create(date: "2026-05-01", title: "A", lineItems: [(checking.id, 100, nil), (food.id, -100, nil)])
+        _ = try r.transactions.create(date: "2026-05-05", title: "C", lineItems: [(checking.id, -2.5, nil), (food.id, 2.5, nil)])
+
+        let first = try r.accounts.recalculateRunningBalances(accountId: checking.id, force: true)
+        #expect(first.lineItemCount == 3)
+        #expect(abs(first.balance - 87.5) < 1e-9)
+        let byDate: [Double] = try r.accounts.performRead { ctx in
+            let req = NSFetchRequest<NSManagedObject>(entityName: "LineItem")
+            req.predicate = NSPredicate(format: "pAccount == %@", try #require(try r.accounts.fetchByPK(entityName: "Account", pk: checking.id, in: ctx)))
+            req.sortDescriptors = [NSSortDescriptor(key: "pTransaction.pDate", ascending: true)]
+            return try ctx.fetch(req).map { BaseRepository.doubleValue($0, "pRunningBalance") }
+        }
+        #expect(byDate == [100, 90, 87.5])
+        #expect(try r.accounts.recalculateRunningBalances(accountId: checking.id).changedCount == 0)
+    }
+
     @Test("Update changes a statement's balances in place")
     func updateBalances() throws {
         let r = try makeRepos()

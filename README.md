@@ -237,7 +237,7 @@ banktivity-cli export turtle --output vault.ttl
 
 ### CLI Subcommands
 
-- `accounts list`, `accounts balance`, `accounts net-worth`, `accounts spending`, `accounts income`, `accounts summary`
+- `accounts list`, `accounts balance`, `accounts net-worth`, `accounts spending`, `accounts income`, `accounts summary`, `accounts recalc-balances`
 - `transactions list`, `transactions search`, `transactions get`, `transactions create`, `transactions update`, `transactions delete`
 - `categories list`, `categories get`, `categories tree`, `categories audit-entities`, `categories create`, `categories delete`
 - `tags list`, `tags create`, `tags tag-transaction`, `tags get-by-tag`, `tags bulk-tag`

@@ -7,7 +7,7 @@ import Foundation
 struct Accounts: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Account operations",
-        subcommands: [List.self, Balance.self, NetWorth.self, Spending.self, Income.self, Summary.self, Create.self]
+        subcommands: [List.self, Balance.self, NetWorth.self, Spending.self, Income.self, Summary.self, Create.self, RecalcBalances.self]
     )
 
     struct List: AsyncParsableCommand {
@@ -31,6 +31,47 @@ struct Accounts: AsyncParsableCommand {
                 includeCategories: includeCategories
             )
             try outputJSON(result, format: parent.format)
+        }
+    }
+
+    struct RecalcBalances: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "recalc-balances",
+            abstract: "Recompute cached running balances, as Banktivity does",
+            discussion: """
+            Banktivity's desktop app shows an account's cash from the running balance
+            cached on its latest line item. Rows written by this CLI leave that cache
+            stale. This recomputes it in Banktivity's order and with its line amount
+            rule. The cache is not synced, so nothing is marked modified.
+            """
+        )
+
+        @OptionGroup var parent: GlobalOptions
+
+        @Option(name: .long, help: "Account ID (repeatable)")
+        var accountId: [Int] = []
+
+        @Flag(name: .long, help: "Recompute every non-category account")
+        var all = false
+
+        @Flag(name: .long, help: "Rewrite intermediate rows even when the final balance is already right")
+        var force = false
+
+        func run() async throws {
+            let path = try BanktivityCLI.resolveVaultPath(vault: parent.vault)
+            let container = try BanktivityCLI.createContainer(vaultPath: path)
+            let writeGuard = BanktivityCLI.createWriteGuard(vaultPath: path)
+            try await guardWrite(writeGuard)
+
+            let accounts = AccountRepository(container: container)
+            var ids = accountId
+            if all {
+                ids = try accounts.list(includeHidden: true)
+                    .filter { $0.accountClass < AccountClass.income }.map(\.id)
+            }
+            guard !ids.isEmpty else { throw ToolError.missingParameter("Give --account-id or --all") }
+            let results = try ids.map { try accounts.recalculateRunningBalances(accountId: $0, force: force) }
+            try outputJSON(results, format: parent.format)
         }
     }
 

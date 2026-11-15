@@ -65,6 +65,79 @@ public final class AccountRepository: BaseRepository, @unchecked Sendable {
         }
     }
 
+    /// Recompute the cached `LineItem.pRunningBalance` for one account, the way
+    /// Banktivity does (`-[IGGCAccountingPrimaryAccount recalculateBalanceForDate:]`):
+    /// lines in transaction-date order, each holding the running sum of
+    /// `accountAmount` rounded to cents.
+    ///
+    /// The running balance is a per-device cache that does not travel in sync
+    /// records, so nothing is marked modified. The desktop app shows an
+    /// account's cash from it, and rows the CLI writes leave it stale.
+    ///
+    /// Banktivity's within-day order differs between accounts (creation time in
+    /// some, row order in others) and only changes intermediate rows, never the
+    /// final balance. So an account whose final running balance is already
+    /// right is left alone unless `force` is set, and otherwise the within-day
+    /// order that best matches the balances Banktivity already wrote is used.
+    public func recalculateRunningBalances(accountId: Int, force: Bool = false) throws -> RunningBalanceRecalcDTO {
+        try performWriteReturning { [self] ctx in
+            guard let account = try fetchByPK(entityName: "Account", pk: accountId, in: ctx) else {
+                throw ToolError.notFound("Account not found: \(accountId)")
+            }
+            let request = NSFetchRequest<NSManagedObject>(entityName: "LineItem")
+            request.predicate = NSPredicate(format: "pAccount == %@", account)
+            request.relationshipKeyPathsForPrefetching = ["pSecurityLineItem", "pTransaction.pTransactionType"]
+            let lines = try ctx.fetch(request)
+
+            func cents(_ value: Double) -> Decimal { Decimal(string: String(format: "%.2f", value)) ?? 0 }
+            let amounts = Dictionary(uniqueKeysWithValues: lines.map { ($0.objectID, cents(Self.accountAmount($0))) })
+            let date = { (li: NSManagedObject) in Self.relatedObject(li, "pTransaction").flatMap { Self.dateValue($0, "pDate") } ?? 0 }
+            let created = { (li: NSManagedObject) in Self.dateValue(li, "pCreationTime") ?? 0 }
+            let pk = { (li: NSManagedObject) in Self.extractPK(from: li.objectID) }
+            let intraday = { (li: NSManagedObject) in Self.intValue(li, "pIntraDaySortIndex") }
+            let byCreation = lines.sorted {
+                (date($0), created($0), intraday($0), pk($0)) < (date($1), created($1), intraday($1), pk($1))
+            }
+            let byRow = lines.sorted { (date($0), intraday($0), pk($0)) < (date($1), intraday($1), pk($1)) }
+
+            func balances(_ ordered: [NSManagedObject]) -> [Decimal] {
+                var running = Decimal(0)
+                return ordered.map { running += amounts[$0.objectID] ?? 0; return running }
+            }
+            func matches(_ ordered: [NSManagedObject], _ values: [Decimal]) -> Int {
+                zip(ordered, values).filter { Self.decimalValue($0.0, "pRunningBalance") == $0.1 }.count
+            }
+            let creationValues = balances(byCreation), rowValues = balances(byRow)
+            let (ordered, values) = matches(byCreation, creationValues) >= matches(byRow, rowValues)
+                ? (byCreation, creationValues) : (byRow, rowValues)
+
+            let total = values.last ?? 0
+            // Banktivity's last row (in either order) already holds the total: not stale.
+            let lastDate = ordered.last.map(date)
+            let finalIsRight = lines.isEmpty || ordered.contains {
+                date($0) == lastDate && Self.decimalValue($0, "pRunningBalance") == total
+            }
+            let previous = byRow.last.map { Self.doubleValue($0, "pRunningBalance") } ?? 0
+
+            var changed = 0
+            if force || !finalIsRight {
+                for (line, value) in zip(ordered, values) where Self.decimalValue(line, "pRunningBalance") != value {
+                    line.setValue(NSDecimalNumber(decimal: value), forKey: "pRunningBalance")
+                    changed += 1
+                }
+            }
+            return RunningBalanceRecalcDTO(
+                accountId: accountId,
+                accountName: Self.stringValue(account, "pName"),
+                lineItemCount: lines.count,
+                changedCount: changed,
+                previousBalance: previous,
+                balance: NSDecimalNumber(decimal: total).doubleValue,
+                wasStale: !finalIsRight
+            )
+        }
+    }
+
     /// Market value of an investment account's open security positions.
     ///
     /// For each security: shares held x latest close x the price multiplier of

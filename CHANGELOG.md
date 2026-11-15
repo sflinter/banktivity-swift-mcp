@@ -15,6 +15,7 @@
 - **MCP tool annotations:** every tool advertises `readOnlyHint` / `destructiveHint`, so clients can tell reads from writes; unlabelled tools default to destructive, and a test refuses a read-only label on any tool that guards writes
 
 ### Fixed
+- **Desktop cash out of date:** `accounts recalc-balances` recomputes the cached `LineItem.pRunningBalance` that Banktivity's desktop app shows as an account's cash, which rows written by the CLI leave stale. It follows Banktivity's own rule and order, only touches accounts whose final balance is wrong, and marks nothing modified (the cache is not synced)
 - **Line amounts follow Banktivity:** balances and statement totals use Banktivity's own per-line rule (read from IGGAccounting): for investment transactions the security line's amount + income, otherwise amount x exchange rate. 239 of 240 investment statements in a real vault now balance, against 202 before
 - **Cleared is kept:** unreconciling a line or deleting a statement no longer un-ticks its lines (from #4)
 - Reads use a fresh background context, so a read straight after a write no longer returns stale objects

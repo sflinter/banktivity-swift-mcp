@@ -432,6 +432,16 @@ public struct StatementDTO: Codable, Sendable {
     }
 }
 
+public struct RunningBalanceRecalcDTO: Codable, Sendable {
+    public let accountId: Int
+    public let accountName: String
+    public let lineItemCount: Int
+    public let changedCount: Int
+    public let previousBalance: Double
+    public let balance: Double
+    public let wasStale: Bool
+}
+
 /// Where an account's reconciliation stands.
 public struct AccountReconciliationStatusDTO: Codable, Sendable {
     public let accountId: Int
