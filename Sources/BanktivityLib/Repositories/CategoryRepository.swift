@@ -131,8 +131,12 @@ public final class CategoryRepository: BaseRepository, @unchecked Sendable {
         currencyCode: String? = nil
     ) throws -> CategoryDTO {
         try performWrite { [self] ctx in
-            // Categories are stored as PrimaryAccount entities
-            let cat = Self.createObject(entityName: "PrimaryAccount", in: ctx)
+            // Categories are Category entities (Z_ENT=2). PrimaryAccount (Z_ENT=3) is a
+            // sibling subentity used for real accounts — creating a category as one makes
+            // Banktivity fault it as an account, and the Yodlee importer's category lookup
+            // then sends a Category-only selector to it: unrecognized selector -> SIGABRT
+            // on every bank sync.
+            let cat = Self.createObject(entityName: "Category", in: ctx)
             let accountClass = type == "income" ? AccountClass.income : AccountClass.expense
             cat.setValue(accountClass, forKey: "pAccountClass")
             cat.setValue(name, forKey: "pName")
@@ -154,17 +158,15 @@ public final class CategoryRepository: BaseRepository, @unchecked Sendable {
             }
             cat.setValue(fullName, forKey: "pFullName")
 
-            // Set currency
-            if let code = currencyCode {
+            // Set currency. The "currency" relationship exists on PrimaryAccount, not on
+            // Category (see BaseRepository.currencyCode), so this is a no-op for categories
+            // — guard on the relationship rather than assume, so setValue can never raise
+            // NSUnknownKeyException if the entity shape changes.
+            if cat.entity.relationshipsByName["currency"] != nil {
                 let currRequest = NSFetchRequest<NSManagedObject>(entityName: "Currency")
-                currRequest.predicate = NSPredicate(format: "pCode ==[cd] %@", code)
-                currRequest.fetchLimit = 1
-                if let currency = try ctx.fetch(currRequest).first {
-                    cat.setValue(currency, forKey: "currency")
+                if let code = currencyCode {
+                    currRequest.predicate = NSPredicate(format: "pCode ==[cd] %@", code)
                 }
-            } else {
-                // Use default currency (first available)
-                let currRequest = NSFetchRequest<NSManagedObject>(entityName: "Currency")
                 currRequest.fetchLimit = 1
                 if let currency = try ctx.fetch(currRequest).first {
                     cat.setValue(currency, forKey: "currency")
