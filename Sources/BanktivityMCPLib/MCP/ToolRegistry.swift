@@ -32,9 +32,27 @@ public final class ToolRegistry: @unchecked Sendable {
         self.reportingCurrency = ReportingCurrency.resolve(reportingCurrency)
     }
 
+    /// What a tool may do to the vault, published as MCP tool annotations so
+    /// clients can tell reads from writes. The default is the cautious one: a
+    /// tool nobody labelled is advertised as destructive, never as read-only.
+    enum ToolAccess {
+        case read
+        case additive
+        case destructive
+
+        var annotations: Tool.Annotations {
+            switch self {
+            case .read: return .init(readOnlyHint: true, openWorldHint: false)
+            case .additive: return .init(readOnlyHint: false, destructiveHint: false, openWorldHint: false)
+            case .destructive: return .init(readOnlyHint: false, destructiveHint: true, openWorldHint: false)
+            }
+        }
+    }
+
     /// Register a tool with its handler
     func register(
         name: String,
+        access: ToolAccess = .destructive,
         description: String,
         inputSchema: Value,
         handler: @escaping @Sendable ([String: Value]?) async throws -> CallTool.Result
@@ -42,7 +60,8 @@ public final class ToolRegistry: @unchecked Sendable {
         let tool = Tool(
             name: name,
             description: description,
-            inputSchema: inputSchema
+            inputSchema: inputSchema,
+            annotations: access.annotations
         )
         tools[name] = ToolDefinition(tool: tool, handler: handler)
     }
@@ -70,6 +89,7 @@ public final class ToolRegistry: @unchecked Sendable {
     func registerDiagnosticTools() {
         register(
             name: "dump_schema",
+            access: .read,
             description:
                 "Dump the Core Data model schema showing all entity names, attributes, and relationships. Use this to discover property names for querying.",
             inputSchema: ToolHelpers.schema(properties: [

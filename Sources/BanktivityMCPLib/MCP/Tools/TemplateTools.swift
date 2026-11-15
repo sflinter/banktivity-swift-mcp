@@ -9,6 +9,7 @@ func registerTemplateTools(registry: ToolRegistry, templates: TemplateRepository
     // list_transaction_templates
     registry.register(
         name: "list_transaction_templates",
+        access: .read,
         description: "List all transaction templates (used for import rules and scheduled transactions)",
         inputSchema: ToolHelpers.schema(properties: [:])
     ) { _ in
@@ -19,6 +20,7 @@ func registerTemplateTools(registry: ToolRegistry, templates: TemplateRepository
     // get_transaction_template
     registry.register(
         name: "get_transaction_template",
+        access: .read,
         description: "Get a specific transaction template by ID",
         inputSchema: ToolHelpers.schema(
             properties: [
@@ -41,6 +43,7 @@ func registerTemplateTools(registry: ToolRegistry, templates: TemplateRepository
     // create_transaction_template
     registry.register(
         name: "create_transaction_template",
+        access: .additive,
         description: "Create a new transaction template for use with import rules or scheduled transactions",
         inputSchema: ToolHelpers.schema(
             properties: [

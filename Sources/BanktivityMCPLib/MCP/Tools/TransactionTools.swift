@@ -14,6 +14,7 @@ func registerTransactionTools(
     // get_transactions
     registry.register(
         name: "get_transactions",
+        access: .read,
         description: "Get transactions with optional filtering by account and date range",
         inputSchema: ToolHelpers.schema(properties: [
             "account_id": ToolHelpers.property(type: "number", description: "Filter by account ID"),
@@ -50,6 +51,7 @@ func registerTransactionTools(
     // search_transactions
     registry.register(
         name: "search_transactions",
+        access: .read,
         description: "Search transactions by payee name or notes",
         inputSchema: ToolHelpers.schema(
             properties: [
@@ -72,6 +74,7 @@ func registerTransactionTools(
     // get_transaction
     registry.register(
         name: "get_transaction",
+        access: .read,
         description: "Get a single transaction by ID with all its line items",
         inputSchema: ToolHelpers.schema(
             properties: [
@@ -94,6 +97,7 @@ func registerTransactionTools(
     // create_transaction
     registry.register(
         name: "create_transaction",
+        access: .additive,
         description: "Create a new transaction with line items",
         inputSchema: ToolHelpers.schema(
             properties: [

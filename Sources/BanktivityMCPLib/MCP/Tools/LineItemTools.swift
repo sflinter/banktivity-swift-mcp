@@ -14,6 +14,7 @@ func registerLineItemTools(
     // get_line_item
     registry.register(
         name: "get_line_item",
+        access: .read,
         description: "Get a specific line item by ID",
         inputSchema: ToolHelpers.schema(
             properties: [
@@ -36,6 +37,7 @@ func registerLineItemTools(
     // add_line_item
     registry.register(
         name: "add_line_item",
+        access: .additive,
         description: "Add a new line item to an existing transaction",
         inputSchema: ToolHelpers.schema(
             properties: [

@@ -12,6 +12,7 @@ func registerSecurityTools(
     // list_securities
     registry.register(
         name: "list_securities",
+        access: .read,
         description: "List all securities (stocks, funds, etc.) in the vault with name, symbol, and currency",
         inputSchema: ToolHelpers.schema(properties: [:])
     ) { _ in
@@ -22,6 +23,7 @@ func registerSecurityTools(
     // create_security
     registry.register(
         name: "create_security",
+        access: .additive,
         description: "Create a new security (stock, fund, etc.) in the vault",
         inputSchema: ToolHelpers.schema(
             properties: [
@@ -53,6 +55,7 @@ func registerSecurityTools(
     // create_share_adjustment
     registry.register(
         name: "create_share_adjustment",
+        access: .additive,
         description: "Create a share adjustment transaction (e.g. for charges that cancel units, stock splits, or manual position corrections). Use negative shares to reduce a position.",
         inputSchema: ToolHelpers.schema(
             properties: [
@@ -97,6 +100,7 @@ func registerSecurityTools(
     // get_security_prices
     registry.register(
         name: "get_security_prices",
+        access: .read,
         description: "Get price history for a security. Returns prices sorted by date descending.",
         inputSchema: ToolHelpers.schema(properties: [
             "symbol": ToolHelpers.property(type: "string", description: "Security ticker symbol (e.g. AAPL)"),
@@ -159,6 +163,7 @@ func registerSecurityTools(
     // get_security_holdings
     registry.register(
         name: "get_security_holdings",
+        access: .read,
         description: "Get current security holdings (share positions) across investment accounts. Shows shares held, cost basis, and current market value.",
         inputSchema: ToolHelpers.schema(properties: [
             "symbol": ToolHelpers.property(type: "string", description: "Security ticker symbol (e.g. AAPL)"),
@@ -177,6 +182,7 @@ func registerSecurityTools(
     // get_security_trades
     registry.register(
         name: "get_security_realized_gains",
+        access: .read,
         description: """
             Compute realised capital gains by matching disposals to opening lots (FIFO). \
             Banktivity does not persist its lot matching, so this recomputes it: splits \
@@ -206,6 +212,7 @@ func registerSecurityTools(
 
     registry.register(
         name: "get_security_trades",
+        access: .read,
         description: "Get security trade history (buys, sells, transfers). Shows share counts, prices, amounts, and commissions.",
         inputSchema: ToolHelpers.schema(properties: [
             "symbol": ToolHelpers.property(type: "string", description: "Security ticker symbol (e.g. AAPL)"),
@@ -279,6 +286,7 @@ func registerSecurityTools(
     // create_security_trade
     registry.register(
         name: "create_security_trade",
+        access: .additive,
         description: "Create a security buy/sell transaction with an investment-account cash line and a balancing unknown/category line. Positive shares create a buy; negative shares create a sell.",
         inputSchema: ToolHelpers.schema(
             properties: [
@@ -341,6 +349,7 @@ func registerSecurityTools(
     // create_security_income
     registry.register(
         name: "create_security_income",
+        access: .additive,
         description: "Create a native investment income transaction for a security. Currently supports dividend income.",
         inputSchema: ToolHelpers.schema(
             properties: [
@@ -388,6 +397,7 @@ func registerSecurityTools(
     // get_security_income
     registry.register(
         name: "get_security_income",
+        access: .read,
         description: "Get investment income history (dividends, interest, capital gains distributions).",
         inputSchema: ToolHelpers.schema(properties: [
             "symbol": ToolHelpers.property(type: "string", description: "Security ticker symbol (e.g. AAPL)"),

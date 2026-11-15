@@ -11,6 +11,7 @@
 - **Multi-currency net worth:** `get_net_worth` / `get_summary` convert each account to the reporting currency with the vault's latest exchange rates and include holdings value; adds `breakdown.byCurrency` and `warnings` (from #20)
 - **Exit codes:** the CLI exits 64 usage, 65 validation failed, 66 not found, 70 store failure, 77 write blocked, with `Error: [category] message` on stderr (#24)
 - **Categories:** `categories delete` and `categories audit-entities` / `audit_category_entities` (#42)
+- **MCP tool annotations:** every tool advertises `readOnlyHint` / `destructiveHint`, so clients can tell reads from writes; unlabelled tools default to destructive, and a test refuses a read-only label on any tool that guards writes
 
 ### Fixed
 - Reads use a fresh background context, so a read straight after a write no longer returns stale objects
