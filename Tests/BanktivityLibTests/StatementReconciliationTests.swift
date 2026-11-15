@@ -209,6 +209,29 @@ struct StatementReconciliationTests {
         #expect(try last() == 90)
     }
 
+    @Test("A line change marks its transaction modified; a running-balance recalculation doesn't")
+    func modificationSignals() throws {
+        let r = try makeRepos()
+        defer { TestVaultHelper.cleanup(r.vault) }
+        let checking = try r.accounts.create(name: "Checking", accountClass: AccountClass.checking)
+        let food = try r.categories.create(name: "Food", type: "expense")
+        let a = try r.transactions.create(date: "2026-05-03", title: "A", lineItems: [(checking.id, -10, nil), (food.id, 10, nil)])
+        let liA = try #require(a.lineItems.first { $0.accountId == checking.id }).id
+        func modified() throws -> Date {
+            try r.accounts.performRead { ctx in
+                try #require(try r.accounts.fetchByPK(entityName: "Transaction", pk: a.id, in: ctx)?.value(forKey: "pModificationDate") as? Date)
+            }
+        }
+        let stmt = try r.statements.create(accountId: checking.id, startDate: "2026-05-01", endDate: "2026-05-31",
+                                           beginningBalance: 0, endingBalance: -10)
+        let created = try modified()
+        Thread.sleep(forTimeInterval: 1.1)
+        _ = try r.accounts.recalculateRunningBalances(accountId: checking.id, force: true)
+        #expect(try modified() == created)
+        _ = try r.statements.reconcileLineItems(statementId: stmt.id, lineItemIds: [liA])
+        #expect(try modified() > created)
+    }
+
     @Test("Update changes a statement's balances in place")
     func updateBalances() throws {
         let r = try makeRepos()

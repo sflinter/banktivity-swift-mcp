@@ -2,6 +2,7 @@
 
 import CoreData
 import Foundation
+import Testing
 @testable import BanktivityLib
 
 /// Why the Core Data suites are annotated `@MainActor`.
@@ -158,4 +159,19 @@ enum TestVaultHelper {
             .appendingPathComponent("Fixtures").appendingPathComponent("StoreContent")
         return url.path
     }
+}
+
+/// Edits leave the sync blob (Banktivity's merge base) alone and mark the
+/// transaction modified instead; see SyncBlobUpdater.updateTransactionBlob.
+func expectSignalledByModificationDate(_ container: NSPersistentContainer, transactionUUID: String, since: Date, blob xml: String, unpatched newValues: [String]) throws {
+    let ctx = container.newBackgroundContext()
+    var modified: Date?
+    ctx.performAndWait {
+        let request = NSFetchRequest<NSManagedObject>(entityName: "Transaction")
+        request.predicate = NSPredicate(format: "pUniqueID == %@", transactionUUID)
+        modified = (try? ctx.fetch(request).first)?.value(forKey: "pModificationDate") as? Date
+    }
+    let date = try #require(modified)
+    #expect(date >= since.addingTimeInterval(-1))
+    for value in newValues { #expect(!xml.contains(value)) }
 }

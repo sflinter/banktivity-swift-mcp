@@ -48,7 +48,7 @@ Three-target package structure:
 
 ```
 BanktivityLib        ← Pure domain library (no MCP dependency)
-  CoreData/          PersistentContainer, DateConversion, WriteGuard, SyncBlobUpdater
+  CoreData/          PersistentContainer, DateConversion, WriteGuard, SyncBlobUpdater (sync records)
   Repositories/      BaseRepository + 10 domain repositories
   Models/            DTOs, Constants, Errors, Formatting
   Export/            RDF export: TurtleWriter, TurtleSerializer, VaultExporter
@@ -97,7 +97,7 @@ Property names are prefixed with `p` (e.g., `pName`, `pDate`, `pAccountClass`, `
 
 **Transactions require balancing offset line items.** Every transaction must have line items that sum to zero (double-entry). When `TransactionRepository.create()` receives line items that don't sum to zero, it automatically creates a balancing offset line item with no account (uncategorized). Without this, Opening Balance transactions won't affect the account's running cash balance in Banktivity.
 
-**Security prices must set `pClosePrice`.** Some price records (from older imports or Banktivity itself) have `pClosePrice=0` with the actual value only in `pAdjustedClosePrice`. The sync blob embeds only `closePrice`, so the mobile app shows 0. Security price history does **not** sync via CloudKit — only the `latestSecurityPrice` embedded in the Security entity's sync blob propagates. Use `securities fix-prices` to repair broken records and update sync blobs.
+**Security prices must set `pClosePrice`.** Some price records (from older imports or Banktivity itself) have `pClosePrice=0` with the actual value only in `pAdjustedClosePrice`. The Security sync record embeds only `closePrice` in `latestSecurityPrice`, so the mobile app shows 0. Price history itself does **not** sync. Only each Security's `latestSecurityPrice`, built from the local prices when the Security is uploaded, propagates, and the upload is triggered by the Security's `pModificationDate` (bumped by any price change). Use `securities fix-prices` to repair broken records.
 
 **Line amounts: use `BaseRepository.accountAmount`.** It is Banktivity's own rule (`-[IGGCAccountingLineItem accountAmount]` in IGGAccounting): for an investment transaction (base type 100–310) with a security line, the amount is the security line's `pAmount` (0 for share moves 210–212) + `pIncome`, counted only for a cash distribution type, and `pTransactionAmount` is ignored. Every other line is amount × exchange rate. Balances and statement totals both use it. Investment balances are cash only, with holdings market value reported beside them as `holdingsValue`. Don't read `pRunningBalance` for balances: it's a per-device cache (not in sync records) that the desktop app shows as an account's cash, and rows the CLI writes leave it stale. `accounts recalc-balances` recomputes it (Banktivity orders by transaction date, then creation time or row order within a day). Every repository save also does this automatically for the real accounts it touched, from the earliest changed date (`BaseRepository.accountsNeedingRunningBalance`); don't add separate recalculation calls.
 
@@ -109,23 +109,16 @@ Property names are prefixed with `p` (e.g., `pName`, `pDate`, `pAccountClass`, `
 
 **Agent write safety.** AI assistants issue parallel tool calls and can start more than one MCP server, so the harness needs its own layer: one MCP/CLI process per vault, serialized writes, and read-before-write checks where practical so a write only applies while the target row still holds the expected value. Close every MCP/CLI process before opening the same vault in Banktivity.app, and back up before a write run. Local numeric IDs change across a Banktivity 10 restore, import, or migration, so re-resolve account, transaction, statement, and category IDs afterwards.
 
-### Sync Blob Updates (SyncBlobUpdater)
+### Sync (how CLI changes reach CloudKit)
 
-Banktivity's CloudKit sync uses `ZSYNCEDENTITY` records with gzipped XML blobs (`pRemoteEntityData`) representing each entity's last-synced state. When CLI/MCP tools modify transactions, the `SyncBlobUpdater` patches these blobs so Banktivity recognizes the changes and pushes them to CloudKit.
+Banktivity syncs each record through a `ZSYNCEDENTITY` (`SyncedHostedEntity`) row holding a gzipped XML blob, `pRemoteEntityData`: Banktivity's copy of the record as last synced. Findings from Banktivity 10.2.2's own code (IGGSyncServices, IGGAccounting):
 
-**How it works**: After a Core Data write succeeds, `SyncBlobUpdater` fetches the `SyncedHostedEntity` by the transaction's `pUniqueID`, decompresses the gzip blob, applies XML string patches to the relevant fields, validates the result, saves the compressed blob back, and nulls `pSyncedModificationDate` so Banktivity re-checks the record on next sync.
-
-**Operations patched**:
-- Reconcile/unreconcile: patches `cleared` and `statement` fields on line items in the blob
-- Recategorize: patches `account` reference on the category line item
-- Tag/untag: patches `tags` collection on line items
-- Transaction update: patches `title`, `note`, `date` at the transaction level
-- Transaction delete: keeps the `SyncedHostedEntity` record, sets `pSyncedState = 3` and `pSyncedModificationDate` to the current timestamp — Banktivity recognises state 3 as "deleted" and pushes the deletion to CloudKit. The blob (`pRemoteEntityData`) is preserved so Banktivity knows what to delete.
-
-**Non-fatal by design**: All blob updates are wrapped in try/catch. If a sync record is missing, decompression fails, or the XML can't be patched, the Core Data write still succeeds — only the sync push is skipped. Failures log to stderr.
-
-**`pSyncedModificationDate` on normal records is NULL.** Blob patches null it after saving. The older rule here ("non-NULL means already synced, skip") is not supported by a live vault: on 2026-11-15, all 27,368 state-0 records had it NULL, and only state-3 tombstones carried a date. Banktivity removed those tombstones after its next sync. What actually triggers an upload of a modified record is unverified. PR #50 argues it is the entity's `pModificationDate`, and that rewriting `pRemoteEntityData` (the three-way merge base) can let an older server copy win. Until a controlled round trip settles it, keep the current blob patching, which has been seen to sync, and always set `pModificationDate` on the entity you change.
-
-**LineItems have no separate sync records** — they're serialized inside the parent Transaction's blob. The `identifier` field in the XML maps to `pUniqueID` in Core Data. **Statements DO have their own sync records** in `ZSYNCEDENTITY` with `pHostedEntityType = "Statement"`.
-
-**`pSyncedState` values**: 0 = normal/synced, 3 = deleted. For deletions, set state to 3 and `pSyncedModificationDate` to the current timestamp (preserving the blob); Banktivity pushes the deletion and removes the record on its next sync. For modifications, null `pSyncedModificationDate` (keeping state at 0).
+- **Uploads are chosen by modification date.** A record is pushed when `pModificationDate > lastSyncDate && pCreationTime <= lastSyncDate` (`ZSYNCEDDOCUMENT.ZPLASTSYNCDATE`). What is pushed is the **local** record merged over the blob, so local values win.
+- **The blob is the three-way merge base.** For each field, when a remote copy arrives: remote == local → local; **base == local → remote**; base == remote → local; both changed → local (unless preferring remote).
+- So the CLI must **never patch the blob on an edit**. Making base == local lets an incoming remote copy of that record silently undo the edit, and uploads don't need it. `SyncBlobUpdater`'s update methods (`updateTransactionBlob`, `replaceTransactionLineItems`, `updateSecurityLatestPrice`, `updateSecurityIdentity`, `updateStatementBalances`) are deliberate no-ops (from #50's analysis).
+- **Edits are signalled by `pModificationDate`.** Line items, security lines and prices travel inside their Transaction or Security record, so `BaseRepository.markOwnersModified` (run on every save) stamps the owning Transaction or Security. Changes to the cached `pRunningBalance` alone don't count. Statement edits stamp the Statement directly.
+- **New rows:** the CLI still creates a sync record for a new transaction (`createTransactionSyncRecord`); there is no remote copy yet to conflict with, and Banktivity uploads it as an addition.
+- **Deletes:** set the record's `pSyncedState = 3` and `pSyncedModificationDate` to now (`deleteSyncRecord`), keeping the blob. Banktivity pushes the deletion and then removes the record (seen on 2026-11-15).
+- `pSyncedModificationDate` is NULL on normal records; it is not an upload flag.
+- **Receiving side:** a device applying an incoming transaction writes each security line's `pricePerShare` into that security's price history for the trade date, **zero included**, and an incoming Security record writes its `latestSecurityPrice`. Hence the zero-price rule above.
+- **LineItems have no separate sync records**; they're serialized inside the parent Transaction's blob (`identifier` = `pUniqueID`). Statements do have their own (`pHostedEntityType = "Statement"`), carrying only account, dates and balances.

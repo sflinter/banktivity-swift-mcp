@@ -190,7 +190,7 @@ struct SyncRecordTests {
         #expect(created.title == "ADVISORY FEE")
     }
 
-    @Test("updateSecurityLineItem can repair cash line item amounts and sync blob")
+    @Test("updateSecurityLineItem can repair cash line item amounts, signalled by modification date")
     func updateSecurityLineItemRepairsCashLineAmounts() throws {
         let vault = try TestVaultHelper.createFreshVault()
         defer { TestVaultHelper.cleanup(vault) }
@@ -279,6 +279,7 @@ struct SyncRecordTests {
         )
 
         let repo = SecurityRepository(container: vault.container, syncBlobUpdater: updater)
+        let beforeUpdate = Date()
         let updated = try repo.updateSecurityLineItem(
             transactionId: txPK,
             amount: -125,
@@ -312,14 +313,13 @@ struct SyncRecordTests {
         let blobData = try #require(record.value(forKey: "pRemoteEntityData") as? Data)
         let decompressed = try #require(SyncBlobUpdater.decompressGzip(blobData))
         let xml = try #require(String(data: decompressed, encoding: .utf8))
-        #expect(xml.contains("<field type=\"decimal\" name=\"cost\">-125</field>"))
-        #expect(xml.contains("<field type=\"decimal\" name=\"accountAmount\">-125</field>"))
-        #expect(xml.contains("<field type=\"decimal\" name=\"transacitonAmount\">-125</field>"))
-        #expect(xml.contains("<field type=\"decimal\" name=\"accountAmount\">125</field>"))
-        #expect(xml.contains("<field type=\"decimal\" name=\"transacitonAmount\">125</field>"))
+        try expectSignalledByModificationDate(vault.container, transactionUUID: txUUID, since: beforeUpdate, blob: xml, unpatched: [
+            "<field type=\"decimal\" name=\"cost\">-125</field>",
+            "<field type=\"decimal\" name=\"accountAmount\">-125</field>",
+        ])
     }
 
-    @Test("updateSecurityLineItem can repair cash line item amounts with category offset")
+    @Test("updateSecurityLineItem can repair cash line item amounts with category offset, signalled by modification date")
     func updateSecurityLineItemRepairsCashLineAmountsWithCategoryOffset() throws {
         let vault = try TestVaultHelper.createFreshVault()
         defer { TestVaultHelper.cleanup(vault) }
@@ -419,6 +419,7 @@ struct SyncRecordTests {
         )
 
         let repo = SecurityRepository(container: vault.container, syncBlobUpdater: updater)
+        let beforeUpdate = Date()
         let updated = try repo.updateSecurityLineItem(
             transactionId: txPK,
             cashLineItemAmount: 596.06
@@ -438,9 +439,9 @@ struct SyncRecordTests {
         let decompressed = try #require(SyncBlobUpdater.decompressGzip(blobData))
         let xml = try #require(String(data: decompressed, encoding: .utf8))
         #expect(xml.contains("<field type=\"string\" name=\"identifier\">\(cashLIUUID)</field>"))
-        #expect(xml.contains("<field type=\"decimal\" name=\"accountAmount\">596.06</field>"))
-        #expect(xml.contains("<field type=\"string\" name=\"identifier\">\(categoryLIUUID)</field>"))
-        #expect(xml.contains("<field type=\"decimal\" name=\"accountAmount\">-596.06</field>"))
+        try expectSignalledByModificationDate(vault.container, transactionUUID: txUUID, since: beforeUpdate, blob: xml, unpatched: [
+            "<field type=\"decimal\" name=\"accountAmount\">596.06</field>",
+        ])
     }
 
     @Test("deleteSyncRecord sets state=3 and timestamps for sync deletion")

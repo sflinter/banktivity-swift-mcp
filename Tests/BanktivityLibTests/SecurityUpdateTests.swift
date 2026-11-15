@@ -8,7 +8,7 @@ import Testing
 @MainActor
 @Suite("Security updates", .serialized)
 struct SecurityUpdateTests {
-    @Test("updateSecurityLineItem updates commission and sync blob")
+    @Test("updateSecurityLineItem updates commission, signalled by modification date")
     func updateTradeCommission() throws {
         let vault = try TestVaultHelper.createFreshVault()
         defer { TestVaultHelper.cleanup(vault) }
@@ -81,6 +81,7 @@ struct SecurityUpdateTests {
 
         let repo = SecurityRepository(container: vault.container, syncBlobUpdater: updater)
         let txPK = BaseRepository.extractPK(from: tx.objectID)
+        let beforeUpdate = Date()
         let result = try repo.updateSecurityLineItem(
             transactionId: txPK,
             pricePerShare: 12.34,
@@ -105,7 +106,7 @@ struct SecurityUpdateTests {
         let xml = try #require(String(data: decompressed, encoding: .utf8))
 
         #expect(xml.contains("name=\"commission\""))
-        #expect(xml.contains("<field type=\"decimal\" name=\"commission\">0</field>"))
+        try expectSignalledByModificationDate(vault.container, transactionUUID: txUUID, since: beforeUpdate, blob: xml, unpatched: [])
     }
     @Test("basis-only transfer update requires zero cash line")
     func basisOnlyTransferUpdateRequiresZeroCashLine() throws {

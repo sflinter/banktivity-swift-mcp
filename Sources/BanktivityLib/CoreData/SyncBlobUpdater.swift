@@ -60,31 +60,22 @@ public final class SyncBlobUpdater: @unchecked Sendable {
     // MARK: - High-level API
 
     public func updateTransactionBlob(transactionUUID: String, using transform: @Sendable (String) -> String) {
-        do {
-            try performBlobUpdate(entityUUID: transactionUUID, transform: transform)
-        } catch {
-            log("Failed to update sync blob for transaction \(transactionUUID): \(error)")
-        }
+        // Deliberately a no-op. pRemoteEntityData is Banktivity's three-way
+        // merge base: a field where base == local takes the incoming remote
+        // value (+[IGGCSyncObject mergedFieldFromBase:remote:local:...]). Patching
+        // the blob to match an edit therefore lets a remote copy of the record
+        // silently undo the edit, and uploads don't need it: they send the local
+        // values, selected by pModificationDate (set by the save hook). See #50.
     }
 
-    /// Patch a statement's `startBalance` / `endBalance` in its sync blob.
+    /// No-op (see updateTransactionBlob): edits are signalled by pModificationDate.
     public func updateStatementBalances(statementUUID: String, beginningBalance: Double?, endingBalance: Double?) {
-        do {
-            try performBlobUpdate(entityUUID: statementUUID) { [self] xml in
-                var result = xml
-                if let beginningBalance {
-                    result = replaceField(in: result, name: "startBalance", type: "decimal",
-                                          newContent: formatDecimalPublic(beginningBalance)) ?? result
-                }
-                if let endingBalance {
-                    result = replaceField(in: result, name: "endBalance", type: "decimal",
-                                          newContent: formatDecimalPublic(endingBalance)) ?? result
-                }
-                return result
-            }
-        } catch {
-            log("Failed to update sync blob for statement \(statementUUID): \(error)")
-        }
+        // Deliberately a no-op. pRemoteEntityData is Banktivity's three-way
+        // merge base: a field where base == local takes the incoming remote
+        // value (+[IGGCSyncObject mergedFieldFromBase:remote:local:...]). Patching
+        // the blob to match an edit therefore lets a remote copy of the record
+        // silently undo the edit, and uploads don't need it: they send the local
+        // values, selected by pModificationDate (set by the save hook). See #50.
     }
 
     /// Mark a sync record for deletion.
@@ -230,10 +221,12 @@ public final class SyncBlobUpdater: @unchecked Sendable {
     }
 
     public func replaceTransactionLineItems(transactionUUID: String, lineItems: [SyncLineItem]) {
-        updateTransactionBlob(transactionUUID: transactionUUID) { [self] xml in
-            guard let collectionRange = lineItemsCollectionRange(in: xml) else { return xml }
-            return xml.replacingCharacters(in: collectionRange, with: buildLineItemsXML(lineItems))
-        }
+        // Deliberately a no-op. pRemoteEntityData is Banktivity's three-way
+        // merge base: a field where base == local takes the incoming remote
+        // value (+[IGGCSyncObject mergedFieldFromBase:remote:local:...]). Patching
+        // the blob to match an edit therefore lets a remote copy of the record
+        // silently undo the edit, and uploads don't need it: they send the local
+        // values, selected by pModificationDate (set by the save hook). See #50.
     }
 
     private func buildTransactionXML(
@@ -522,33 +515,12 @@ public final class SyncBlobUpdater: @unchecked Sendable {
     // MARK: - XML Patching: Security latestSecurityPrice
 
     public func updateSecurityLatestPrice(securityUUID: String, closePrice: Double, date: String) {
-        let priceStr = formatDecimal(closePrice)
-        let dateStr = date.contains("T") ? date : "\(date)T00:00:00+0100"
-        updateTransactionBlob(transactionUUID: securityUUID) { xml in
-            // Replace the latestSecurityPrice record contents
-            guard let recordStart = xml.range(of: "<record type=\"SecurityPrice\" name=\"latestSecurityPrice\">"),
-                  let recordEnd = xml.range(of: "</record>", range: recordStart.upperBound..<xml.endIndex) else {
-                return xml
-            }
-
-            let newRecord = """
-                <record type="SecurityPrice" name="latestSecurityPrice">\
-                <field type="decimal" name="adjustedClosePrice" null="null"/>\
-                <field type="decimal" name="closePrice">\(priceStr)</field>\
-                <field enum="IGGCSyncAccountingSecurityPriceDataSourceType" name="dataSource">user-entered</field>\
-                <field type="date" name="date">\(dateStr)</field>\
-                <field type="decimal" name="highPrice" null="null"/>\
-                <field type="decimal" name="lowPrice" null="null"/>\
-                <field type="decimal" name="openPrice" null="null"/>\
-                <field type="decimal" name="previousClosePrice" null="null"/>\
-                <field type="decimal" name="volume" null="null"/></record>
-                """
-            var result = xml
-            result.replaceSubrange(recordStart.lowerBound..<recordEnd.upperBound, with: newRecord)
-            return result
-        }
-
-        touchSecurityModificationDate(securityUUID: securityUUID)
+        // Deliberately a no-op. pRemoteEntityData is Banktivity's three-way
+        // merge base: a field where base == local takes the incoming remote
+        // value (+[IGGCSyncObject mergedFieldFromBase:remote:local:...]). Patching
+        // the blob to match an edit therefore lets a remote copy of the record
+        // silently undo the edit, and uploads don't need it: they send the local
+        // values, selected by pModificationDate (set by the save hook). See #50.
     }
 
     /// Touch a Security so Banktivity notices the change and re-pushes it.
@@ -592,20 +564,12 @@ public final class SyncBlobUpdater: @unchecked Sendable {
     /// or the XML will not patch, the rename still stands locally and only the
     /// sync push is skipped.
     public func updateSecurityIdentity(securityUUID: String, symbol: String?, name: String?) {
-        guard symbol != nil || name != nil else { return }
-        updateTransactionBlob(transactionUUID: securityUUID) { xml in
-            var result = xml
-            for (field, value) in [("symbol", symbol), ("name", name)] {
-                guard let value else { continue }
-                let open = "<field type=\"string\" name=\"\(field)\">"
-                guard let start = result.range(of: open),
-                      let end = result.range(of: "</field>", range: start.upperBound..<result.endIndex)
-                else { continue }
-                result.replaceSubrange(start.upperBound..<end.lowerBound, with: escapeXML(value))
-            }
-            return result
-        }
-        touchSecurityModificationDate(securityUUID: securityUUID)
+        // Deliberately a no-op. pRemoteEntityData is Banktivity's three-way
+        // merge base: a field where base == local takes the incoming remote
+        // value (+[IGGCSyncObject mergedFieldFromBase:remote:local:...]). Patching
+        // the blob to match an edit therefore lets a remote copy of the record
+        // silently undo the edit, and uploads don't need it: they send the local
+        // values, selected by pModificationDate (set by the save hook). See #50.
     }
 
     // MARK: - Gzip
