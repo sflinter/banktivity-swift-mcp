@@ -62,7 +62,7 @@ Always redirect stderr with `2>/dev/null` — CoreData prints harmless warnings 
 | `get_statement` | `--statement_id N` | Full details with reconciliation progress |
 | `create_statement` | `--account_id N --start_date --end_date --beginning_balance --ending_balance` | Validates balance continuity |
 | `delete_statement` | `--statement_id N` | Cascade-unreconciles line items |
-| `reconcile_line_items` | `--statement_id N --line_item_ids 1,2,3` | Sets pCleared=true; validates account/date |
+| `reconcile_line_items` | `--statement_id N --line_item_ids 1,2,3 [--allow_out_of_range true]` | Sets pCleared=true; validates account/date (allow_out_of_range for late-posted card charges) |
 | `unreconcile_line_items` | `--statement_id N --line_item_ids 1,2,3` | Sets pCleared=false |
 | `get_unreconciled_line_items` | `--account_id N --start_date --end_date` | Unreconciled line items for date range |
 
@@ -85,7 +85,7 @@ Always redirect stderr with `2>/dev/null` — CoreData prints harmless warnings 
 
 | Tool | Key Arguments | Notes |
 |---|---|---|
-| `update_transaction` | `--transaction_id N [--title] [--note] [--date] [--cleared] [--transaction_type]` | Update title, note, date, cleared, or transaction type (deposit, withdrawal, buy, sell, etc.) |
+| `update_transaction` | `--transaction_id N [--title] [--note] [--date] [--cleared] [--transaction_type]` | Update title, note, date, cleared, or transaction type (deposit, withdrawal, transfer, charge, refund, payment, buy, sell, etc.) |
 | `recategorize_transaction` | `--transaction_id N --category_id N` or `--category_name "Name"` | Use `--category_id` for subcategories |
 | `bulk_recategorize_by_payee` | `--payee_pattern "pat" --category_id N --dry_run true --uncategorized_only true` | **Always dry_run first** |
 | `tag_transaction` | `--transaction_id N --tag_name "name" --action add\|remove` | Add or remove a tag |

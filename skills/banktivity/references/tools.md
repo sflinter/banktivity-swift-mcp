@@ -365,7 +365,7 @@ Update an existing transaction's title, note, date, cleared status, or transacti
     "note": { "type": "string", "description": "New note" },
     "date": { "type": "string", "description": "New date in ISO format (YYYY-MM-DD)" },
     "cleared": { "type": "boolean", "description": "Set cleared status" },
-    "transaction_type": { "type": "string", "description": "New transaction type: deposit, withdrawal, transfer, check, buy, sell, move-shares-in, move-shares-out, dividend, etc." }
+    "transaction_type": { "type": "string", "description": "New transaction type: deposit, withdrawal, transfer, check, charge, refund, payment, buy, sell, move-shares-in, move-shares-out, dividend, etc." }
   },
   "required": ["transaction_id"]
 }
@@ -509,7 +509,8 @@ Assign line items to a statement (sets pCleared=true). Validates account ownersh
 {
   "properties": {
     "statement_id": { "type": "number", "description": "The statement ID" },
-    "line_item_ids": { "type": "array", "description": "Array of line item IDs to reconcile" }
+    "line_item_ids": { "type": "array", "description": "Array of line item IDs to reconcile" },
+    "allow_out_of_range": { "type": "boolean", "description": "Allow line items dated outside the statement period, e.g. card charges posted on a later statement (default false)" }
   },
   "required": ["statement_id", "line_item_ids"]
 }
