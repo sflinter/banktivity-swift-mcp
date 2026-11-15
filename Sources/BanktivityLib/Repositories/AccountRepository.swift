@@ -4,6 +4,13 @@ import CoreData
 import Foundation
 
 /// Repository for account operations using Core Data
+struct NetWorthAccountBalance: Sendable {
+    let name: String
+    let accountClass: Int
+    let currency: String?
+    let balance: Double
+}
+
 public final class AccountRepository: BaseRepository, @unchecked Sendable {
 
     /// List all accounts, optionally including hidden ones
@@ -76,21 +83,32 @@ public final class AccountRepository: BaseRepository, @unchecked Sendable {
         }
     }
 
-    /// Get net worth using efficient aggregate queries
+    /// Get net worth by converting each account's native-currency balance to the reporting currency.
     public func getNetWorth() throws -> NetWorthDTO {
-        try performRead { [self] ctx in
-            let assets = try self.sumByAccountClasses(Array(assetClasses), in: ctx)
-            let liabilities = try self.sumByAccountClasses(Array(liabilityClasses), in: ctx)
+        let accounts = try list(includeHidden: true).filter { account in
+            assetClasses.contains(account.accountClass) || liabilityClasses.contains(account.accountClass)
+        }
+        // Cash plus holdings market value: net worth counts investments, as
+        // Banktivity's own net worth does.
+        var balances: [Int: Double] = [:]
+        for account in accounts {
+            balances[account.id] = try getBalance(accountId: account.id) + (try holdingsValue(accountId: account.id) ?? 0)
+        }
+        let rates = try exchangeRates()
 
-            return NetWorthDTO(
-                assets: assets,
-                liabilities: liabilities,
-                netWorth: assets + liabilities,
-                formattedAssets: formatCurrency(assets, currency: reportingCurrency),
-                formattedLiabilities: formatCurrency(liabilities, currency: reportingCurrency),
-                formattedNetWorth: formatCurrency(assets + liabilities, currency: reportingCurrency)
+        let accountBalances = accounts.map { account in
+            NetWorthAccountBalance(
+                name: account.name,
+                accountClass: account.accountClass,
+                currency: account.currency,
+                balance: balances[account.id] ?? 0
             )
         }
+        return Self.aggregateNetWorth(
+            reportingCurrency: reportingCurrency,
+            accounts: accountBalances,
+            rates: rates
+        )
     }
 
     /// Get spending or income by category using aggregate queries
@@ -355,13 +373,127 @@ public final class AccountRepository: BaseRepository, @unchecked Sendable {
         return try ctx.count(for: request)
     }
 
-    /// Sum line item amounts for accounts with the given account classes
-    private func sumByAccountClasses(_ classes: [Int], in ctx: NSManagedObjectContext) throws -> Double {
-        let predicates = classes.map { cls in
-            NSPredicate(format: "pAccount.pAccountClass == %d", cls)
+    static func aggregateNetWorth(
+        reportingCurrency rawReportingCurrency: String,
+        accounts: [NetWorthAccountBalance],
+        rates: [ExchangeRateRecord],
+        now: Date = Date()
+    ) -> NetWorthDTO {
+        let reportingCurrency = ReportingCurrency.resolve(rawReportingCurrency)
+        struct CurrencyTotals {
+            var original = Decimal(0)
+            var converted = Decimal(0)
+            var assets = Decimal(0)
+            var liabilities = Decimal(0)
+            var lookup: ExchangeRateLookupResult
         }
-        let compound = NSCompoundPredicate(orPredicateWithSubpredicates: predicates)
-        return try sumLineItemAmounts(predicate: compound, in: ctx)
+
+        var totalsByCurrency: [String: CurrencyTotals] = [:]
+        var warnings: [String] = []
+
+        for account in accounts {
+            let currency = ReportingCurrency.resolve(account.currency ?? reportingCurrency)
+            let balance = Decimal(account.balance)
+            guard let lookup = ExchangeRateRepository.resolve(from: currency, to: reportingCurrency, rates: rates) else {
+                warnings.append("Account \(account.name) (currency \(currency)) excluded: no exchange rate available")
+                continue
+            }
+
+            let converted = balance * lookup.rate
+            var currencyTotals = totalsByCurrency[currency] ?? CurrencyTotals(
+                original: Decimal(0),
+                converted: Decimal(0),
+                assets: Decimal(0),
+                liabilities: Decimal(0),
+                lookup: lookup
+            )
+            currencyTotals.original += balance
+            currencyTotals.converted += converted
+            if assetClasses.contains(account.accountClass) {
+                currencyTotals.assets += converted
+            } else if liabilityClasses.contains(account.accountClass) {
+                currencyTotals.liabilities += converted
+            }
+            currencyTotals.lookup = lookup
+            totalsByCurrency[currency] = currencyTotals
+        }
+
+        var assets = Decimal(0)
+        var liabilities = Decimal(0)
+        var breakdown: [String: CurrencyBreakdownDTO] = [:]
+
+        for (currency, totals) in totalsByCurrency {
+            assets += totals.assets
+            liabilities += totals.liabilities
+            breakdown[currency] = CurrencyBreakdownDTO(
+                originalSum: Self.doubleValue(totals.original),
+                rate: Self.doubleValue(totals.lookup.rate),
+                rateDate: totals.lookup.effectiveDate.map { Self.isoDate($0) },
+                converted: Self.doubleValue(totals.converted),
+                hops: totals.lookup.hops,
+                path: totals.lookup.path
+            )
+
+            if totals.lookup.hops > 0,
+               let effectiveDate = totals.lookup.effectiveDate,
+               let ageDays = Self.rateAgeDays(effectiveDate, now: now), ageDays >= 1 {
+                let route = totals.lookup.path.joined(separator: "→")
+                warnings.append("Exchange rate \(route) is \(ageDays) day\(ageDays == 1 ? "" : "s") old (effective \(Self.isoDate(effectiveDate))).")
+            }
+        }
+
+        let assetDouble = Self.doubleValue(assets)
+        let liabilityDouble = Self.doubleValue(liabilities)
+        let netWorth = assetDouble + liabilityDouble
+        return NetWorthDTO(
+            reportingCurrency: reportingCurrency,
+            assets: assetDouble,
+            liabilities: liabilityDouble,
+            netWorth: netWorth,
+            formattedAssets: formatCurrency(assetDouble, currency: reportingCurrency),
+            formattedLiabilities: formatCurrency(liabilityDouble, currency: reportingCurrency),
+            formattedNetWorth: formatCurrency(netWorth, currency: reportingCurrency),
+            breakdown: NetWorthBreakdownDTO(byCurrency: breakdown),
+            warnings: warnings
+        )
+    }
+
+    private func exchangeRates() throws -> [ExchangeRateRecord] {
+        try performRead { ctx in
+            let request = NSFetchRequest<NSManagedObject>(entityName: "ExchangeRate")
+            let results = try ctx.fetch(request)
+            let currencyCodesById = try ExchangeRateRepository.currencyCodesByUniqueId(in: ctx)
+            return results.compactMap { rate in
+                guard let sourceId = rate.value(forKey: "pSourceCurrencyID") as? String,
+                      let destinationId = rate.value(forKey: "pDestinationCurrencyID") as? String,
+                      let source = currencyCodesById[sourceId] ?? (Locale.commonISOCurrencyCodes.contains(sourceId) ? sourceId : nil),
+                      let destination = currencyCodesById[destinationId] ?? (Locale.commonISOCurrencyCodes.contains(destinationId) ? destinationId : nil),
+                      case let exchangeRate = Self.decimalValue(rate, "pExchangeRate"), exchangeRate != 0
+                else { return nil }
+
+                return ExchangeRateRecord(
+                    source: source,
+                    destination: destination,
+                    rate: exchangeRate,
+                    effectiveDate: rate.value(forKey: "pEffectiveDate") as? Date
+                )
+            }
+        }
+    }
+
+    private static func doubleValue(_ decimal: Decimal) -> Double {
+        NSDecimalNumber(decimal: decimal).doubleValue
+    }
+
+    private static func isoDate(_ date: Date) -> String {
+        DateConversion.toISO(DateConversion.fromDate(date))
+    }
+
+    private static func rateAgeDays(_ effectiveDate: Date, now: Date = Date()) -> Int? {
+        let calendar = Calendar(identifier: .gregorian)
+        let start = calendar.startOfDay(for: effectiveDate)
+        let end = calendar.startOfDay(for: now)
+        return calendar.dateComponents([.day], from: start, to: end).day
     }
 
     // MARK: - DTO Mapping

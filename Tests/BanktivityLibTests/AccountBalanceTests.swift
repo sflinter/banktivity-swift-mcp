@@ -64,7 +64,8 @@ struct AccountBalanceTests {
         let balance = try accounts.getBalance(accountId: account.id)
         #expect(abs(balance - 160.0) < 0.005)
 
-        let netWorth = try accounts.getNetWorth()
+        // Reported in the account's own currency, so no exchange rate is needed.
+        let netWorth = try AccountRepository(container: vault.container, reportingCurrency: "USD").getNetWorth()
         #expect(abs(netWorth.assets - 160.0) < 0.005)
     }
 
